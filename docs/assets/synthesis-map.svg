@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1500" height="610" viewBox="0 0 1500 610" role="img" aria-labelledby="title description">
   <title id="title">Ultimate Agent Stack synthesis map</title>
-  <desc id="description">Research from workflow, specification, interface, review, and scaling projects is filtered through original engineering into a guarded CLI, nine skills, durable artifacts, and a protected release process.</desc>
+  <desc id="description">Research from workflow, specification, interface, review, and scaling projects is filtered through original engineering into a guarded CLI, ten skills, durable artifacts, and a protected release process.</desc>
   <defs>
     <linearGradient id="background" x1="0" x2="1">
       <stop offset="0" stop-color="#0d1117"/>
@@ -68,7 +68,7 @@
     <g>
       <rect x="1100" y="137" width="340" height="94" rx="16" fill="#163d2a" stroke="#3fb950" stroke-width="2"/>
       <text x="1125" y="171" fill="#7ee787" font-size="14" font-weight="700">PORTABLE CORE</text>
-      <text x="1125" y="202" fill="#f0f6fc" font-size="20" font-weight="700">Dependency-free CLI + 9 skills</text>
+      <text x="1125" y="202" fill="#f0f6fc" font-size="20" font-weight="700">Dependency-free CLI + 10 skills</text>
     </g>
     <g>
       <rect x="1100" y="257" width="340" height="94" rx="16" fill="#163d2a" stroke="#3fb950" stroke-width="2"/>
