@@ -47,6 +47,14 @@ const repositoryReviewReceiptWorkflow = readFileSync(
   join(PACKAGE_ROOT, ".github/workflows/review-receipt.yml"),
   "utf8",
 );
+const publishWorkflow = readFileSync(
+  join(PACKAGE_ROOT, ".github/workflows/publish.yml"),
+  "utf8",
+);
+const releaseSyncWorkflow = readFileSync(
+  join(PACKAGE_ROOT, ".github/workflows/sync-github-release.yml"),
+  "utf8",
+);
 
 test("package, plugin, and CLI identity stay synchronized", () => {
   assert.equal(PACKAGE_NAME, packageData.name);
@@ -72,7 +80,10 @@ test("review receipt workflow never executes the pull request copy of its gate",
     reviewReceiptWorkflow,
     /node \.agent-stack\/bin\/review-receipt\.mjs/,
   );
-  assert.doesNotMatch(reviewReceiptWorkflow, /pull_request\.head|bootstrap-gate/);
+  assert.doesNotMatch(
+    reviewReceiptWorkflow,
+    /pull_request\.head|bootstrap-gate/,
+  );
 });
 
 test("repository and installed receipt workflows share the same controls", () => {
@@ -110,6 +121,43 @@ test("package has no install hooks and guards publication with prepublishOnly", 
   assert.deepEqual(packageData.dependencies ?? {}, {});
 });
 
+test("npm staging and GitHub release permissions remain separated", () => {
+  assert.match(publishWorkflow, /publish:\s+environment: npm/);
+  assert.match(
+    publishWorkflow,
+    /publish:[\s\S]*?permissions:\s+contents: read\s+id-token: write/,
+  );
+  assert.match(
+    publishWorkflow,
+    /prepare-github-release:\s+needs: publish[\s\S]*?permissions:\s+contents: write/,
+  );
+  assert.match(
+    publishWorkflow,
+    /ref: \$\{\{ github\.sha \}\}[\s\S]*?persist-credentials: false/,
+  );
+  assert.match(
+    publishWorkflow,
+    /node scripts\/github-release-sync\.mjs prepare/,
+  );
+});
+
+test("release synchronization runs trusted code and retains human npm approval", () => {
+  assert.match(releaseSyncWorkflow, /schedule:/);
+  assert.match(releaseSyncWorkflow, /workflow_dispatch:/);
+  assert.match(releaseSyncWorkflow, /permissions:\s+contents: write/);
+  assert.match(
+    releaseSyncWorkflow,
+    /if: github\.ref_name == github\.event\.repository\.default_branch/,
+  );
+  assert.match(releaseSyncWorkflow, /ref: \$\{\{ github\.sha \}\}/);
+  assert.match(releaseSyncWorkflow, /persist-credentials: false/);
+  assert.match(
+    releaseSyncWorkflow,
+    /node scripts\/github-release-sync\.mjs sync/,
+  );
+  assert.doesNotMatch(releaseSyncWorkflow, /npm (?:stage )?publish/);
+});
+
 test("release preflight records public identity and still requires release authority", () => {
   const blockers = releaseBlockers(
     packageData,
@@ -122,8 +170,14 @@ test("release preflight records public identity and still requires release autho
       : packageData.repository.url,
     /github\.com\/samtay32\/ultimate-agent-stack/,
   );
-  assert.equal(blockers.some((item) => item.includes("license")), false);
-  assert.equal(blockers.some((item) => item.includes("repository")), false);
+  assert.equal(
+    blockers.some((item) => item.includes("license")),
+    false,
+  );
+  assert.equal(
+    blockers.some((item) => item.includes("repository")),
+    false,
+  );
   assert.ok(blockers.some((item) => item.includes("release mode")));
 });
 
@@ -181,14 +235,8 @@ test("release preflight accepts explicit fully configured metadata", () => {
       repository: "example/example-package",
     },
   ).join("\n");
-  assert.match(
-    stagedRuntimeBlockers,
-    /Node.js 22.14.0/,
-  );
-  assert.match(
-    stagedRuntimeBlockers,
-    /npm 11.15.0/,
-  );
+  assert.match(stagedRuntimeBlockers, /Node.js 22.14.0/);
+  assert.match(stagedRuntimeBlockers, /npm 11.15.0/);
   assert.match(
     releaseBlockers(candidate, "example-package@1.2.3", {
       node: "24.0.0",
@@ -261,7 +309,10 @@ test("upstream issue body is review-only and repository names are validated", ()
   });
   assert.match(body, /untrusted research inputs/);
   assert.match(body, /Do not copy, merge, install, or publish/);
-  assert.equal(markdownCell("line one|line two\nline three"), "line one\\|line two line three");
+  assert.equal(
+    markdownCell("line one|line two\nline three"),
+    "line one\\|line two line three",
+  );
   assert.equal(parseRepository("owner/repository"), "owner/repository");
   assert.throws(() => parseRepository("https://github.com/owner/repository"));
 });

@@ -2,6 +2,15 @@
 
 All notable changes to Ultimate Agent Stack are documented here.
 
+## Unreleased
+
+### Changed
+
+- Successful npm staging now prepares a commit-bound draft GitHub Release.
+- An hourly, manually triggerable synchronization verifies the public npm
+  artifact, publish attestation, SLSA workflow identity, and provenance commit
+  before publishing the corresponding GitHub Release.
+
 ## 0.3.0 - 2026-07-26
 
 ### Added
