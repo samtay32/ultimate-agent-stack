@@ -1,6 +1,14 @@
 #!/usr/bin/env node
 
-import { readFileSync, realpathSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -31,7 +39,14 @@ function requireValue(value, message) {
 }
 
 function validateRepository(repository) {
-  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository ?? "")) {
+  const parts = String(repository ?? "").split("/");
+  if (
+    parts.length !== 2 ||
+    parts.some(
+      (part) =>
+        !/^[A-Za-z0-9_.-]+$/.test(part) || part === "." || part === "..",
+    )
+  ) {
     throw new Error("GITHUB_REPOSITORY must be an owner/repository name");
   }
   return repository;
@@ -114,6 +129,12 @@ function provenanceCommit({
 
   const publishPayload = decodeAttestation(publishAttestation);
   const slsaPayload = decodeAttestation(slsaAttestation);
+  if (
+    publishPayload?.predicateType !== PUBLISH_PREDICATE ||
+    slsaPayload?.predicateType !== SLSA_PREDICATE
+  ) {
+    throw new Error("npm attestation predicate type does not match its bundle");
+  }
   validateSubject(publishPayload, expectedName, expectedDigest);
   validateSubject(slsaPayload, expectedName, expectedDigest);
 
@@ -173,6 +194,7 @@ async function requestJson(
     body: body === undefined ? undefined : JSON.stringify(body),
     headers,
     method,
+    signal: AbortSignal.timeout(30_000),
   });
   const text = await response.text();
   let parsed = null;
@@ -318,9 +340,90 @@ function attestationUrl(value) {
   return url.toString();
 }
 
+function verifyNpmPackageSignatures(packageName, version) {
+  const directory = mkdtempSync(join(tmpdir(), "uas-release-signature-"));
+  const npmExecutable = process.platform === "win32" ? "npm.cmd" : "npm";
+  try {
+    const npmConfig = join(directory, ".npmrc");
+    writeFileSync(
+      join(directory, "package.json"),
+      `${JSON.stringify(
+        {
+          name: "ultimate-agent-stack-release-signature-audit",
+          private: true,
+          version: "1.0.0",
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    writeFileSync(npmConfig, `registry=${NPM_REGISTRY}\n`);
+    const environment = {
+      ...process.env,
+      NPM_CONFIG_AUDIT: "false",
+      NPM_CONFIG_CACHE: join(directory, ".npm-cache"),
+      NPM_CONFIG_FUND: "false",
+      NPM_CONFIG_IGNORE_SCRIPTS: "true",
+      NPM_CONFIG_USERCONFIG: npmConfig,
+    };
+    delete environment.GITHUB_TOKEN;
+    delete environment.GH_TOKEN;
+    delete environment.NODE_AUTH_TOKEN;
+    delete environment.NPM_TOKEN;
+    const install = spawnSync(
+      npmExecutable,
+      [
+        "install",
+        "--save-exact",
+        "--no-audit",
+        "--no-fund",
+        "--ignore-scripts",
+        `${packageName}@${version}`,
+      ],
+      {
+        cwd: directory,
+        encoding: "utf8",
+        env: environment,
+        maxBuffer: 1_000_000,
+        shell: false,
+        timeout: 120_000,
+      },
+    );
+    if (install.status !== 0) {
+      throw new Error(
+        `could not install ${packageName}@${version} for signature verification`,
+      );
+    }
+    const audit = spawnSync(
+      npmExecutable,
+      ["audit", "signatures", "--registry", NPM_REGISTRY],
+      {
+        cwd: directory,
+        encoding: "utf8",
+        env: environment,
+        maxBuffer: 1_000_000,
+        shell: false,
+        timeout: 120_000,
+      },
+    );
+    if (
+      audit.status !== 0 ||
+      !/verified registry signature/i.test(audit.stdout ?? "") ||
+      !/verified attestation/i.test(audit.stdout ?? "")
+    ) {
+      throw new Error(
+        `npm could not verify the registry signature and provenance for ${packageName}@${version}`,
+      );
+    }
+  } finally {
+    rmSync(directory, { force: true, recursive: true });
+  }
+}
+
 async function buildSyncPlan(
   { defaultBranch, packageData, registryData, releases, repository, token },
   fetchImplementation = fetch,
+  signatureVerifier = verifyNpmPackageSignatures,
 ) {
   validateRepository(repository);
   requireValue(defaultBranch, "RELEASE_DEFAULT_BRANCH is required");
@@ -345,7 +448,16 @@ async function buildSyncPlan(
       skipped.push({ reason: "not-public-on-npm", tag: release.tag_name });
       continue;
     }
-    const url = attestationUrl(published?.dist?.attestations?.url);
+    const attestationLocation = published?.dist?.attestations?.url;
+    if (
+      typeof attestationLocation !== "string" ||
+      attestationLocation.length === 0
+    ) {
+      skipped.push({ reason: "no-npm-attestations", tag: release.tag_name });
+      continue;
+    }
+    await signatureVerifier(packageName, version);
+    const url = attestationUrl(attestationLocation);
     const attestationDocument = await requestJson(url, {}, fetchImplementation);
     const provenance = provenanceCommit({
       attestations: attestationDocument?.attestations,
@@ -388,7 +500,9 @@ async function buildSyncPlan(
 async function syncDraftReleases(
   { defaultBranch, packageData, repository, token },
   fetchImplementation = fetch,
+  signatureVerifier = verifyNpmPackageSignatures,
 ) {
+  validateRepository(repository);
   const packageName = requireValue(
     packageData?.name,
     "package name is required",
@@ -409,6 +523,7 @@ async function syncDraftReleases(
       token,
     },
     fetchImplementation,
+    signatureVerifier,
   );
   const published = [];
   for (const candidate of plan) {
@@ -480,4 +595,5 @@ export {
   releaseCommit,
   sha512FromIntegrity,
   syncDraftReleases,
+  verifyNpmPackageSignatures,
 };

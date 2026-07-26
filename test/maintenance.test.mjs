@@ -122,14 +122,15 @@ test("package has no install hooks and guards publication with prepublishOnly", 
 });
 
 test("npm staging and GitHub release permissions remain separated", () => {
+  assert.doesNotMatch(publishWorkflow, /^permissions:/m);
   assert.match(publishWorkflow, /publish:\s+environment: npm/);
   assert.match(
     publishWorkflow,
-    /publish:[\s\S]*?permissions:\s+contents: read\s+id-token: write/,
+    /publish:[\s\S]*?permissions:\s+contents: read[^\n]*\s+id-token: write[^\n]*/,
   );
   assert.match(
     publishWorkflow,
-    /prepare-github-release:\s+needs: publish[\s\S]*?permissions:\s+contents: write/,
+    /prepare-github-release:\s+needs: publish[\s\S]*?permissions:\s+contents: write[^\n]*/,
   );
   assert.match(
     publishWorkflow,
@@ -139,18 +140,31 @@ test("npm staging and GitHub release permissions remain separated", () => {
     publishWorkflow,
     /node scripts\/github-release-sync\.mjs prepare/,
   );
+  assert.equal(
+    [...publishWorkflow.matchAll(/uses: actions\/checkout@/g)].length,
+    [...publishWorkflow.matchAll(/persist-credentials: false/g)].length,
+  );
 });
 
 test("release synchronization runs trusted code and retains human npm approval", () => {
   assert.match(releaseSyncWorkflow, /schedule:/);
   assert.match(releaseSyncWorkflow, /workflow_dispatch:/);
-  assert.match(releaseSyncWorkflow, /permissions:\s+contents: write/);
+  assert.doesNotMatch(releaseSyncWorkflow, /^permissions:/m);
+  assert.match(
+    releaseSyncWorkflow,
+    /jobs:\s+sync:[\s\S]*?permissions:\s+contents: write[^\n]*/,
+  );
   assert.match(
     releaseSyncWorkflow,
     /if: github\.ref_name == github\.event\.repository\.default_branch/,
   );
   assert.match(releaseSyncWorkflow, /ref: \$\{\{ github\.sha \}\}/);
   assert.match(releaseSyncWorkflow, /persist-credentials: false/);
+  assert.match(releaseSyncWorkflow, /npm install --global npm@11\.15\.0/);
+  assert.equal(
+    [...releaseSyncWorkflow.matchAll(/uses: actions\/checkout@/g)].length,
+    [...releaseSyncWorkflow.matchAll(/persist-credentials: false/g)].length,
+  );
   assert.match(
     releaseSyncWorkflow,
     /node scripts\/github-release-sync\.mjs sync/,

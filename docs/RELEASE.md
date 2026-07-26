@@ -101,8 +101,11 @@ release. It may also be run manually for immediate synchronization after npm
 approval.
 
 The synchronization fails closed if a tag or draft points at a different
-commit, provenance is absent or inconsistent, or the package is not public. It
-never approves an npm stage and never publishes a package.
+commit, npm cannot cryptographically verify the registry signature and
+provenance, or attestation claims are inconsistent. A public historical version
+without attestations is left as a draft without blocking later verified
+releases. Synchronization never approves an npm stage and never publishes a
+package.
 
 The release job requires Node.js 22.14+ and npm 11.15+. Project users may run
 the package with Node.js 20.12+.

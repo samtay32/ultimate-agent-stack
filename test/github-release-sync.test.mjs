@@ -14,15 +14,25 @@ import {
 
 const PACKAGE_NAME = "ultimate-agent-stack";
 const VERSION = "0.3.0";
+const OLDER_VERSION = "0.2.0";
 const REPOSITORY = "samtay32/ultimate-agent-stack";
 const COMMIT = "5a63dbc7d0a0175d2fc1598e419c79c8e5bf5f1a";
 const OTHER_COMMIT = "a".repeat(40);
+const OLDER_COMMIT = "b".repeat(40);
 const DIGEST = "e8".repeat(64);
+const OLDER_DIGEST = "d7".repeat(64);
 const INTEGRITY = `sha512-${Buffer.from(DIGEST, "hex").toString("base64")}`;
+const OLDER_INTEGRITY = `sha512-${Buffer.from(OLDER_DIGEST, "hex").toString("base64")}`;
 const ATTESTATION_URL =
   "https://registry.npmjs.org/-/npm/v1/attestations/ultimate-agent-stack@0.3.0";
+const OLDER_ATTESTATION_URL =
+  "https://registry.npmjs.org/-/npm/v1/attestations/ultimate-agent-stack@0.2.0";
 
-function attestation(predicateType, predicate, digest = DIGEST) {
+function attestation(
+  predicateType,
+  predicate,
+  { digest = DIGEST, version = VERSION } = {},
+) {
   const payload = {
     _type: "https://in-toto.io/Statement/v0.1",
     predicate,
@@ -30,7 +40,7 @@ function attestation(predicateType, predicate, digest = DIGEST) {
     subject: [
       {
         digest: { sha512: digest },
-        name: `pkg:npm/${PACKAGE_NAME}@${VERSION}`,
+        name: `pkg:npm/${PACKAGE_NAME}@${version}`,
       },
     ],
   };
@@ -44,30 +54,42 @@ function attestation(predicateType, predicate, digest = DIGEST) {
   };
 }
 
-function validAttestations(commit = COMMIT) {
+function validAttestations({
+  commit = COMMIT,
+  digest = DIGEST,
+  version = VERSION,
+} = {}) {
   return [
-    attestation(PUBLISH_PREDICATE, {
-      name: PACKAGE_NAME,
-      registry: "https://registry.npmjs.org",
-      version: VERSION,
-    }),
-    attestation(SLSA_PREDICATE, {
-      buildDefinition: {
-        externalParameters: {
-          workflow: {
-            path: ".github/workflows/publish.yml",
-            ref: "refs/heads/main",
-            repository: `https://github.com/${REPOSITORY}`,
-          },
-        },
-        resolvedDependencies: [
-          {
-            digest: { gitCommit: commit },
-            uri: `git+https://github.com/${REPOSITORY}@refs/heads/main`,
-          },
-        ],
+    attestation(
+      PUBLISH_PREDICATE,
+      {
+        name: PACKAGE_NAME,
+        registry: "https://registry.npmjs.org",
+        version,
       },
-    }),
+      { digest, version },
+    ),
+    attestation(
+      SLSA_PREDICATE,
+      {
+        buildDefinition: {
+          externalParameters: {
+            workflow: {
+              path: ".github/workflows/publish.yml",
+              ref: "refs/heads/main",
+              repository: `https://github.com/${REPOSITORY}`,
+            },
+          },
+          resolvedDependencies: [
+            {
+              digest: { gitCommit: commit },
+              uri: `git+https://github.com/${REPOSITORY}@refs/heads/main`,
+            },
+          ],
+        },
+      },
+      { digest, version },
+    ),
   ];
 }
 
@@ -217,6 +239,7 @@ test("sync plans only public drafts whose provenance matches the target", async 
       token: "test-token",
     },
     fetchImplementation,
+    async () => {},
   );
 
   assert.deepEqual(result.plan, [
@@ -272,6 +295,7 @@ test("sync rejects a draft that differs from npm provenance", async () => {
         token: "test-token",
       },
       fetchImplementation,
+      async () => {},
     ),
     /does not match npm SLSA provenance/,
   );
@@ -322,6 +346,7 @@ test("draft preparation is idempotent and rejects tag drift", async () => {
 test("draft preparation creates only a commit-bound draft", async () => {
   let releaseRequest;
   const fetchImplementation = async (url, options) => {
+    assert.ok(options.signal instanceof AbortSignal);
     if (url.includes("/releases?")) {
       return response(200, []);
     }
@@ -362,11 +387,18 @@ test("draft preparation creates only a commit-bound draft", async () => {
   });
 });
 
-test("synchronization publishes a validated draft and marks npm latest", async () => {
-  let publishRequest;
+test("synchronization publishes older drafts before npm latest", async () => {
+  const publishRequests = [];
+  const signatureRequests = [];
   const registryData = {
     "dist-tags": { latest: VERSION },
     versions: {
+      [OLDER_VERSION]: {
+        dist: {
+          attestations: { url: OLDER_ATTESTATION_URL },
+          integrity: OLDER_INTEGRITY,
+        },
+      },
       [VERSION]: {
         dist: {
           attestations: { url: ATTESTATION_URL },
@@ -375,28 +407,54 @@ test("synchronization publishes a validated draft and marks npm latest", async (
       },
     },
   };
-  const draft = {
-    draft: true,
-    id: 7,
-    tag_name: `v${VERSION}`,
-    target_commitish: COMMIT,
-  };
+  const drafts = [
+    {
+      draft: true,
+      id: 7,
+      tag_name: `v${VERSION}`,
+      target_commitish: COMMIT,
+    },
+    {
+      draft: true,
+      id: 6,
+      tag_name: `v${OLDER_VERSION}`,
+      target_commitish: OLDER_COMMIT,
+    },
+  ];
   const fetchImplementation = async (url, options) => {
     if (url === "https://registry.npmjs.org/ultimate-agent-stack") {
       return response(200, registryData);
     }
     if (url.includes("/releases?")) {
-      return response(200, [draft]);
+      return response(200, drafts);
     }
     if (url === ATTESTATION_URL) {
       return response(200, { attestations: validAttestations() });
     }
-    if (url.endsWith(`/commits/v${VERSION}`)) {
+    if (url === OLDER_ATTESTATION_URL) {
+      return response(200, {
+        attestations: validAttestations({
+          commit: OLDER_COMMIT,
+          digest: OLDER_DIGEST,
+          version: OLDER_VERSION,
+        }),
+      });
+    }
+    if (
+      url.endsWith(`/commits/v${VERSION}`) ||
+      url.endsWith(`/commits/v${OLDER_VERSION}`)
+    ) {
       return response(404, { message: "Not Found" });
     }
-    if (url.endsWith("/releases/7") && options.method === "PATCH") {
-      publishRequest = JSON.parse(options.body);
-      return response(200, { ...draft, draft: false });
+    const release = drafts.find((candidate) =>
+      url.endsWith(`/releases/${candidate.id}`),
+    );
+    if (release && options.method === "PATCH") {
+      publishRequests.push({
+        body: JSON.parse(options.body),
+        id: release.id,
+      });
+      return response(200, { ...release, draft: false });
     }
     throw new Error(`unexpected request: ${url}`);
   };
@@ -410,15 +468,87 @@ test("synchronization publishes a validated draft and marks npm latest", async (
         token: "test-token",
       },
       fetchImplementation,
+      async (packageName, version) => {
+        signatureRequests.push(`${packageName}@${version}`);
+      },
     ),
     {
       action: "sync-complete",
-      published: [{ latest: true, tag: `v${VERSION}`, target: COMMIT }],
+      published: [
+        {
+          latest: false,
+          tag: `v${OLDER_VERSION}`,
+          target: OLDER_COMMIT,
+        },
+        { latest: true, tag: `v${VERSION}`, target: COMMIT },
+      ],
       skipped: [],
     },
   );
-  assert.deepEqual(publishRequest, {
-    draft: false,
-    make_latest: "true",
+  assert.deepEqual(signatureRequests, [
+    `${PACKAGE_NAME}@${VERSION}`,
+    `${PACKAGE_NAME}@${OLDER_VERSION}`,
+  ]);
+  assert.deepEqual(publishRequests, [
+    { body: { draft: false, make_latest: "false" }, id: 6 },
+    { body: { draft: false, make_latest: "true" }, id: 7 },
+  ]);
+});
+
+test("missing attestations skip one draft without blocking others", async () => {
+  const result = await buildSyncPlan(
+    {
+      defaultBranch: "main",
+      packageData: { name: PACKAGE_NAME },
+      registryData: {
+        "dist-tags": { latest: VERSION },
+        versions: {
+          [VERSION]: {
+            dist: { integrity: INTEGRITY },
+          },
+        },
+      },
+      releases: [
+        {
+          draft: true,
+          id: 7,
+          tag_name: `v${VERSION}`,
+          target_commitish: COMMIT,
+        },
+      ],
+      repository: REPOSITORY,
+      token: "test-token",
+    },
+    async () => {
+      throw new Error("network must not be called");
+    },
+    async () => {
+      throw new Error("signature verifier must not be called");
+    },
+  );
+  assert.deepEqual(result, {
+    plan: [],
+    skipped: [{ reason: "no-npm-attestations", tag: `v${VERSION}` }],
   });
+});
+
+test("synchronization rejects repository path components before fetching", async () => {
+  let fetchCalled = false;
+  await assert.rejects(
+    syncDraftReleases(
+      {
+        defaultBranch: "main",
+        packageData: { name: PACKAGE_NAME },
+        repository: `${REPOSITORY.split("/")[0]}/..`,
+        token: "test-token",
+      },
+      async () => {
+        fetchCalled = true;
+        throw new Error("must not fetch");
+      },
+      async () => {},
+    ),
+    /owner\/repository name/,
+  );
+  assert.equal(fetchCalled, false);
 });
