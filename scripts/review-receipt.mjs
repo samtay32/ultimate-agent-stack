@@ -20,6 +20,49 @@ function isCodeRabbit(login) {
   return normalizeLogin(login) === "coderabbitai";
 }
 
+function reviewerPolicy(
+  provider,
+  allowedLogins = [],
+  excludedLogin = undefined,
+) {
+  if (provider === "coderabbit") {
+    return {
+      label: "CodeRabbit",
+      matches: (author) => isCodeRabbit(author?.login),
+      passingStates: PASSING_REVIEW_STATES,
+    };
+  }
+  if (provider === "github-human") {
+    const allowed = new Set(allowedLogins.map(normalizeLogin));
+    const excluded = normalizeLogin(excludedLogin);
+    if (allowed.size === 0) {
+      throw new Error(
+        "github-human review requires at least one allowed GitHub login.",
+      );
+    }
+    return {
+      label: "An allowed GitHub human reviewer",
+      matches: (author) => {
+        const login = normalizeLogin(author?.login);
+        return (
+          author?.__typename === "User" &&
+          allowed.has(login) &&
+          login !== excluded
+        );
+      },
+      passingStates: new Set(["APPROVED"]),
+    };
+  }
+  if (provider === "builtin") {
+    return {
+      label: "Built-in review",
+      matches: () => false,
+      passingStates: new Set(),
+    };
+  }
+  throw new Error(`Unsupported review provider: ${provider}`);
+}
+
 function failure(message, detail = {}) {
   return { ok: false, message, detail };
 }
@@ -30,21 +73,49 @@ function evaluateReviewReceipt({
   threads = [],
   comments = [],
   truncated = [],
+  provider = "coderabbit",
+  allowedLogins = [],
+  pullRequestAuthor = undefined,
 }) {
+  if (
+    provider === "github-human" &&
+    normalizeLogin(pullRequestAuthor?.login).length === 0
+  ) {
+    return failure(
+      "GitHub did not return the pull request author required for independent human review.",
+    );
+  }
+  const policy = reviewerPolicy(
+    provider,
+    allowedLogins,
+    provider === "github-human" ? pullRequestAuthor.login : undefined,
+  );
+  if (provider === "builtin") {
+    return {
+      ok: true,
+      message:
+        "External review receipt is not required by the selected project profile.",
+      detail: { provider },
+    };
+  }
   if (typeof headOid !== "string" || headOid.length === 0) {
     return failure("GitHub did not return the pull request head commit.");
   }
-  if (truncated.length > 0) {
+  const relevantTruncation =
+    provider === "coderabbit"
+      ? truncated
+      : truncated.filter((connection) => connection !== "comments");
+  if (relevantTruncation.length > 0) {
     return failure(
       `GitHub evidence exceeded the ${REVIEW_PAGE_LIMIT}-item safety limit.`,
-      { truncated },
+      { truncated: relevantTruncation },
     );
   }
 
-  const codeRabbitReviews = reviews.filter((review) =>
-    isCodeRabbit(review.author?.login),
+  const providerReviews = reviews.filter((review) =>
+    policy.matches(review.author),
   );
-  const currentReviews = codeRabbitReviews.filter(
+  const currentReviews = providerReviews.filter(
     (review) => review.commit?.oid === headOid,
   );
   const requestedChanges = currentReviews.filter(
@@ -52,31 +123,31 @@ function evaluateReviewReceipt({
   );
   if (requestedChanges.length > 0) {
     return failure(
-      "CodeRabbit requested changes on the current pull request revision.",
+      `${policy.label} requested changes on the current pull request revision.`,
       { current_review_states: currentReviews.map((review) => review.state) },
     );
   }
 
   const unresolvedThreads = threads.filter((thread) => {
-    const author = thread.comments?.nodes?.[0]?.author?.login;
+    const author = thread.comments?.nodes?.[0]?.author;
     return (
-      isCodeRabbit(author) &&
+      policy.matches(author) &&
       thread.isResolved !== true &&
       thread.isOutdated !== true
     );
   });
   if (unresolvedThreads.length > 0) {
     return failure(
-      `CodeRabbit has ${unresolvedThreads.length} unresolved current review thread(s).`,
+      `${policy.label} has ${unresolvedThreads.length} unresolved current review thread(s).`,
       { unresolved_threads: unresolvedThreads.length },
     );
   }
 
   const passingReviews = currentReviews.filter((review) =>
-    PASSING_REVIEW_STATES.has(review.state),
+    policy.passingStates.has(review.state),
   );
   if (passingReviews.length === 0) {
-    const rateLimited = comments.some(
+    const rateLimited = provider === "coderabbit" && comments.some(
       (comment) =>
         isCodeRabbit(comment.author?.login) &&
         RATE_LIMIT_PATTERN.test(comment.body ?? ""),
@@ -86,25 +157,26 @@ function evaluateReviewReceipt({
         "CodeRabbit reported a review limit and has not reviewed the current revision.",
       );
     }
-    if (codeRabbitReviews.length > 0) {
+    if (providerReviews.length > 0) {
       return failure(
-        "The latest CodeRabbit review is stale; request a review of the current revision.",
+        `The latest ${policy.label} review is stale; request a review of the current revision.`,
         {
-          reviewed_commits: codeRabbitReviews
+          reviewed_commits: providerReviews
             .map((review) => review.commit?.oid)
             .filter(Boolean),
         },
       );
     }
     return failure(
-      "No actual CodeRabbit review was submitted for the current revision.",
+      `No actual ${policy.label} review was submitted for the current revision.`,
     );
   }
 
   return {
     ok: true,
-    message: `CodeRabbit reviewed current commit ${headOid.slice(0, 12)} with no unresolved current threads.`,
+    message: `${policy.label} reviewed current commit ${headOid.slice(0, 12)} with no unresolved current threads.`,
     detail: {
+      provider,
       reviewed_commit: headOid,
       review_states: passingReviews.map((review) => review.state),
     },
@@ -112,20 +184,85 @@ function evaluateReviewReceipt({
 }
 
 function parseArguments(argv) {
-  const parsed = {};
+  const parsed = { reviewers: [] };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
-    if (argument !== "--repo" && argument !== "--pr") {
+    if (
+      argument !== "--repo" &&
+      argument !== "--pr" &&
+      argument !== "--provider" &&
+      argument !== "--config" &&
+      argument !== "--reviewer"
+    ) {
       throw new Error(`Unknown option: ${argument}`);
     }
     const value = argv[index + 1];
     if (!value || value.startsWith("--")) {
       throw new Error(`${argument} requires a value`);
     }
-    parsed[argument.slice(2)] = value;
+    if (argument === "--reviewer") {
+      parsed.reviewers.push(value);
+    } else {
+      parsed[argument.slice(2)] = value;
+    }
     index += 1;
   }
   return parsed;
+}
+
+function resolveReviewSelection(options) {
+  if (!options.config) {
+    return {
+      provider: options.provider ?? "coderabbit",
+      required: true,
+      allowedLogins: options.reviewers,
+    };
+  }
+  let config;
+  try {
+    config = JSON.parse(readFileSync(resolve(options.config), "utf8"));
+  } catch (error) {
+    throw new Error(`Unable to read review configuration: ${error.message}`);
+  }
+  const review = config.capabilities?.review;
+  if (!review || typeof review !== "object") {
+    throw new Error("Review configuration is missing capabilities.review.");
+  }
+  if (config.onboarding?.status !== "complete") {
+    throw new Error("Guided onboarding is not complete.");
+  }
+  if (!["experimental", "standard", "production"].includes(
+    config.onboarding?.project_profile,
+  )) {
+    throw new Error("Review configuration has an invalid project profile.");
+  }
+  if (!["builtin", "coderabbit", "github-human"].includes(review.provider)) {
+    throw new Error("Review configuration has an unsupported provider.");
+  }
+  const required = review.provider !== "builtin";
+  if (review.required_for_release !== required) {
+    throw new Error(
+      "Review configuration does not match the provider's required receipt policy.",
+    );
+  }
+  if (
+    config.onboarding.project_profile === "production" &&
+    review.provider === "builtin"
+  ) {
+    throw new Error(
+      "Production configuration requires an external review provider.",
+    );
+  }
+  if (review.current_revision_required !== true) {
+    throw new Error(
+      "Review configuration must require the current pull request revision.",
+    );
+  }
+  return {
+    provider: review.provider,
+    required,
+    allowedLogins: review.allowed_logins ?? [],
+  };
 }
 
 function loadEvent(path) {
@@ -141,6 +278,10 @@ function loadEvent(path) {
 
 function resolveContext(argv, environment) {
   const options = parseArguments(argv);
+  const review = resolveReviewSelection(options);
+  if (!review.required) {
+    return { skip: true, review };
+  }
   const event = loadEvent(environment.GITHUB_EVENT_PATH);
   const repository =
     options.repo ??
@@ -160,7 +301,7 @@ function resolveContext(argv, environment) {
   }
 
   const [owner, name] = repository.split("/");
-  return { owner, name, pullRequest, token };
+  return { owner, name, pullRequest, token, review };
 }
 
 async function fetchReviewEvidence({ owner, name, pullRequest, token }) {
@@ -168,10 +309,11 @@ async function fetchReviewEvidence({ owner, name, pullRequest, token }) {
     query ReviewReceipt($owner: String!, $name: String!, $number: Int!) {
       repository(owner: $owner, name: $name) {
         pullRequest(number: $number) {
+          author { login __typename }
           headRefOid
           reviews(first: ${REVIEW_PAGE_LIMIT}) {
             nodes {
-              author { login }
+              author { login __typename }
               commit { oid }
               state
               submittedAt
@@ -183,14 +325,14 @@ async function fetchReviewEvidence({ owner, name, pullRequest, token }) {
               isOutdated
               isResolved
               comments(first: 1) {
-                nodes { author { login } }
+                nodes { author { login __typename } }
               }
             }
             pageInfo { hasNextPage }
           }
           comments(first: ${REVIEW_PAGE_LIMIT}) {
             nodes {
-              author { login }
+              author { login __typename }
               body
               createdAt
             }
@@ -237,6 +379,7 @@ async function fetchReviewEvidence({ owner, name, pullRequest, token }) {
     }
   }
   return {
+    pullRequestAuthor: pullRequestData.author,
     headOid: pullRequestData.headRefOid,
     reviews: pullRequestData.reviews?.nodes ?? [],
     threads: pullRequestData.reviewThreads?.nodes ?? [],
@@ -251,8 +394,18 @@ async function main(
 ) {
   try {
     const context = resolveContext(argv, environment);
+    if (context.skip) {
+      process.stdout.write(
+        "External review receipt is not required by the selected project profile.\n",
+      );
+      return 0;
+    }
     const evidence = await fetchReviewEvidence(context);
-    const result = evaluateReviewReceipt(evidence);
+    const result = evaluateReviewReceipt({
+      ...evidence,
+      provider: context.review.provider,
+      allowedLogins: context.review.allowedLogins,
+    });
     const output = result.ok ? process.stdout : process.stderr;
     output.write(`${result.message}\n`);
     return result.ok ? 0 : 1;
@@ -275,5 +428,7 @@ export {
   isCodeRabbit,
   main,
   normalizeLogin,
+  reviewerPolicy,
+  resolveReviewSelection,
   resolveContext,
 };

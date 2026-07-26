@@ -12,7 +12,17 @@ This repository uses Ultimate Agent Stack.
    node .agent-stack/bin/agent-stack.mjs doctor --target .
    ```
 
-3. If checks were newly detected or changed, inspect their definitions in the
+3. Run:
+
+   ```bash
+   node .agent-stack/bin/agent-stack.mjs capabilities
+   ```
+
+   If onboarding is pending or provider choices changed, inspect the repository,
+   ask one consequential decision at a time with one recommendation and at most
+   one safe alternative, then record the approved profile and providers with
+   `configure`.
+4. If checks were newly detected or changed, inspect their definitions in the
    project manifests. Reject shell or destructive checks. Then run:
 
    ```bash
@@ -20,15 +30,18 @@ This repository uses Ultimate Agent Stack.
      --reason "Inspected project-native quality command definitions"
    ```
 
-4. Use `$run-autonomous-delivery` for the user's request. It routes execution
+5. Use `$run-autonomous-delivery` for the user's request. It routes execution
    through `$coordinate-parallel-delivery`, which may use bounded native
    subagents when doing so is both safe and useful.
-5. The primary agent manages every worker and returns one integrated result.
+6. The primary agent manages every worker and returns one integrated result.
    The user never has to supervise subagents. Parallel writers require verified
    isolated workspaces; otherwise keep write work serial.
-6. For a new or ambiguous project, inspect first and then ask one consequential
-   question at a time. Recommend a safe default with each question.
-7. Own routine research, design, implementation, tests, documentation, and
+7. Apply `$use-project-knowledge` with the configured provider and repository
+   fallback.
+8. For a new or ambiguous project, inspect first and then ask one consequential
+   question at a time. Recommend one safe default, offer at most one genuinely
+   safe alternative, and explain the practical consequence.
+9. Own routine research, design, implementation, tests, documentation, and
    review closure. Do not return only a plan.
 
 ## User Protection

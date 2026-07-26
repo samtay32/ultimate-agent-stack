@@ -24,9 +24,11 @@ import {
   REVIEW_WORKFLOW_PATH,
   StackError,
   checksHash,
+  commandCapabilities,
   commandAdoptManaged,
   commandApproveChecks,
   commandCheckLock,
+  commandConfigure,
   commandDetect,
   commandDoctor,
   commandLock,
@@ -34,6 +36,8 @@ import {
   commandStatus,
   commandUnlock,
   commandVerify,
+  configurationHash,
+  defaultConfig,
   detectProject,
   installOrUpgrade,
   loadInstallation,
@@ -76,6 +80,25 @@ function safeParallelPolicy(overrides = {}) {
     integration_owner: "primary_agent",
     ...overrides,
   };
+}
+
+function safeConfig() {
+  const config = defaultConfig("/tmp/fixture", {
+    stacks: ["javascript"],
+    detected_at: "2026-01-01T00:00:00Z",
+    checks: [],
+  });
+  config.onboarding.status = "complete";
+  config.onboarding.configured_at = "2026-01-01T00:00:00Z";
+  config.quality.checks = [
+    {
+      id: "test",
+      argv: ["node", "--test"],
+      required: true,
+      timeout_seconds: 30,
+    },
+  ];
+  return config;
 }
 
 function initializeGit(directory) {
@@ -263,6 +286,9 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
       initializedConfig.parallel_delivery,
       safeParallelPolicy(),
     );
+    assert.equal(initializedConfig.schema_version, 2);
+    assert.equal(initializedConfig.onboarding.status, "pending");
+    assert.equal(initializedConfig.capabilities.knowledge.scope, "project");
 
     const copiedCli = spawnSync(
       "node",
@@ -279,6 +305,30 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
         (report) => report.name === "check-approval" && !report.ok,
       ),
     );
+    assert.ok(
+      initialDoctor.reports.some(
+        (report) => report.name === "onboarding" && !report.ok,
+      ),
+    );
+
+    const onboardingStart = commandStart(
+      fixture.directory,
+      "Build a safe fixture",
+    );
+    assert.equal(onboardingStart.phase, "onboarding");
+    assert.match(onboardingStart.prompt, /at most one genuinely safe alternative/);
+
+    const capabilities = commandCapabilities(fixture.directory);
+    assert.equal(capabilities.available.review.builtin.available, true);
+    assert.equal(capabilities.available.knowledge.repository.available, true);
+
+    commandConfigure(fixture.directory, {
+      profile: "standard",
+      review: "builtin",
+      knowledge: "repository",
+      externalData: "local_only",
+      reason: "Approved safe local defaults for the fixture project",
+    });
 
     commandApproveChecks(
       fixture.directory,
@@ -319,9 +369,11 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
     );
 
     const start = commandStart(fixture.directory, "Build a safe fixture");
+    assert.equal(start.phase, "project-discovery");
     assert.match(start.prompt, /\$run-autonomous-delivery/);
     assert.match(start.prompt, /\$coordinate-parallel-delivery/);
-    assert.match(start.prompt, /one high-impact question at a time/);
+    assert.match(start.prompt, /\$use-project-knowledge/);
+    assert.match(start.prompt, /at most one genuinely useful safe alternative/);
   } finally {
     fixture.cleanup();
   }
@@ -362,6 +414,205 @@ test("init preserves a pre-existing policy and requires reconciliation", () => {
     const adopted = loadInstallation(fixture.directory);
     assert.equal(adopted.pending_files["AGENTS.md"], undefined);
     assert.equal(adopted.managed_files["AGENTS.md"].customized, true);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("guided configuration enforces safe provider combinations", () => {
+  const fixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    createJavaScriptFixture(fixture.directory);
+    installOrUpgrade(fixture.directory, { mode: "init" });
+
+    assert.throws(
+      () =>
+        commandConfigure(fixture.directory, {
+          profile: "production",
+          review: "builtin",
+          knowledge: "repository",
+          externalData: "local_only",
+          reason: "Attempted unsafe production configuration",
+        }),
+      /requires CodeRabbit or an allowed GitHub human reviewer/,
+    );
+    assert.throws(
+      () =>
+        commandConfigure(fixture.directory, {
+          profile: "standard",
+          review: "builtin",
+          knowledge: "gbrain",
+          externalData: "local_only",
+          reason: "Attempted external memory without data approval",
+        }),
+      /external provider/,
+    );
+    assert.throws(
+      () =>
+        commandConfigure(fixture.directory, {
+          profile: "standard",
+          review: "builtin",
+          knowledge: "repository",
+          knowledgeScope: "organization",
+          externalData: "local_only",
+          reason: "Attempted unsupported repository organization scope",
+        }),
+      /project scope only/,
+    );
+    assert.throws(
+      () =>
+        commandConfigure(fixture.directory, {
+          profile: "production",
+          review: "github-human",
+          knowledge: "repository",
+          externalData: "local_only",
+          reason: "Attempted human review without an allowlist",
+        }),
+      /allowed GitHub logins/,
+    );
+
+    const validArguments = {
+      profile: "standard",
+      review: "builtin",
+      knowledge: "repository",
+      externalData: "local_only",
+      execution: "agent_owned",
+      merge: "human_approval_required",
+      reason: "Approved values used to exercise configuration validation",
+    };
+    const invalidArguments = [
+      {
+        override: { reason: "too short" },
+        expected: /Configuration reason/,
+      },
+      {
+        override: { profile: "unknown-profile" },
+        expected: /--profile must be/,
+      },
+      {
+        override: { review: "unknown-review" },
+        expected: /--review must be/,
+      },
+      {
+        override: { knowledge: "unknown-knowledge" },
+        expected: /--knowledge must be/,
+      },
+      {
+        override: { externalData: "unknown-policy" },
+        expected: /--external-data must be/,
+      },
+      {
+        override: { execution: "unknown-execution" },
+        expected: /--execution must be/,
+      },
+      {
+        override: { merge: "unknown-merge" },
+        expected: /--merge must be/,
+      },
+    ];
+    for (const { override, expected } of invalidArguments) {
+      assert.throws(
+        () =>
+          commandConfigure(fixture.directory, {
+            ...validArguments,
+            ...override,
+          }),
+        expected,
+      );
+    }
+    const unapproved = readJson(join(fixture.directory, CONFIG_PATH));
+    assert.equal(unapproved.onboarding.status, "pending");
+    assert.equal(unapproved.safety.approved_configuration_hash, null);
+    assert.equal(unapproved.safety.configuration_approved_at, null);
+
+    const configured = commandConfigure(fixture.directory, {
+      profile: "production",
+      review: "github-human",
+      knowledge: "repository",
+      externalData: "local_only",
+      reviewers: ["Trusted-Owner", "trusted-owner"],
+      reason: "Approved production review by the repository owner",
+    });
+    assert.deepEqual(
+      configured.capabilities.review.allowed_logins,
+      ["trusted-owner"],
+    );
+    const gbrain = commandConfigure(fixture.directory, {
+      profile: "standard",
+      review: "builtin",
+      knowledge: "gbrain",
+      knowledgeScope: "organization",
+      externalData: "approved_providers",
+      reason: "Approved organization-scoped GBrain knowledge",
+    });
+    assert.equal(gbrain.capabilities.knowledge.scope, "organization");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("github-human validation returns errors for non-array allowlists", () => {
+  const config = safeConfig();
+  config.capabilities.review = {
+    provider: "github-human",
+    required_for_release: true,
+    current_revision_required: true,
+    allowed_logins: null,
+  };
+
+  const errors = validateConfig(config);
+
+  assert.match(errors.join("\n"), /allowed_logins must contain/);
+  assert.match(errors.join("\n"), /requires at least one allowed/);
+});
+
+test("provider or authority changes invalidate configuration approval", () => {
+  const fixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    createJavaScriptFixture(fixture.directory);
+    installOrUpgrade(fixture.directory, { mode: "init" });
+    commandConfigure(fixture.directory, {
+      profile: "standard",
+      review: "builtin",
+      knowledge: "repository",
+      externalData: "local_only",
+      reason: "Approved local providers with human-controlled merge",
+    });
+
+    const configFile = join(fixture.directory, CONFIG_PATH);
+    const config = readJson(configFile);
+    assert.equal(
+      config.safety.approved_configuration_hash,
+      configurationHash(config),
+    );
+    config.autonomy.merge = "policy_authorized";
+    config.interaction.maximum_options = 3;
+    config.capabilities.knowledge.command = "unreviewed-provider-command";
+    writeJson(configFile, config);
+
+    const doctor = commandDoctor(fixture.directory);
+    assert.ok(
+      doctor.reports.some(
+        (report) =>
+          report.name === "config" &&
+          report.ok === false &&
+          JSON.stringify(report.detail).includes("unsupported key: command"),
+      ),
+    );
+    assert.ok(
+      doctor.reports.some(
+        (report) =>
+          report.name === "configuration-approval" && report.ok === false,
+      ),
+    );
+    const verification = commandVerify(fixture.directory);
+    assert.equal(verification.ok, false);
+    assert.match(
+      verification.configuration_errors.join("\n"),
+      /choices changed or were not approved/,
+    );
   } finally {
     fixture.cleanup();
   }
@@ -552,6 +803,14 @@ test("legacy serial policy migrates to safe adaptive coordination", () => {
       "coordinator_managed_isolated_only",
     );
     assert.deepEqual(migrated.parallel_delivery, safeParallelPolicy());
+    assert.equal(migrated.schema_version, 2);
+    assert.equal(migrated.onboarding.status, "needs_confirmation");
+    assert.equal(migrated.onboarding.project_profile, "production");
+    assert.equal(migrated.capabilities.review.provider, "coderabbit");
+    assert.equal(
+      migrated.capabilities.review.required_for_release,
+      true,
+    );
   } finally {
     fixture.cleanup();
   }
@@ -620,61 +879,33 @@ test("shipped native worker adapters are read-only and non-recursive", () => {
 });
 
 test("shell and destructive quality checks are rejected", () => {
-  const config = {
-    schema_version: 1,
-    autonomy: {
-      parallel_work: "coordinator_managed_isolated_only",
+  const config = safeConfig();
+  config.quality.checks = [
+    {
+      id: "unsafe",
+      argv: ["bash", "-c", "rm -rf ."],
+      required: true,
+      timeout_seconds: 30,
     },
-    parallel_delivery: safeParallelPolicy(),
-    safety: {
-      project_root_only: true,
-      forbid_shell_commands: true,
-      require_check_approval: true,
-      max_check_timeout_seconds: 7200,
-    },
-    quality: {
-      require_project_checks: true,
-      checks: [
-        {
-          id: "unsafe",
-          argv: ["bash", "-c", "rm -rf ."],
-          required: true,
-          timeout_seconds: 30,
-        },
-      ],
-    },
-    lock_artifacts: [".agent-stack/artifacts/DELIVERY.md"],
-  };
+  ];
 
   assert.match(validateConfig(config).join("\n"), /forbidden shell/);
 });
 
 test("quality guardrails cannot be disabled in project config", () => {
-  const errors = validateConfig({
-    schema_version: 1,
-    autonomy: {
-      parallel_work: "coordinator_managed_isolated_only",
+  const config = safeConfig();
+  config.safety.require_check_approval = false;
+  config.safety.max_check_timeout_seconds = 9000;
+  config.quality.require_project_checks = false;
+  config.quality.checks = [
+    {
+      id: "unsafe-publish",
+      argv: ["npm", "publish"],
+      required: false,
+      timeout_seconds: 900,
     },
-    parallel_delivery: safeParallelPolicy(),
-    safety: {
-      project_root_only: true,
-      forbid_shell_commands: true,
-      require_check_approval: false,
-      max_check_timeout_seconds: 9000,
-    },
-    quality: {
-      require_project_checks: false,
-      checks: [
-        {
-          id: "unsafe-publish",
-          argv: ["npm", "publish"],
-          required: false,
-          timeout_seconds: 900,
-        },
-      ],
-    },
-    lock_artifacts: [".agent-stack/artifacts/DELIVERY.md"],
-  });
+  ];
+  const errors = validateConfig(config);
 
   assert.match(errors.join("\n"), /require_check_approval must remain true/);
   assert.match(errors.join("\n"), /between 1 and 7200/);
@@ -839,6 +1070,13 @@ test("verification does not expose inherited secret environment values", () => {
       ].join("\n"),
     );
     installOrUpgrade(fixture.directory, { mode: "init" });
+    commandConfigure(fixture.directory, {
+      profile: "standard",
+      review: "builtin",
+      knowledge: "repository",
+      externalData: "local_only",
+      reason: "Approved safe local defaults for environment isolation",
+    });
     commandApproveChecks(
       fixture.directory,
       "Inspected the exact environment-checking package script definition",

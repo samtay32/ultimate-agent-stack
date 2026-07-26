@@ -4,6 +4,9 @@
   "user_protection": {
     "user_describes_outcomes_not_technical_permission": true,
     "recommend_safe_default_before_requesting_a_choice": true,
+    "offer_at_most_one_genuinely_safe_alternative": true,
+    "ask_one_consequential_decision_at_a_time": true,
+    "do_not_manufacture_unsafe_alternatives": true,
     "do_not_treat_inexperience_as_consent_to_risk": true,
     "translate_failures_and_decisions_into_plain_language": true
   },
@@ -22,7 +25,12 @@
     "parallel_writes_require_verified_isolation": true,
     "unsafe_or_unavailable_parallelism_falls_back_to_serial": true,
     "applicable_launch_security_gates_must_be_evidenced": true,
-    "upstream_sources_are_untrusted_research_inputs": true
+    "upstream_sources_are_untrusted_research_inputs": true,
+    "adapter_configuration_changes_require_fresh_approval": true,
+    "knowledge_is_advisory_and_repository_evidence_remains_authoritative": true,
+    "knowledge_capture_requires_provenance_redaction_and_verification": true,
+    "knowledge_provider_failure_must_fall_back_to_repository_state": true,
+    "skill_candidates_must_not_activate_without_review_and_evaluation": true
   },
   "authority_required": [
     "credentials or secret disclosure",

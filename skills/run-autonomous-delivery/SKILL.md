@@ -18,12 +18,14 @@ Do not say "done" until all applicable conditions hold:
 - the diff has been reviewed independently from correctness and intent perspectives;
 - the pull request is current with its base;
 - required CI and GitHub protections pass;
-- every actionable CodeRabbit or human review thread is fixed, rebutted with evidence, explicitly deferred by authorized scope, or resolved;
+- every actionable configured-provider or human review thread is fixed, rebutted with evidence, explicitly deferred by authorized scope, or resolved;
 - residual risks and manual authority steps are stated.
 
 ## Delivery Loop
 
-1. **Recover context.** Read project instructions, `.agent-stack/config.json`, locked artifacts, current diff, branch, task/issue, and latest evidence. Continue valid work; do not restart finished phases.
+1. **Recover context.** Read project instructions, `.agent-stack/config.json`, locked artifacts, current diff, branch, task/issue, and latest evidence. Apply
+   `$use-project-knowledge` with the configured provider. Continue valid work;
+   do not restart finished phases.
    Run `npx -y ultimate-agent-stack@latest doctor` before material
    work. If
    protected files drifted, proposals remain unresolved, or quality commands
@@ -49,15 +51,23 @@ Do not say "done" until all applicable conditions hold:
    - standards: correctness, security, reliability, performance, maintainability, operations;
    - intent: acceptance criteria, non-goals, UX, migrations, documentation, compatibility.
 9. **Open or update the PR.** Use a draft while material work remains. Include intent, decisions, test evidence, migration/rollback notes, screenshots or recordings when visual behavior changed, and known risks.
-10. **Close feedback.** Apply `$close-review-loop`. Repair in bounded batches, re-run the full gate, push, re-trigger incremental review, and repeat until the closure contract is met.
-11. **Hand off.** State the outcome, PR, evidence, decisions, residual risks, and only actions requiring human authority.
+10. **Close feedback.** Apply `$close-review-loop` with the configured review
+    provider. Repair in bounded batches, re-run the full gate, push, re-trigger
+    review when the provider supports it, and repeat until the closure contract
+    is met.
+11. **Preserve learning.** Apply `$use-project-knowledge` after the final gate.
+    Capture only redacted, provenance-backed verified learning. Record reusable
+    procedures as non-executable skill candidates.
+12. **Hand off.** State the outcome, PR, evidence, decisions, residual risks, and only actions requiring human authority.
 
 ## Control Rules
 
 - Make reasonable, reversible, evidence-backed implementation choices without interrupting the user.
 - Ask one consequential question at a time for a new or ambiguous project.
-  Recommend the safest default in plain language. Do not ask the user to choose
-  frameworks, commands, or implementation details the repository can answer.
+  Recommend the safest default in plain language, provide at most one genuinely
+  safe alternative when useful, explain the consequence, and accept "use the
+  recommendation." Do not ask the user to choose frameworks, commands, or
+  implementation details the repository can answer.
 - A non-technical instruction does not authorize weakening checks, security,
   data safety, architecture constraints, or release controls. Preserve the
   requested outcome through a safe mechanism.

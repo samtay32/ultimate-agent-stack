@@ -49,6 +49,12 @@
       "role": "scale routing, readiness, and bounded automation"
     },
     {
+      "id": "gbrain",
+      "repository": "https://github.com/garrytan/gbrain.git",
+      "pinned_commit": "3fafb69b077e602e1286af9cb092ed94455657a8",
+      "role": "optional knowledge retrieval, provenance, and evaluated learning"
+    },
+    {
       "id": "treehouse",
       "repository": "https://github.com/kunchenguid/treehouse.git",
       "pinned_commit": "c0b7f685d451",

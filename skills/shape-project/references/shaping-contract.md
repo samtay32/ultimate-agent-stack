@@ -36,7 +36,11 @@ Before asking the user:
 4. Is a reversible default safe?
 5. Would a prototype answer it more reliably?
 
-Ask only if all answers are no and the alternatives materially affect intent or risk. Ask one decision at a time, include a recommendation, and explain the consequence.
+Ask only if all answers are no and the alternatives materially affect intent or
+risk. Ask one decision at a time in plain language. Present one clearly labeled
+recommendation and at most one genuinely safe alternative, explain the
+practical consequence, and allow the user to answer "use the recommendation."
+If no safe alternative exists, say so rather than manufacturing one.
 
 ## Prototype Trigger
 

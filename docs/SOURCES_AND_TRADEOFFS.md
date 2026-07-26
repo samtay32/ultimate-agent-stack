@@ -1,6 +1,8 @@
 # Sources, Synthesis, and Tradeoffs
 
-Research completed July 25, 2026. Repository commit IDs below pin the analyzed state. The package synthesizes patterns; it does not copy third-party source files.
+Initial synthesis research was completed July 25, 2026 and expanded with
+GBrain on July 26, 2026. Repository commit IDs below pin the analyzed state.
+The package synthesizes patterns; it does not copy third-party source files.
 
 ## Primary Repository Matrix
 
@@ -13,6 +15,7 @@ Research completed July 25, 2026. Repository commit IDs below pin the analyzed s
 | [github/spec-kit](https://github.com/github/spec-kit) | `c0fe0e43cd72` | Constitution → specify → clarify → plan → tasks → analyze → implement; traceable requirements and checklists | Stable capability IDs, measurable outcomes, non-goals, constitution/project policy, vertical tasks, consistency/readiness checks | Full specification ceremony for small changes; unsandboxed workflow interpolation; spec as a substitute for runnable evidence |
 | [mattpocock/skills](https://github.com/mattpocock/skills) | `ed37663cc5fb` | Grill-with-docs, prototype, spec, tickets, TDD, debugging, codebase design, independent review | Research before questions, one high-impact clarification, fidelity ladder, public test seams, tracer slices, two review axes, deep-module heuristics | Large questioning sessions by default; keeping prototype code; one workflow regardless of context size |
 | [bmad-code-org/bmad-method](https://github.com/bmad-code-org/bmad-method) | `bb45db4aa449` | Scale-adaptive flow, readiness review, architecture spine, dev-auto repair loop | Tiered shaping, binding architecture decisions, requirement traceability, bounded repair loops, "bad spec loops back" behavior | Persona/party-mode machinery, large document catalogs, separate agents for every role, framework-wide installation |
+| [garrytan/gbrain](https://github.com/garrytan/gbrain) | `3fafb69b077e` | Long-lived knowledge retrieval, synthesis, provenance, graph traversal, gap analysis, MCP access, and skill evaluation | Optional provider-neutral knowledge adapter, repository fallback, scoped retrieval receipts, verified capture, and evaluated skill candidates | Full skill-pack installation, ambient capture, Minions queue, dream/autopilot cycles, self-updater, or memory as delivery authority |
 
 ### Firstmate Review on July 25, 2026
 
@@ -34,6 +37,16 @@ writes, persists dispositions, and falls back to serial work. Other harnesses
 may delegate only when their current native surface is proven. The Kimi/tmux
 adapter remains deferred because it solves Firstmate-specific process control,
 not this package's portable contract.
+
+### GBrain Decision on July 26, 2026
+
+GBrain is adopted as an optional knowledge provider, not a runtime dependency or
+orchestrator. Ultimate Agent Stack keeps repository instructions, locked
+artifacts, current code, tests, and authoritative sources as truth. GBrain
+retrieval is scoped, provenance-preserving, and untrusted until validated;
+capture is limited to redacted verified learning. Provider failure falls back
+to repository state. Its complete skill collection, ambient message capture,
+agent queue, dream cycle, and updater remain outside the package.
 
 ## Related Kunchenguid Repository Review
 
@@ -63,6 +76,7 @@ The linked profile was reviewed for related original work rather than treating e
 | [L8 Principal's Agentic Engineering Workflow](https://www.youtube.com/watch?v=iQyg-KypKAA) | Minimal global instructions, project memory, progressive skills, high-fidelity planning, independent validation, human attention at start/end, optional worktrees | Small `AGENTS.md`, focused skills, optional visual planning/isolation, agent-owned middle |
 | [Don't waste time on specs: /prototype instead](https://www.youtube.com/watch?v=n0VhIVtviC0) | Use a fidelity ladder; prototype UI/state questions; make multiple real variants; prototype is disposable primary-source evidence | Prototype trigger in shaping; decisions captured before production implementation |
 | [mattpocock/skills: complete workflow](https://www.youtube.com/watch?v=M6mYodf0dJM) | Grill → prototype when needed → direct implement or spec/tickets → TDD → independent standards/spec review | Explicit orchestrator, scale-based branch, vertical slices, two-axis review |
+| [Every company should have a Brain](https://www.youtube.com/watch?v=eBUyTS7SzV4) | Skill files as workers, resolver as org chart, deterministic versus latent compute, company library plus librarian, compounding verified learning, and explicit stale-memory/bad-skill failure modes | Guided provider-neutral knowledge plane, repository authority, provenance and contradiction checks, verified capture, and non-executable skill candidates |
 
 ## Current Platform and Review Documentation
 
@@ -74,6 +88,9 @@ The linked profile was reviewed for related original work rather than treating e
 - [Grok skills and plugins](https://docs.x.ai/build/features/skills-plugins-marketplaces): `.grok/skills`, plugin discovery, Claude compatibility, and `.agents/skills` compatibility.
 - [Codex subagents](https://developers.openai.com/codex/subagents/), [Claude Code subagents](https://code.claude.com/docs/en/sub-agents), [Gemini CLI subagents](https://github.com/google-gemini/gemini-cli/blob/main/docs/core/subagents.md), and [OpenCode agents](https://opencode.ai/docs/agents/): native delegation capabilities differ, so one portable assignment contract must degrade safely rather than pretend every harness is identical.
 - [CodeRabbit configuration](https://docs.coderabbit.ai/reference/configuration) and [commands](https://docs.coderabbit.ai/guides/commands): current schema, review controls, and re-review commands.
+- [GBrain README](https://github.com/garrytan/gbrain): current local/MCP
+  connection surface, raw and synthesized retrieval, capture, provenance, access
+  scopes, skill optimization, and optional autonomous features.
 - [GitHub protected branches](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches): required status checks, approvals, conversation resolution, and merge controls.
 
 ## Core Tradeoffs

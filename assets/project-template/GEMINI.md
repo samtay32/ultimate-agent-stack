@@ -5,6 +5,8 @@ Read and follow `AGENTS.md`, `.agent-stack/core-policy.json`,
 Project-specific instructions remain authoritative.
 
 Use `$run-autonomous-delivery` as the controlling workflow. Apply
+`$use-project-knowledge` with the configured provider and repository fallback.
+Apply
 `$coordinate-parallel-delivery` to choose serial or bounded native subagent
 execution. The primary agent owns every assignment, authority boundary,
 monitoring decision, integration, verification step, and worker cleanup.

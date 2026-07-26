@@ -10,6 +10,8 @@ Resolve decisions that would otherwise cause rework. Do not turn every task into
 ## Procedure
 
 1. Inspect the repository, domain documentation, relevant code, issue history, and authoritative external docs.
+   Apply `$use-project-knowledge` first when configured memory may contain a
+   relevant decision, incident, or analogous project.
 2. Classify the work using [references/shaping-contract.md](references/shaping-contract.md).
 3. Write the smallest sufficient artifact:
    - direct change: a micro-brief in `.agent-stack/artifacts/DELIVERY.md`;
@@ -25,7 +27,9 @@ Resolve decisions that would otherwise cause rework. Do not turn every task into
 5. Research facts instead of asking the user. For remaining ambiguity:
    - make a reversible default and record it;
    - ask one high-impact question only if alternatives materially change product intent or risk;
-   - recommend a choice and explain the consequence.
+   - state it in plain language, recommend one choice, provide at most one
+     genuinely safe alternative, explain the consequence, and accept "use the
+     recommendation."
 6. Use a throwaway prototype when runnable behavior answers a question more cheaply than prose:
    - UI: produce meaningfully different variants and expose a fast selector;
    - logic: use a terminal/state-machine harness;

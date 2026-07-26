@@ -4,4 +4,8 @@ globs:
 alwaysApply: false
 ---
 
-Read and follow `AGENTS.md`, `.agent-stack/config.json`, and the relevant locked artifacts before editing. Use `.agent-stack/bin/agent_stack.py` for lock and verification evidence. Own routine execution; stop only at the authority boundaries defined in `AGENTS.md`.
+Read and follow `AGENTS.md`, `.agent-stack/core-policy.json`,
+`.agent-stack/config.json`, and the relevant locked artifacts before editing.
+Use `.agent-stack/bin/agent-stack.mjs` for configuration, lock, and verification
+evidence. Apply the configured review and knowledge providers. Own routine
+execution; stop only at the authority boundaries defined in `AGENTS.md`.

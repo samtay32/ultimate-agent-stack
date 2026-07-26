@@ -35,10 +35,11 @@ const PACKAGE_JSON = existsSync(join(PACKAGE_ROOT, "package.json"))
   ? JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8"))
   : {
       name: "ultimate-agent-stack",
-      version: "0.3.0",
+      version: "0.4.0",
     };
 const PACKAGE_NAME = PACKAGE_JSON.name;
 const PACKAGE_VERSION = PACKAGE_JSON.version;
+const CONFIG_SCHEMA_VERSION = 2;
 const CONFIG_PATH = ".agent-stack/config.json";
 const INSTALLATION_PATH = ".agent-stack/installation.json";
 const STATE_PATH = ".agent-stack/state.json";
@@ -99,6 +100,23 @@ const SAFE_ENVIRONMENT_NAMES = [
 ];
 const SENSITIVE_ENVIRONMENT_NAME =
   /(api|auth|access|private|secret|token|password|passwd|credential|cookie|session|key)/i;
+const PROJECT_PROFILES = new Set(["experimental", "standard", "production"]);
+const REVIEW_PROVIDERS = new Set([
+  "builtin",
+  "coderabbit",
+  "github-human",
+]);
+const KNOWLEDGE_PROVIDERS = new Set(["repository", "gbrain"]);
+const KNOWLEDGE_SCOPES = new Set(["project", "organization"]);
+const EXTERNAL_DATA_POLICIES = new Set([
+  "local_only",
+  "approved_providers",
+]);
+const EXECUTION_MODES = new Set(["agent_owned", "proposal_only"]);
+const MERGE_MODES = new Set([
+  "human_approval_required",
+  "policy_authorized",
+]);
 
 class StackError extends Error {
   constructor(message, exitCode = 2, details = undefined) {
@@ -590,11 +608,45 @@ function detectProject(target) {
 
 function defaultConfig(target, detected) {
   return {
-    schema_version: 1,
+    schema_version: CONFIG_SCHEMA_VERSION,
     project: {
       name: basename(target),
       stacks: detected.stacks,
       detected_at: detected.detected_at,
+    },
+    onboarding: {
+      status: "pending",
+      project_profile: "standard",
+      external_data_policy: "local_only",
+      configured_at: null,
+    },
+    interaction: {
+      mode: "guided",
+      plain_language: true,
+      ask_one_decision_at_a_time: true,
+      recommendation_required: true,
+      maximum_options: 2,
+      unsafe_alternatives_forbidden: true,
+    },
+    capabilities: {
+      review: {
+        provider: "builtin",
+        required_for_release: false,
+        current_revision_required: true,
+        allowed_logins: [],
+      },
+      knowledge: {
+        provider: "repository",
+        scope: "project",
+        required: false,
+        capture: "verified_proposals_only",
+        repository_fallback: true,
+      },
+    },
+    learning: {
+      auto_activate_skills: false,
+      verified_candidates_only: true,
+      evaluation_required: true,
     },
     autonomy: {
       execution: "agent_owned",
@@ -616,6 +668,9 @@ function defaultConfig(target, detected) {
       approved_checks_hash: null,
       approved_at: null,
       approval_reason: null,
+      approved_configuration_hash: null,
+      configuration_approved_at: null,
+      configuration_approval_reason: null,
       project_root_only: true,
       forbid_shell_commands: true,
       max_check_timeout_seconds: 7200,
@@ -629,9 +684,64 @@ function defaultConfig(target, detected) {
   };
 }
 
-function migrateConfig(config) {
-  config.schema_version ??= 1;
+function migrateConfig(config, target = undefined) {
+  const previousSchema = config.schema_version ?? 1;
+  if (previousSchema < CONFIG_SCHEMA_VERSION) {
+    config.schema_version = CONFIG_SCHEMA_VERSION;
+  }
   config.project ??= {};
+  const detectedCodeRabbit =
+    Boolean(target) &&
+    (projectExists(target, ".coderabbit.yaml") ||
+      projectExists(target, REVIEW_WORKFLOW_PATH));
+  config.onboarding ??= {
+    status: previousSchema < CONFIG_SCHEMA_VERSION ? "needs_confirmation" : "pending",
+    project_profile: detectedCodeRabbit ? "production" : "standard",
+    external_data_policy: "local_only",
+    configured_at: null,
+  };
+  config.onboarding.status ??=
+    previousSchema < CONFIG_SCHEMA_VERSION ? "needs_confirmation" : "pending";
+  config.onboarding.project_profile ??= detectedCodeRabbit
+    ? "production"
+    : "standard";
+  config.onboarding.external_data_policy ??= "local_only";
+  config.onboarding.configured_at ??= null;
+  config.interaction ??= {};
+  config.interaction.mode ??= "guided";
+  config.interaction.plain_language ??= true;
+  config.interaction.ask_one_decision_at_a_time ??= true;
+  config.interaction.recommendation_required ??= true;
+  config.interaction.maximum_options ??= 2;
+  config.interaction.unsafe_alternatives_forbidden ??= true;
+  config.capabilities ??= {};
+  config.capabilities.review ??= {
+    provider: detectedCodeRabbit ? "coderabbit" : "builtin",
+    required_for_release: detectedCodeRabbit,
+    current_revision_required: true,
+    allowed_logins: [],
+  };
+  config.capabilities.review.provider ??= detectedCodeRabbit
+    ? "coderabbit"
+    : "builtin";
+  config.capabilities.review.required_for_release ??=
+    config.capabilities.review.provider !== "builtin";
+  config.capabilities.review.current_revision_required ??= true;
+  config.capabilities.review.allowed_logins = Array.isArray(
+    config.capabilities.review.allowed_logins,
+  )
+    ? [...new Set(config.capabilities.review.allowed_logins)]
+    : [];
+  config.capabilities.knowledge ??= {};
+  config.capabilities.knowledge.provider ??= "repository";
+  config.capabilities.knowledge.scope ??= "project";
+  config.capabilities.knowledge.required ??= false;
+  config.capabilities.knowledge.capture ??= "verified_proposals_only";
+  config.capabilities.knowledge.repository_fallback ??= true;
+  config.learning ??= {};
+  config.learning.auto_activate_skills ??= false;
+  config.learning.verified_candidates_only ??= true;
+  config.learning.evaluation_required ??= true;
   config.autonomy ??= {};
   config.autonomy.execution ??= "agent_owned";
   config.autonomy.merge ??= "human_approval_required";
@@ -660,6 +770,9 @@ function migrateConfig(config) {
   config.safety.approved_checks_hash ??= null;
   config.safety.approved_at ??= null;
   config.safety.approval_reason ??= null;
+  config.safety.approved_configuration_hash ??= null;
+  config.safety.configuration_approved_at ??= null;
+  config.safety.configuration_approval_reason ??= null;
   config.safety.project_root_only = true;
   config.safety.forbid_shell_commands = true;
   config.safety.max_check_timeout_seconds ??= 7200;
@@ -770,10 +883,21 @@ function validateCommand(check, index, config, target = undefined) {
   return errors;
 }
 
+function rejectUnknownKeys(errors, value, allowed, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return;
+  }
+  for (const key of Object.keys(value)) {
+    if (!allowed.has(key)) {
+      errors.push(`${label} contains unsupported key: ${key}`);
+    }
+  }
+}
+
 function validateConfig(config, target = undefined) {
   const errors = [];
-  if (config.schema_version !== 1) {
-    errors.push("schema_version must equal 1");
+  if (config.schema_version !== CONFIG_SCHEMA_VERSION) {
+    errors.push(`schema_version must equal ${CONFIG_SCHEMA_VERSION}`);
   }
   if (!config.quality || typeof config.quality !== "object") {
     return [...errors, "quality must be an object"];
@@ -787,6 +911,223 @@ function validateConfig(config, target = undefined) {
     Array.isArray(config.parallel_delivery)
   ) {
     return [...errors, "parallel_delivery must be an object"];
+  }
+  if (
+    !config.onboarding ||
+    typeof config.onboarding !== "object" ||
+    Array.isArray(config.onboarding)
+  ) {
+    return [...errors, "onboarding must be an object"];
+  }
+  if (!["pending", "needs_confirmation", "complete"].includes(config.onboarding.status)) {
+    errors.push(
+      "onboarding.status must be pending, needs_confirmation, or complete",
+    );
+  }
+  if (!PROJECT_PROFILES.has(config.onboarding.project_profile)) {
+    errors.push(
+      "onboarding.project_profile must be experimental, standard, or production",
+    );
+  }
+  if (
+    !EXTERNAL_DATA_POLICIES.has(config.onboarding.external_data_policy)
+  ) {
+    errors.push(
+      "onboarding.external_data_policy must be local_only or approved_providers",
+    );
+  }
+  rejectUnknownKeys(
+    errors,
+    config.onboarding,
+    new Set([
+      "status",
+      "project_profile",
+      "external_data_policy",
+      "configured_at",
+    ]),
+    "onboarding",
+  );
+  rejectUnknownKeys(
+    errors,
+    config.interaction,
+    new Set([
+      "mode",
+      "plain_language",
+      "ask_one_decision_at_a_time",
+      "recommendation_required",
+      "maximum_options",
+      "unsafe_alternatives_forbidden",
+    ]),
+    "interaction",
+  );
+  if (
+    config.interaction?.mode !== "guided" ||
+    config.interaction?.plain_language !== true ||
+    config.interaction?.ask_one_decision_at_a_time !== true ||
+    config.interaction?.recommendation_required !== true ||
+    config.interaction?.maximum_options !== 2 ||
+    config.interaction?.unsafe_alternatives_forbidden !== true
+  ) {
+    errors.push(
+      "interaction must preserve guided plain-language decisions with one recommendation, at most one alternative, and no unsafe alternatives",
+    );
+  }
+  const review = config.capabilities?.review;
+  const knowledge = config.capabilities?.knowledge;
+  rejectUnknownKeys(
+    errors,
+    config.capabilities,
+    new Set(["review", "knowledge"]),
+    "capabilities",
+  );
+  if (!review || typeof review !== "object" || Array.isArray(review)) {
+    errors.push("capabilities.review must be an object");
+  } else {
+    rejectUnknownKeys(
+      errors,
+      review,
+      new Set([
+        "provider",
+        "required_for_release",
+        "current_revision_required",
+        "allowed_logins",
+      ]),
+      "capabilities.review",
+    );
+    if (!REVIEW_PROVIDERS.has(review.provider)) {
+      errors.push(
+        "capabilities.review.provider must be builtin, coderabbit, or github-human",
+      );
+    }
+    if (typeof review.required_for_release !== "boolean") {
+      errors.push(
+        "capabilities.review.required_for_release must be a boolean",
+      );
+    }
+    if (review.current_revision_required !== true) {
+      errors.push(
+        "capabilities.review.current_revision_required must remain true",
+      );
+    }
+    if (
+      !Array.isArray(review.allowed_logins) ||
+      !review.allowed_logins.every(
+        (login) =>
+          typeof login === "string" &&
+          /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(login),
+      )
+    ) {
+      errors.push(
+        "capabilities.review.allowed_logins must contain valid GitHub logins",
+      );
+    }
+    if (
+      review.provider === "github-human" &&
+      (!Array.isArray(review.allowed_logins) ||
+        review.allowed_logins.length === 0)
+    ) {
+      errors.push(
+        "github-human review requires at least one allowed GitHub login",
+      );
+    }
+  }
+  if (!knowledge || typeof knowledge !== "object" || Array.isArray(knowledge)) {
+    errors.push("capabilities.knowledge must be an object");
+  } else {
+    rejectUnknownKeys(
+      errors,
+      knowledge,
+      new Set([
+        "provider",
+        "scope",
+        "required",
+        "capture",
+        "repository_fallback",
+      ]),
+      "capabilities.knowledge",
+    );
+    if (!KNOWLEDGE_PROVIDERS.has(knowledge.provider)) {
+      errors.push(
+        "capabilities.knowledge.provider must be repository or gbrain",
+      );
+    }
+    if (!KNOWLEDGE_SCOPES.has(knowledge.scope)) {
+      errors.push(
+        "capabilities.knowledge.scope must be project or organization",
+      );
+    }
+    if (knowledge.required !== false) {
+      errors.push("capabilities.knowledge.required must remain false");
+    }
+    if (
+      !["disabled", "verified_proposals_only"].includes(knowledge.capture)
+    ) {
+      errors.push(
+        "capabilities.knowledge.capture must be disabled or verified_proposals_only",
+      );
+    }
+    if (knowledge.repository_fallback !== true) {
+      errors.push(
+        "capabilities.knowledge.repository_fallback must remain true",
+      );
+    }
+    if (
+      knowledge.provider === "gbrain" &&
+      config.onboarding.external_data_policy !== "approved_providers"
+    ) {
+      errors.push(
+        "gbrain requires onboarding.external_data_policy approved_providers",
+      );
+    }
+    if (
+      knowledge.provider === "repository" &&
+      knowledge.scope !== "project"
+    ) {
+      errors.push("repository knowledge supports project scope only");
+    }
+  }
+  if (
+    config.learning?.auto_activate_skills !== false ||
+    config.learning?.verified_candidates_only !== true ||
+    config.learning?.evaluation_required !== true
+  ) {
+    errors.push(
+      "learning must forbid automatic skill activation and require verified, evaluated candidates",
+    );
+  }
+  rejectUnknownKeys(
+    errors,
+    config.learning,
+    new Set([
+      "auto_activate_skills",
+      "verified_candidates_only",
+      "evaluation_required",
+    ]),
+    "learning",
+  );
+  if (!EXECUTION_MODES.has(config.autonomy?.execution)) {
+    errors.push("autonomy.execution must be agent_owned or proposal_only");
+  }
+  if (!MERGE_MODES.has(config.autonomy?.merge)) {
+    errors.push(
+      "autonomy.merge must be human_approval_required or policy_authorized",
+    );
+  }
+  if (
+    config.onboarding.project_profile === "production" &&
+    review?.provider === "builtin"
+  ) {
+    errors.push(
+      "production profile requires an independent external review provider",
+    );
+  }
+  if (
+    config.onboarding.project_profile === "production" &&
+    review?.required_for_release !== true
+  ) {
+    errors.push(
+      "production profile requires review.required_for_release true",
+    );
   }
   if (config.autonomy?.parallel_work !== "coordinator_managed_isolated_only") {
     errors.push(
@@ -944,6 +1285,27 @@ function checksHash(checks, target = undefined) {
       }
     : checks;
   return sha256(stableJson(payload));
+}
+
+function configurationHash(config) {
+  return sha256(
+    stableJson({
+      onboarding: {
+        status: config.onboarding?.status,
+        project_profile: config.onboarding?.project_profile,
+        external_data_policy: config.onboarding?.external_data_policy,
+      },
+      interaction: config.interaction,
+      capabilities: config.capabilities,
+      learning: config.learning,
+      autonomy: {
+        execution: config.autonomy?.execution,
+        merge: config.autonomy?.merge,
+        parallel_work: config.autonomy?.parallel_work,
+      },
+      parallel_delivery: config.parallel_delivery,
+    }),
+  );
 }
 
 function loadInstallation(target) {
@@ -1190,7 +1552,7 @@ function installOrUpgrade(target, { claude = false, mode = "init" } = {}) {
     atomicJson(configFile, defaultConfig(target, detected));
     outcomes.push({ path: CONFIG_PATH, status: "created" });
   } else {
-    const config = migrateConfig(readJson(configFile, "project config"));
+    const config = migrateConfig(readJson(configFile, "project config"), target);
     atomicJson(configFile, config);
     outcomes.push({ path: CONFIG_PATH, status: "migrated-or-unchanged" });
   }
@@ -1225,14 +1587,203 @@ function installOrUpgrade(target, { claude = false, mode = "init" } = {}) {
     next_prompt:
       pending.length > 0
         ? "Reconcile the listed proposals, run adopt-managed for each, then run doctor."
-        : "Read .agent-stack/HANDOFF.md, run doctor, review and approve detected checks, then begin conversational project shaping. The primary agent may coordinate safe parallel work automatically.",
+        : "Read .agent-stack/HANDOFF.md, inspect capabilities, complete guided onboarding with configure, review and approve detected checks, run doctor, then begin conversational project shaping.",
   };
 }
 
 function loadConfig(target) {
   return migrateConfig(
     readJson(projectFile(target, CONFIG_PATH, "project config"), "project config"),
+    target,
   );
+}
+
+function commandCapabilities(target) {
+  const config = projectExists(target, CONFIG_PATH, "project config")
+    ? loadConfig(target)
+    : null;
+  const codeRabbitFiles = {
+    configuration: projectExists(target, ".coderabbit.yaml"),
+    receipt_workflow: projectExists(target, REVIEW_WORKFLOW_PATH),
+  };
+  return {
+    ok: true,
+    selected: config?.capabilities ?? null,
+    available: {
+      review: {
+        builtin: {
+          available: true,
+          external: false,
+          detail: "Repository-owned standards and intent review",
+        },
+        coderabbit: {
+          available:
+            codeRabbitFiles.configuration &&
+            codeRabbitFiles.receipt_workflow,
+          external: true,
+          detail: codeRabbitFiles,
+          authorization:
+            "GitHub App authorization is verified during pull-request review",
+        },
+        "github-human": {
+          available:
+            projectExists(target, REVIEW_WORKFLOW_PATH) &&
+            executableExists(target, "git"),
+          external: true,
+          detail: "Requires one or more explicitly allowed GitHub logins",
+        },
+      },
+      knowledge: {
+        repository: {
+          available: true,
+          external: false,
+          detail: "Locked artifacts, decisions, evidence, and Git history",
+        },
+        gbrain: {
+          available: executableExists(target, "gbrain"),
+          external: true,
+          detail: executableExists(target, "gbrain")
+            ? "gbrain CLI detected; the agent must still verify the selected brain and access scope"
+            : "CLI not detected; an existing harness MCP connection may still be available",
+        },
+      },
+    },
+  };
+}
+
+function commandConfigure(
+  target,
+  {
+    profile,
+    review,
+    knowledge,
+    knowledgeScope = "project",
+    externalData,
+    execution = "agent_owned",
+    merge = "human_approval_required",
+    reviewers = [],
+    reason,
+  },
+) {
+  if (typeof reason !== "string" || reason.trim().length < 12) {
+    throw new StackError(
+      "Configuration reason must record the user's approved project and provider choices.",
+    );
+  }
+  if (!PROJECT_PROFILES.has(profile)) {
+    throw new StackError(
+      "--profile must be experimental, standard, or production",
+    );
+  }
+  if (!REVIEW_PROVIDERS.has(review)) {
+    throw new StackError(
+      "--review must be builtin, coderabbit, or github-human",
+    );
+  }
+  if (!KNOWLEDGE_PROVIDERS.has(knowledge)) {
+    throw new StackError("--knowledge must be repository or gbrain");
+  }
+  if (!KNOWLEDGE_SCOPES.has(knowledgeScope)) {
+    throw new StackError(
+      "--knowledge-scope must be project or organization",
+    );
+  }
+  if (!EXTERNAL_DATA_POLICIES.has(externalData)) {
+    throw new StackError(
+      "--external-data must be local_only or approved_providers",
+    );
+  }
+  if (!EXECUTION_MODES.has(execution)) {
+    throw new StackError("--execution must be agent_owned or proposal_only");
+  }
+  if (!MERGE_MODES.has(merge)) {
+    throw new StackError(
+      "--merge must be human_approval_required or policy_authorized",
+    );
+  }
+  if (profile === "production" && review === "builtin") {
+    throw new StackError(
+      "The production profile requires CodeRabbit or an allowed GitHub human reviewer.",
+    );
+  }
+  if (knowledge === "gbrain" && externalData !== "approved_providers") {
+    throw new StackError(
+      "GBrain is an external provider. Select approved_providers or keep repository memory.",
+    );
+  }
+  if (knowledge === "repository" && knowledgeScope !== "project") {
+    throw new StackError(
+      "Repository knowledge supports project scope only. Select GBrain for an approved organization scope.",
+    );
+  }
+
+  const config = loadConfig(target);
+  const normalizedReviewers = [
+    ...new Set(
+      reviewers
+        .map((login) => String(login).trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ];
+  if (review === "github-human" && normalizedReviewers.length === 0) {
+    throw new StackError(
+      "github-human review requires one or more allowed GitHub logins.",
+    );
+  }
+  config.onboarding = {
+    status: "complete",
+    project_profile: profile,
+    external_data_policy: externalData,
+    configured_at: utcTimestamp(),
+  };
+  config.interaction = {
+    mode: "guided",
+    plain_language: true,
+    ask_one_decision_at_a_time: true,
+    recommendation_required: true,
+    maximum_options: 2,
+    unsafe_alternatives_forbidden: true,
+  };
+  config.capabilities.review = {
+    provider: review,
+    required_for_release: review !== "builtin",
+    current_revision_required: true,
+    allowed_logins: review === "github-human" ? normalizedReviewers : [],
+  };
+  config.capabilities.knowledge = {
+    provider: knowledge,
+    scope: knowledgeScope,
+    required: false,
+    capture: "verified_proposals_only",
+    repository_fallback: true,
+  };
+  config.learning = {
+    auto_activate_skills: false,
+    verified_candidates_only: true,
+    evaluation_required: true,
+  };
+  config.autonomy.execution = execution;
+  config.autonomy.merge = merge;
+  const errors = validateConfig(config, target);
+  if (errors.length > 0) {
+    throw new StackError("Cannot approve invalid configuration", 2, errors);
+  }
+  config.safety.approved_configuration_hash = configurationHash(config);
+  config.safety.configuration_approved_at = utcTimestamp();
+  config.safety.configuration_approval_reason = reason.trim();
+  atomicProjectJson(target, CONFIG_PATH, config, "project config");
+  return {
+    ok: true,
+    onboarding: config.onboarding,
+    capabilities: config.capabilities,
+    autonomy: {
+      execution: config.autonomy.execution,
+      merge: config.autonomy.merge,
+    },
+    approved_configuration_hash:
+      config.safety.approved_configuration_hash,
+    approved_at: config.safety.configuration_approved_at,
+  };
 }
 
 function commandDetect(target, write) {
@@ -1380,6 +1931,53 @@ function commandDoctor(target) {
     const config = loadConfig(target);
     const errors = validateConfig(config, target);
     report("config", errors.length === 0, errors.length === 0 ? "valid" : errors);
+    report(
+      "onboarding",
+      config.onboarding.status === "complete",
+      config.onboarding.status === "complete"
+        ? {
+            profile: config.onboarding.project_profile,
+            external_data: config.onboarding.external_data_policy,
+            configured_at: config.onboarding.configured_at,
+          }
+        : `${config.onboarding.status}; complete guided setup with the configure command`,
+    );
+    const actualConfigurationHash = configurationHash(config);
+    report(
+      "configuration-approval",
+      config.safety.approved_configuration_hash === actualConfigurationHash,
+      config.safety.approved_configuration_hash === actualConfigurationHash
+        ? `approved ${config.safety.configuration_approved_at}`
+        : "provider, interaction, autonomy, or profile choices changed or have not been approved",
+    );
+    const capabilities = commandCapabilities(target);
+    const reviewProvider = config.capabilities.review.provider;
+    const reviewAvailability =
+      capabilities.available.review[reviewProvider]?.available === true;
+    report(
+      "review-provider",
+      reviewAvailability,
+      {
+        selected: reviewProvider,
+        required_for_release:
+          config.capabilities.review.required_for_release,
+        availability: capabilities.available.review[reviewProvider],
+      },
+      config.capabilities.review.required_for_release ? "required" : "warning",
+    );
+    const knowledgeProvider = config.capabilities.knowledge.provider;
+    const knowledgeAvailability =
+      capabilities.available.knowledge[knowledgeProvider]?.available === true;
+    report(
+      "knowledge-provider",
+      knowledgeAvailability,
+      {
+        selected: knowledgeProvider,
+        fallback: "repository",
+        availability: capabilities.available.knowledge[knowledgeProvider],
+      },
+      "warning",
+    );
     const parallel = config.parallel_delivery;
     const parallelErrors = errors.filter(
       (error) =>
@@ -1576,6 +2174,18 @@ function commandVerify(target, failFast = false) {
     checks: [],
   };
   const actualChecksHash = checksHash(config.quality.checks, target);
+  if (config.onboarding.status !== "complete") {
+    errors.push(
+      "guided onboarding is incomplete; configure the approved project profile and providers",
+    );
+  }
+  if (
+    config.safety.approved_configuration_hash !== configurationHash(config)
+  ) {
+    errors.push(
+      "provider, interaction, autonomy, or profile choices changed or were not approved",
+    );
+  }
   if (
     config.safety.require_check_approval !== false &&
     config.safety.approved_checks_hash !== actualChecksHash
@@ -1729,8 +2339,16 @@ function commandStatus(target) {
   const actualChecksHash = config
     ? checksHash(config.quality?.checks ?? [], target)
     : null;
+  const actualConfigurationHash = config
+    ? configurationHash(config)
+    : null;
   return {
-    ok: Boolean(installation && config) && pending.length === 0 && drift.length === 0,
+    ok:
+      Boolean(installation && config) &&
+      pending.length === 0 &&
+      drift.length === 0 &&
+      config.onboarding.status === "complete" &&
+      config.safety.approved_configuration_hash === actualConfigurationHash,
     package_available: { name: PACKAGE_NAME, version: PACKAGE_VERSION },
     installed: installation?.package ?? null,
     upgrade_available:
@@ -1741,6 +2359,11 @@ function commandStatus(target) {
     checks_approved:
       Boolean(config) &&
       config.safety?.approved_checks_hash === actualChecksHash,
+    onboarding: config?.onboarding ?? null,
+    capabilities: config?.capabilities ?? null,
+    configuration_approved:
+      Boolean(config) &&
+      config.safety?.approved_configuration_hash === actualConfigurationHash,
     active_lock: state.active_lock?.locked_at ?? null,
   };
 }
@@ -1752,10 +2375,36 @@ function commandStart(target, idea) {
       `Project is not initialized. Run npx -y ${PACKAGE_NAME}@latest init`,
     );
   }
+  const config = loadConfig(target);
   const request = idea?.trim() || "[describe what you want to build or change]";
+  const configurationApproved =
+    config.safety.approved_configuration_hash === configurationHash(config);
+  if (
+    config.onboarding.status !== "complete" ||
+    !configurationApproved
+  ) {
+    return {
+      ok: true,
+      phase: "onboarding",
+      prompt: `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, and .agent-stack/config.json. Inspect the repository and run the capabilities command. Complete Ultimate Agent Stack onboarding before material implementation.\n\nAsk only consequential setup decisions, one at a time. For each decision use plain language, state one recommended choice, provide at most one genuinely safe alternative, explain the practical consequence, and accept "use the recommendation" as an answer. Never invent an unsafe alternative. Prefer repository evidence and safe defaults over questions.\n\nConfigure the approved project profile, review provider, knowledge provider, external-data policy, and authority mode with the non-interactive configure command. Then run doctor and continue with this request: ${request}`,
+      pending: {
+        onboarding_status: config.onboarding.status,
+        configuration_approved: configurationApproved,
+      },
+    };
+  }
   return {
     ok: true,
-    prompt: `Read AGENTS.md, .agent-stack/HANDOFF.md, and the installed skills. Use $run-autonomous-delivery for this request: ${request}\n\nInspect the project first. Use $coordinate-parallel-delivery to manage independent subagent work when it is safe and useful; keep it serial otherwise. You remain the integration owner, and the user must not manage workers. Then ask me one high-impact question at a time, recommend a safe default, and own all routine implementation and verification.`,
+    phase: "project-discovery",
+    configuration: {
+      profile: config.onboarding.project_profile,
+      review: config.capabilities.review.provider,
+      knowledge: config.capabilities.knowledge.provider,
+      knowledge_scope: config.capabilities.knowledge.scope,
+      execution: config.autonomy.execution,
+      merge: config.autonomy.merge,
+    },
+    prompt: `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, .agent-stack/config.json, and the installed skills. Use $run-autonomous-delivery for this request: ${request}\n\nInspect the project first. Apply $use-project-knowledge using the configured ${config.capabilities.knowledge.provider} provider at ${config.capabilities.knowledge.scope} scope, with repository evidence as the source of truth and fallback. Use $coordinate-parallel-delivery to manage independent subagent work when it is safe and useful; keep it serial otherwise. You remain the integration owner, and the user must not manage workers.\n\nBuild a living project brief. Research routine answers. Ask only consequential questions, one at a time. Each question must use plain language, recommend one safe choice, provide at most one genuinely useful safe alternative, explain the consequence, and allow "use the recommendation." Own all routine implementation and verification.`,
   };
 }
 
@@ -1845,10 +2494,15 @@ Safe project setup:
   ultimate-agent-stack upgrade [--target DIR] [--claude]
   ultimate-agent-stack status [--target DIR]
   ultimate-agent-stack doctor [--target DIR]
+  ultimate-agent-stack capabilities [--target DIR]
   ultimate-agent-stack start [--target DIR] [--idea TEXT]
 
 Agent-operated quality controls:
   ultimate-agent-stack detect [--target DIR] [--write]
+  ultimate-agent-stack configure --profile PROFILE --review PROVIDER
+    --knowledge PROVIDER [--knowledge-scope SCOPE] --external-data POLICY
+    --reason TEXT [--reviewer LOGIN ...]
+    [--execution MODE] [--merge MODE] [--target DIR]
   ultimate-agent-stack approve-checks --reason TEXT [--target DIR]
   ultimate-agent-stack verify [--target DIR] [--fail-fast]
   ultimate-agent-stack lock [--target DIR] [--artifact PATH ...]
@@ -1861,7 +2515,8 @@ Maintainer:
 
 All commands are non-interactive and return JSON. init and upgrade never overwrite
 customized files; they create reconciliation proposals instead. Parallel delivery
-is coordinator-managed and falls back to serial work when safe isolation is absent.`;
+is coordinator-managed and falls back to serial work when safe isolation is absent.
+The coding agent conducts guided onboarding; configure records the approved choices.`;
 }
 
 function execute(command, args) {
@@ -1886,6 +2541,37 @@ function execute(command, args) {
       assertNoUnknownOptions(args, ["--target"], ["--write"]);
       const target = resolveTarget(getOption(args, "--target", "."));
       return commandDetect(target, hasFlag(args, "--write"));
+    }
+    case "capabilities": {
+      assertNoUnknownOptions(args, ["--target"]);
+      const target = resolveTarget(getOption(args, "--target", "."));
+      return commandCapabilities(target);
+    }
+    case "configure": {
+      assertNoUnknownOptions(args, [
+        "--target",
+        "--profile",
+        "--review",
+        "--knowledge",
+        "--knowledge-scope",
+        "--external-data",
+        "--execution",
+        "--merge",
+        "--reviewer",
+        "--reason",
+      ]);
+      const target = resolveTarget(getOption(args, "--target", "."));
+      return commandConfigure(target, {
+        profile: getOption(args, "--profile"),
+        review: getOption(args, "--review"),
+        knowledge: getOption(args, "--knowledge"),
+        knowledgeScope: getOption(args, "--knowledge-scope", "project"),
+        externalData: getOption(args, "--external-data"),
+        execution: getOption(args, "--execution", "agent_owned"),
+        merge: getOption(args, "--merge", "human_approval_required"),
+        reviewers: getRepeatedOption(args, "--reviewer"),
+        reason: getOption(args, "--reason"),
+      });
     }
     case "approve-checks": {
       assertNoUnknownOptions(args, ["--target", "--reason"]);
@@ -2008,9 +2694,11 @@ export {
   REVIEW_WORKFLOW_PATH,
   StackError,
   checksHash,
+  commandCapabilities,
   commandAdoptManaged,
   commandApproveChecks,
   commandCheckLock,
+  commandConfigure,
   commandDetect,
   commandDoctor,
   commandLock,
@@ -2019,6 +2707,7 @@ export {
   commandUnlock,
   commandUpstreamCheck,
   commandVerify,
+  configurationHash,
   defaultConfig,
   detectProject,
   execute,
