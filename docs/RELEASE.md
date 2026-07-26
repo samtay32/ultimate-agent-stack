@@ -32,11 +32,12 @@ Before the owner step, the agent must:
 1. verify that the package name is still unclaimed;
 2. confirm the source is committed and pushed to the public repository on
    `main`;
-3. run every release, skill, plugin, Markdown, packed-install, archive, secret,
+3. confirm the bootstrap machine has Node.js 20.12+ and npm 10.8+;
+4. run every release, skill, plugin, Markdown, packed-install, archive, secret,
    and adversarial safety check;
-4. inspect the exact `0.1.0` tarball and confirm the MIT license and repository
+5. inspect the exact `0.1.0` tarball and confirm the MIT license and repository
    metadata;
-5. stop and report the exact hash and remaining owner step.
+6. stop and report the exact hash and remaining owner step.
 
 The owner then:
 
