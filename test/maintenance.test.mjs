@@ -25,12 +25,26 @@ const packageData = JSON.parse(
 const pluginData = JSON.parse(
   readFileSync(join(PACKAGE_ROOT, ".codex-plugin", "plugin.json"), "utf8"),
 );
+const repositoryCodeRabbit = readFileSync(
+  join(PACKAGE_ROOT, ".coderabbit.yaml"),
+  "utf8",
+);
+const templateCodeRabbit = readFileSync(
+  join(PACKAGE_ROOT, "assets/project-template/.coderabbit.yaml"),
+  "utf8",
+);
 
 test("package, plugin, and CLI identity stay synchronized", () => {
   assert.equal(PACKAGE_NAME, packageData.name);
   assert.equal(PACKAGE_VERSION, packageData.version);
   assert.equal(pluginData.name, packageData.name);
   assert.equal(pluginData.version, packageData.version);
+});
+
+test("repository and installed-project CodeRabbit policies stay synchronized", () => {
+  assert.equal(repositoryCodeRabbit, templateCodeRabbit);
+  assert.match(repositoryCodeRabbit, /profile: "assertive"/);
+  assert.match(repositoryCodeRabbit, /auto_incremental_review: false/);
 });
 
 test("package has no install hooks and guards publication with prepublishOnly", () => {

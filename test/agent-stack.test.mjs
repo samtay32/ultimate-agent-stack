@@ -20,6 +20,8 @@ import {
   CORE_POLICY_PATH,
   INSTALLATION_PATH,
   PROJECT_CLI_PATH,
+  REVIEW_RECEIPT_PATH,
+  REVIEW_WORKFLOW_PATH,
   StackError,
   checksHash,
   commandAdoptManaged,
@@ -378,6 +380,28 @@ test("doctor fails when a protected package file drifts", () => {
       doctor.reports.some(
         (report) => report.name === "protected-files" && !report.ok,
       ),
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("review receipt script and workflow install as protected guardrails", () => {
+  const fixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    installOrUpgrade(fixture.directory, { mode: "init" });
+    const installation = loadInstallation(fixture.directory);
+
+    assert.ok(existsSync(join(fixture.directory, REVIEW_RECEIPT_PATH)));
+    assert.ok(existsSync(join(fixture.directory, REVIEW_WORKFLOW_PATH)));
+    assert.equal(
+      installation.managed_files[REVIEW_RECEIPT_PATH].protected,
+      true,
+    );
+    assert.equal(
+      installation.managed_files[REVIEW_WORKFLOW_PATH].protected,
+      true,
     );
   } finally {
     fixture.cleanup();

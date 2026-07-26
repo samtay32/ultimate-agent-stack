@@ -163,6 +163,8 @@ publication unless project policy explicitly grants it.
   They remain executable project code and should run inside the agent
   harness's OS or container sandbox when the project is not already trusted.
 - Missing, skipped, timed-out, or failed required checks fail closed.
+- A protected review-receipt check rejects absent, stale, rate-limited, or
+  unresolved CodeRabbit reviews; each fix push requires another actual review.
 - Intent locks detect silent requirement or architecture drift.
 - Captured command output is bounded and secret-like assignments are redacted.
 - `$secure-launch` derives authentication, tenant isolation, privacy, abuse,
@@ -210,7 +212,8 @@ copies, executes, merges, or publishes upstream code.
   verification, review closure, and maintenance.
 - `bin/ultimate-agent-stack.mjs`: dependency-free Node.js CLI.
 - `assets/project-template/`: protected policy, planning artifacts, PR
-  template, CodeRabbit configuration, and harness adapters.
+  template, CodeRabbit configuration, review-receipt workflow, and harness
+  adapters.
 - `sources/upstreams.json`: pinned read-only research sources.
 - `.github/workflows/`: CI, weekly upstream watch, and protected npm publish.
 - `test/`: deterministic safety and lifecycle tests.

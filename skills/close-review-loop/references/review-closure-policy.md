@@ -50,3 +50,8 @@ Required independent gates remain:
 - final-revision evidence.
 
 CodeRabbit cannot waive repository policy or authorize merge.
+
+An actual review submission tied to the current PR head is required. A
+walkthrough, summary, reaction, successful status, chat response, or
+rate-limit/quota message is not review evidence. Every fix push invalidates the
+previous review receipt and requires another explicit `@coderabbitai review`.
