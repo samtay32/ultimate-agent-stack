@@ -21,7 +21,10 @@ Read [references/review-closure-policy.md](references/review-closure-policy.md) 
    - migration, rollback, and monitoring notes;
    - screenshots or recordings for visual changes;
    - known risks and explicit deferrals.
-4. Wait for required CI and CodeRabbit. Query review threads and check runs; do not rely only on the PR summary.
+4. Wait for required CI and an actual CodeRabbit review of the current head.
+   Query review threads and check runs; do not rely on a summary, reaction,
+   status context, or rate-limit comment. When installed, `review-receipt` must
+   pass.
 5. Normalize each finding by root cause. Deduplicate only when the same change resolves the same claim.
 6. Disposition findings:
    - **fix:** valid and in scope;
@@ -36,6 +39,8 @@ Read [references/review-closure-policy.md](references/review-closure-policy.md) 
    ```
 
    Use `@coderabbitai full review` after a major rebase or when review coverage is uncertain. Do not spam triggers while a review is running.
+   A rate or quota limit is a blocker: wait for capacity and request the review
+   again.
 9. Reply to findings with the fix commit or evidence. Resolve a thread only after the issue is actually closed.
 10. Repeat until the closure contract holds. Use `@coderabbitai approve` only when CodeRabbit's request-changes workflow is configured and all of its actionable threads are closed.
 
@@ -51,6 +56,8 @@ Ready to merge means:
 - no open Minor finding affects correctness, security, privacy, reliability, data integrity, compatibility, accessibility, observability, or required tests;
 - every remaining suggestion is explicitly rebutted or deferred with evidence;
 - final pushed revision has full-gate evidence;
+- CodeRabbit submitted a review whose commit matches the final pushed revision;
+- the `review-receipt` check passes when the repository provides it;
 - merge authority is satisfied.
 
 Do not auto-merge unless repository configuration or the user's current request explicitly grants that authority. If merge is not authorized, finish with a merge-ready PR and one clear human action.

@@ -12,6 +12,7 @@ CodeRabbit adds an adversarial reviewer. It does not replace project tests, CI, 
 2. Keep the generated root `.coderabbit.yaml`.
 3. Protect the default branch or create an equivalent ruleset:
    - require the project's CI status checks;
+   - require the `review-receipt` status after its controlled bootstrap;
    - require branches to be current when the repository needs it;
    - require pull-request review;
    - require conversation resolution;
@@ -19,6 +20,14 @@ CodeRabbit adds an adversarial reviewer. It does not replace project tests, CI, 
    - use a merge queue for a busy repository when integration races justify it.
 4. Ensure the agent has least-privilege GitHub access for the actions it is allowed to perform.
 5. Keep merge and deployment authority explicit in `.agent-stack/config.json` and repository policy.
+
+The first setup PR cannot produce a receipt because the default branch does not
+contain the protected evaluator yet. Review that controlled bootstrap with
+CodeRabbit and the repository's existing gates, then merge it without requiring
+`review-receipt`. The installed workflow never executes the PR's copy of the
+evaluator. On the next PR it executes the protected default-branch copy; require
+`review-receipt` in branch protection only after that first successful run
+exists.
 
 GitHub documents these controls in [About protected branches](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches).
 
@@ -34,6 +43,20 @@ The template:
 The last choice is intentional. The agent batches coherent fixes, runs the complete local gate, pushes once, and explicitly requests the next incremental review. This reduces review noise and avoids paying for intermediate broken commits.
 
 The current schema and defaults are documented in CodeRabbit's [configuration reference](https://docs.coderabbit.ai/reference/configuration).
+
+## Review Receipt
+
+CodeRabbit's own status can be green when a review is skipped or rate-limited,
+so it is not used as proof of review. The repository-owned `review-receipt`
+check queries GitHub's review evidence and passes only when:
+
+- CodeRabbit submitted an actual review against the current PR head commit;
+- that current review did not request changes;
+- no current, non-outdated CodeRabbit review thread remains unresolved; and
+- all evidence fits inside the bounded query, otherwise the check fails closed.
+
+A summary, reaction, top-level comment, or rate-limit message is not a review
+receipt. Every push makes the previous receipt stale.
 
 ## Pull Request State Machine
 
@@ -71,9 +94,14 @@ stateDiagram-v2
 
 7. Commit and push the verified batch.
 8. Comment `@coderabbitai review`.
-9. Wait for CI and review completion; query threads, not only the summary.
+9. Wait for CI, an actual current-head review, and `review-receipt`; query
+   threads, not only the summary.
 10. Reply with the disposition and evidence. Resolve only after closure.
 11. Repeat while the actionable set shrinks.
+
+If CodeRabbit reports a rate or quota limit, stop. Wait for capacity and request
+the review again; never treat the limit message or a green summary status as
+approval.
 
 CodeRabbit documents the available commands, including incremental and full review, pause/resume, resolve, and approve, in [Review commands](https://docs.coderabbit.ai/guides/commands).
 
@@ -113,6 +141,7 @@ May be rebutted or deferred:
 - [ ] Final revision matches the locked delivery contract.
 - [ ] Full local gate passes and evidence path is in the PR.
 - [ ] Required GitHub status checks pass.
+- [ ] `review-receipt` proves CodeRabbit reviewed the final head commit.
 - [ ] Branch currency or merge-queue rules pass.
 - [ ] Required approvals exist.
 - [ ] Required conversations are resolved.

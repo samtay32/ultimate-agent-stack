@@ -45,6 +45,8 @@ const STATE_PATH = ".agent-stack/state.json";
 const RUNS_PATH = ".agent-stack/runs";
 const PROJECT_CLI_PATH = ".agent-stack/bin/agent-stack.mjs";
 const CORE_POLICY_PATH = ".agent-stack/core-policy.json";
+const REVIEW_RECEIPT_PATH = ".agent-stack/bin/review-receipt.mjs";
+const REVIEW_WORKFLOW_PATH = ".github/workflows/review-receipt.yml";
 const DEFAULT_ARTIFACTS = [
   ".agent-stack/artifacts/DELIVERY.md",
   ".agent-stack/artifacts/ARCHITECTURE.md",
@@ -895,6 +897,10 @@ function sourceEntries({ claude = false } = {}) {
   }
   const entries = [];
   const templateRoot = join(PACKAGE_ROOT, "assets/project-template");
+  const protectedTemplates = new Set([
+    CORE_POLICY_PATH,
+    REVIEW_WORKFLOW_PATH,
+  ]);
   for (const source of listFiles(templateRoot)) {
     let destination = relative(templateRoot, source)
       .split(sep)
@@ -905,7 +911,7 @@ function sourceEntries({ claude = false } = {}) {
     entries.push({
       destination,
       source,
-      protected: destination === CORE_POLICY_PATH,
+      protected: protectedTemplates.has(destination),
     });
   }
   const skillsRoot = join(PACKAGE_ROOT, "skills");
@@ -924,6 +930,11 @@ function sourceEntries({ claude = false } = {}) {
       });
     }
   }
+  entries.push({
+    destination: REVIEW_RECEIPT_PATH,
+    source: join(PACKAGE_ROOT, "scripts/review-receipt.mjs"),
+    protected: true,
+  });
   entries.push({
     destination: PROJECT_CLI_PATH,
     source: CLI_FILE,
@@ -1891,6 +1902,8 @@ export {
   PACKAGE_ROOT,
   PACKAGE_VERSION,
   PROJECT_CLI_PATH,
+  REVIEW_RECEIPT_PATH,
+  REVIEW_WORKFLOW_PATH,
   StackError,
   checksHash,
   commandAdoptManaged,

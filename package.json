@@ -18,7 +18,7 @@
   ],
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "lint": "node --check bin/ultimate-agent-stack.mjs && node --check scripts/upstream-issue.mjs && node --check scripts/release-preflight.mjs && node --check scripts/packed-smoke.mjs",
+    "lint": "node --check bin/ultimate-agent-stack.mjs && node --check scripts/upstream-issue.mjs && node --check scripts/release-preflight.mjs && node --check scripts/packed-smoke.mjs && node --check scripts/review-receipt.mjs",
     "upstream:check": "node bin/ultimate-agent-stack.mjs upstream-check",
     "package:check": "npm pack --dry-run --json",
     "package:smoke": "node scripts/packed-smoke.mjs",
