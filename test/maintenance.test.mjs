@@ -84,8 +84,8 @@ test("release preflight accepts explicit fully configured metadata", () => {
   );
   assert.deepEqual(
     releaseBlockers(candidate, "example-package@1.2.3", {
-      node: "24.0.0",
-      npm: "11.15.0",
+      node: "20.12.0",
+      npm: "10.8.0",
       releaseMode: "bootstrap",
       gitClean: true,
       gitBranch: "main",
@@ -108,6 +108,19 @@ test("release preflight accepts explicit fully configured metadata", () => {
   );
   assert.equal(versionAtLeast("22.14.0", "22.14.0"), true);
   assert.equal(versionAtLeast("22.13.9", "22.14.0"), false);
+  assert.match(
+    releaseBlockers(candidate, "example-package@1.2.3", {
+      node: "20.19.0",
+      npm: "10.8.2",
+      releaseMode: "staged",
+      githubActions: true,
+      gitClean: true,
+      ref: "refs/heads/main",
+      defaultBranch: "main",
+      repository: "example/example-package",
+    }).join("\n"),
+    /Node.js 22.14.0|npm 11.15.0/,
+  );
   assert.match(
     releaseBlockers(candidate, "example-package@1.2.3", {
       node: "24.0.0",

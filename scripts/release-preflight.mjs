@@ -53,10 +53,28 @@ function releaseBlockers(packageData, confirmation, runtime = null) {
   if (runtime && runtime.gitClean !== true) {
     blockers.push("publication requires a clean Git working tree");
   }
-  if (runtime && !versionAtLeast(runtime.node, "22.14.0")) {
-    blockers.push("trusted publishing requires Node.js 22.14.0 or newer");
+  if (
+    runtime?.releaseMode === "bootstrap" &&
+    !versionAtLeast(runtime.node, "20.12.0")
+  ) {
+    blockers.push("bootstrap publication requires Node.js 20.12.0 or newer");
   }
-  if (runtime && !versionAtLeast(runtime.npm, "11.15.0")) {
+  if (
+    runtime?.releaseMode === "bootstrap" &&
+    !versionAtLeast(runtime.npm, "10.8.0")
+  ) {
+    blockers.push("bootstrap publication requires npm 10.8.0 or newer");
+  }
+  if (
+    runtime?.releaseMode === "staged" &&
+    !versionAtLeast(runtime.node, "22.14.0")
+  ) {
+    blockers.push("staged trusted publishing requires Node.js 22.14.0 or newer");
+  }
+  if (
+    runtime?.releaseMode === "staged" &&
+    !versionAtLeast(runtime.npm, "11.15.0")
+  ) {
     blockers.push("staged trusted publishing requires npm 11.15.0 or newer");
   }
   if (
