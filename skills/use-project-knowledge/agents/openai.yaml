@@ -1,0 +1,4 @@
+interface:
+  display_name: "Use Project Knowledge"
+  short_description: "Retrieve and preserve verified project knowledge"
+  default_prompt: "Use $use-project-knowledge to retrieve relevant project knowledge and preserve only verified learning."

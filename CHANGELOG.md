@@ -4,12 +4,40 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ## Unreleased
 
+### Added
+
+- Guided onboarding that detects capabilities, recommends one choice with at
+  most one genuinely safe alternative, and records approved project profile,
+  external-data, provider, execution, and merge choices.
+- Provider-neutral review configuration with built-in, CodeRabbit, and
+  allowlisted GitHub-human options.
+- `$use-project-knowledge` with repository and optional GBrain providers,
+  provenance and staleness checks, repository fallback, verified capture, and
+  guarded skill-candidate promotion.
+- Capability discovery and provider/configuration health reports in the
+  dependency-free CLI.
+
 ### Changed
 
+- Project configuration migrates to schema v2 and fingerprints consequential
+  provider and authority choices so silent changes invalidate approval.
+- The protected review receipt now reads installed-project configuration,
+  supports CodeRabbit or allowlisted current-head GitHub approval, and becomes
+  inert when the selected profile does not require an external receipt.
+- Startup separates short system onboarding from adaptive product discovery;
+  the coding agent owns the conversation while the CLI remains non-interactive.
 - Successful npm staging now prepares a commit-bound draft GitHub Release.
 - An hourly, manually triggerable synchronization verifies the public npm
   artifact, publish attestation, SLSA workflow identity, and provenance commit
   before publishing the corresponding GitHub Release.
+
+### Upgrade impact
+
+This is a compatible minor release. Existing CodeRabbit installations migrate
+to a production CodeRabbit selection but require confirmation of the new
+profile and provider configuration. Existing protections are preserved.
+Customized managed files receive reconciliation proposals. GBrain remains
+disabled unless explicitly selected with an approved external-data policy.
 
 ## 0.3.0 - 2026-07-26
 

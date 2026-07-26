@@ -1,15 +1,20 @@
-# GitHub and CodeRabbit Loop
+# GitHub Review Provider Loop
 
 ## Goal
 
 Produce a pull request whose final revision has deterministic evidence, required repository checks, resolved conversations, and no unresolved actionable production-grade review finding.
 
-CodeRabbit adds an adversarial reviewer. It does not replace project tests, CI, branch protection, human approval, or release authority.
+The selected provider adds an adversarial review surface. It does not replace
+project tests, CI, branch protection, built-in standards/intent review, or
+release authority.
 
 ## One-Time Repository Setup
 
-1. Install and authorize the CodeRabbit GitHub app for the repository.
-2. Keep the generated root `.coderabbit.yaml`.
+1. Select `coderabbit` or `github-human` during guided configuration when the
+   project requires external review.
+2. For CodeRabbit, install and authorize the GitHub app and keep the generated
+   root `.coderabbit.yaml`. For GitHub human review, configure at least one
+   explicitly allowed login.
 3. Protect the default branch or create an equivalent ruleset:
    - require the project's CI status checks;
    - require the `review-receipt` status after its controlled bootstrap;
@@ -21,9 +26,9 @@ CodeRabbit adds an adversarial reviewer. It does not replace project tests, CI, 
 4. Ensure the agent has least-privilege GitHub access for the actions it is allowed to perform.
 5. Keep merge and deployment authority explicit in `.agent-stack/config.json` and repository policy.
 
-The first setup PR cannot produce a receipt because the default branch does not
+The first setup PR cannot produce a provider-aware receipt because the default branch does not
 contain the protected evaluator yet. Review that controlled bootstrap with
-CodeRabbit and the repository's existing gates, then merge it without requiring
+the selected reviewer and the repository's existing gates, then merge it without requiring
 `review-receipt`. The installed workflow never executes the PR's copy of the
 evaluator. On the next PR it executes the protected default-branch copy; require
 `review-receipt` in branch protection only after that first successful run
@@ -46,20 +51,25 @@ The current schema and defaults are documented in CodeRabbit's [configuration re
 
 ## Review Receipt
 
-CodeRabbit's own status can be green when a review is skipped or rate-limited,
-so it is not used as proof of review. The repository-owned `review-receipt`
-check queries GitHub's review evidence and passes only when:
+The repository-owned `review-receipt` check reads the protected default-branch
+configuration, queries GitHub review evidence, and passes only when:
 
-- CodeRabbit submitted an actual review against the current PR head commit;
+- the configured provider submitted a qualifying review against the current PR
+  head commit;
 - that current review did not request changes;
-- no current, non-outdated CodeRabbit review thread remains unresolved; and
+- no current, non-outdated provider review thread remains unresolved; and
 - all evidence fits inside the bounded query, otherwise the check fails closed.
 
-A summary, reaction, top-level comment, or rate-limit message is not a review
-receipt. Every push makes the previous receipt stale.
+For CodeRabbit, `COMMENTED` or `APPROVED` review submissions qualify, but a
+summary, reaction, top-level comment, or rate-limit message does not. For
+`github-human`, only `APPROVED` from an explicitly allowed login qualifies.
+Built-in review does not manufacture an external receipt requirement for
+profiles where external review is optional.
+
+Every push makes the previous receipt stale.
 
 GitHub Actions does not emit an event when a review conversation is resolved.
-After resolving the final CodeRabbit thread, re-evaluate the receipt from the
+After resolving the final provider thread, re-evaluate the receipt from the
 Actions page with the PR number, or run:
 
 ```bash
@@ -76,7 +86,7 @@ stateDiagram-v2
     [*] --> Draft
     Draft --> LocalGreen: implementation complete
     LocalGreen --> ReviewReady: full gate evidence attached
-    ReviewReady --> Waiting: push / CI / CodeRabbit
+    ReviewReady --> Waiting: push / CI / provider review
     Waiting --> Repair: actionable finding or failed check
     Repair --> LocalGreen: focused fix plus full gate
     Waiting --> MergeReady: all closure conditions pass
@@ -104,13 +114,15 @@ stateDiagram-v2
    ```
 
 7. Commit and push the verified batch.
-8. Comment `@coderabbitai review`.
+8. Request a fresh provider review. For CodeRabbit, comment
+   `@coderabbitai review`. For GitHub human review, request a new approval from
+   an allowed login.
 9. Wait for CI, an actual current-head review, and `review-receipt`; query
    threads, not only the summary.
 10. Reply with the disposition and evidence. Resolve only after closure.
 11. Repeat while the actionable set shrinks.
 
-If CodeRabbit reports a rate or quota limit, stop. Wait for capacity and request
+If CodeRabbit is selected and reports a rate or quota limit, stop. Wait for capacity and request
 the review again; never treat the limit message or a green summary status as
 approval.
 
@@ -152,11 +164,12 @@ May be rebutted or deferred:
 - [ ] Final revision matches the locked delivery contract.
 - [ ] Full local gate passes and evidence path is in the PR.
 - [ ] Required GitHub status checks pass.
-- [ ] `review-receipt` proves CodeRabbit reviewed the final head commit.
+- [ ] `review-receipt` proves the configured provider reviewed the final head
+      commit when required.
 - [ ] Branch currency or merge-queue rules pass.
 - [ ] Required approvals exist.
 - [ ] Required conversations are resolved.
-- [ ] No actionable CodeRabbit or human finding remains.
+- [ ] No actionable provider or human finding remains.
 - [ ] Every rebuttal and deferral has evidence.
 - [ ] Migration, rollback, monitoring, and documentation are current.
 - [ ] Merge authority is granted.

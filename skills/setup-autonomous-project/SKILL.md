@@ -31,7 +31,34 @@ Configure the repository without erasing its conventions. Setup is complete only
        --reason "Explain what was preserved and adopted"
      ```
 
-4. Detect the real command surface:
+4. Detect capabilities and complete guided onboarding:
+
+   ```bash
+   node .agent-stack/bin/agent-stack.mjs capabilities
+   ```
+
+   Infer the safest project profile from repository evidence. Ask only choices
+   that materially affect release protection, external data, provider access, or
+   authority. Ask one at a time in plain language; recommend one option, offer
+   at most one genuinely safe alternative, and explain the consequence. Record
+   the approved choices with:
+
+   ```bash
+   node .agent-stack/bin/agent-stack.mjs configure \
+     --profile PROFILE \
+     --review REVIEW_PROVIDER \
+     --knowledge KNOWLEDGE_PROVIDER \
+     --knowledge-scope SCOPE \
+     --external-data POLICY \
+     --reason "Record the user's approved project and provider choices"
+   ```
+
+   Add `--reviewer LOGIN` for each allowed GitHub human reviewer. Do not ask the
+   user about knowledge scope unless GBrain is selected; default to `project`.
+   Use `organization` only with explicit external-data approval. Do not ask the
+   user to name a technical provider when the repository and availability
+   evidence support a recommendation.
+5. Detect the real command surface:
 
    ```bash
    node .agent-stack/bin/agent-stack.mjs detect --write
@@ -49,22 +76,26 @@ Configure the repository without erasing its conventions. Setup is complete only
 
    Add missing test, lint, type, build, migration, or security tooling only when
    standard for the detected stack and proportionate to the project.
-5. Run the baseline:
+6. Run the baseline:
 
    ```bash
    node .agent-stack/bin/agent-stack.mjs verify
    ```
 
    Fix setup-caused failures. Record genuinely pre-existing failures with evidence; never relabel them as passing.
-6. Apply `$secure-launch`. Classify every risk surface in
+7. Apply `$secure-launch`. Classify every risk surface in
    `.agent-stack/artifacts/SECURITY.md`, record not-applicable surfaces with
    evidence, and add only the proportionate deterministic gates.
-7. Adapt harnesses only after the portable core works. Read [references/setup-contract.md](references/setup-contract.md) for supported locations and trust boundaries.
-8. Finish with a concise handoff containing the detected stack, commands, gates, preserved conflicts, missing credentials or services, and the exact starter prompt.
+8. Adapt harnesses only after the portable core works. Read [references/setup-contract.md](references/setup-contract.md) for supported locations and trust boundaries.
+9. Finish with a concise handoff containing the detected stack, configured
+   providers, commands, gates, preserved conflicts, missing credentials or
+   services, and the exact starter prompt.
 
 ## Autonomy Rules
 
 - Do routine discovery, configuration, dependency setup, test execution, and documentation without asking the user.
+- The npm CLI is non-interactive. The coding agent owns the conversation and
+  uses the CLI only to validate and persist approved choices.
 - Ask only when a choice changes product intent, spends money, exposes data, grants credentials, accepts legal/compliance risk, deletes material data, or publishes externally without prior authority.
 - Prefer existing package managers and pinned dependencies. Do not install arbitrary community skills or global tools silently.
 - Treat the user as the source of desired outcomes, not as a technical safety
@@ -78,9 +109,13 @@ Configure the repository without erasing its conventions. Setup is complete only
 Setup is done when:
 
 - project instructions are present and reconciled;
+- guided onboarding is complete and provider choices have a current approval
+  hash;
 - `.agent-stack/config.json` contains real project checks;
 - required artifacts and GitHub templates exist or preserved equivalents are documented;
 - `doctor` passes all applicable checks;
 - baseline verification has evidence;
 - launch-security surfaces are classified and applicable gates have evidence;
+- a required review provider is available, while optional knowledge has a
+  verified repository fallback;
 - secret, billing, account, or deployment inputs are the only remaining user work.

@@ -1,7 +1,7 @@
 {
   "name": "ultimate-agent-stack",
-  "version": "0.3.0",
-  "description": "A guarded, project-adaptive agent workflow with managed parallel delivery from idea through verified review closure.",
+  "version": "0.4.0",
+  "description": "A guided, provider-neutral agent workflow from plain-language idea through verified review closure and durable learning.",
   "type": "module",
   "bin": {
     "ultimate-agent-stack": "bin/ultimate-agent-stack.mjs"
@@ -12,7 +12,11 @@
     "assets/",
     "bin/",
     "docs/",
-    "scripts/",
+    "scripts/github-release-sync.mjs",
+    "scripts/packed-smoke.mjs",
+    "scripts/release-preflight.mjs",
+    "scripts/review-receipt.mjs",
+    "scripts/upstream-issue.mjs",
     "skills/",
     "sources/",
     "STARTER_PROMPT.md"

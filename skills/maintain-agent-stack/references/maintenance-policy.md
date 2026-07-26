@@ -58,5 +58,7 @@ customized state. Reconcile them to the reviewed package proposal exactly.
 
 Translate requests such as “add this repo,” “make it skip the annoying check,”
 or “publish the update” into outcome, compatibility, safety, and authority
-questions. Recommend one safe default and ask only the decision that genuinely
-requires the owner. Complete all independent inspection and validation first.
+questions. In plain language, recommend one safe default, offer at most one
+genuinely safe alternative, and ask only the decision that genuinely requires
+the owner. Never manufacture an unsafe alternative. Complete all independent
+inspection and validation first.

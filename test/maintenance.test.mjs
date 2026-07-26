@@ -47,6 +47,14 @@ const repositoryReviewReceiptWorkflow = readFileSync(
   join(PACKAGE_ROOT, ".github/workflows/review-receipt.yml"),
   "utf8",
 );
+const ciWorkflow = readFileSync(
+  join(PACKAGE_ROOT, ".github/workflows/ci.yml"),
+  "utf8",
+);
+const upstreamWatchWorkflow = readFileSync(
+  join(PACKAGE_ROOT, ".github/workflows/upstream-watch.yml"),
+  "utf8",
+);
 const publishWorkflow = readFileSync(
   join(PACKAGE_ROOT, ".github/workflows/publish.yml"),
   "utf8",
@@ -86,21 +94,39 @@ test("review receipt workflow never executes the pull request copy of its gate",
   );
 });
 
-test("repository and installed receipt workflows share the same controls", () => {
-  assert.equal(
-    repositoryReviewReceiptWorkflow.replace(
-      "scripts/review-receipt.mjs",
-      ".agent-stack/bin/review-receipt.mjs",
-    ),
+test("repository and installed receipt workflows preserve trusted controls", () => {
+  for (const workflow of [
+    repositoryReviewReceiptWorkflow,
     reviewReceiptWorkflow,
-  );
-  assert.match(reviewReceiptWorkflow, /workflow_dispatch:/);
-  assert.match(reviewReceiptWorkflow, /pr_number:/);
-  assert.match(reviewReceiptWorkflow, /concurrency:/);
+  ]) {
+    assert.match(workflow, /workflow_dispatch:/);
+    assert.match(workflow, /pr_number:/);
+    assert.match(workflow, /concurrency:/);
+    assert.match(
+      workflow,
+      /ref: \$\{\{ github\.event\.repository\.default_branch \}\}/,
+    );
+    assert.match(
+      workflow,
+      /--repo "\$GITHUB_REPOSITORY"\s+--pr "\$PR_NUMBER"/,
+    );
+  }
+  assert.doesNotMatch(repositoryReviewReceiptWorkflow, /--config/);
   assert.match(
     reviewReceiptWorkflow,
-    /--repo "\$GITHUB_REPOSITORY"\s+--pr "\$PR_NUMBER"/,
+    /--config \.agent-stack\/config\.json/,
   );
+});
+
+test("read-only workflow checkouts do not persist Git credentials", () => {
+  for (const workflow of [
+    ciWorkflow,
+    upstreamWatchWorkflow,
+    repositoryReviewReceiptWorkflow,
+    reviewReceiptWorkflow,
+  ]) {
+    assert.match(workflow, /persist-credentials: false/);
+  }
 });
 
 test("package has no install hooks and guards publication with prepublishOnly", () => {
@@ -117,6 +143,16 @@ test("package has no install hooks and guards publication with prepublishOnly", 
   assert.equal(
     packageData.scripts?.prepublishOnly,
     "node scripts/release-preflight.mjs",
+  );
+  assert.deepEqual(
+    packageData.files.filter((entry) => entry.startsWith("scripts/")),
+    [
+      "scripts/github-release-sync.mjs",
+      "scripts/packed-smoke.mjs",
+      "scripts/release-preflight.mjs",
+      "scripts/review-receipt.mjs",
+      "scripts/upstream-issue.mjs",
+    ],
   );
   assert.deepEqual(packageData.dependencies ?? {}, {});
 });

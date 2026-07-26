@@ -7,6 +7,10 @@ asks only consequential product questions, builds, tests, documents, opens or
 updates the pull request when authorized, responds to review, and returns either
 a completed result or one action that truly requires your authority.
 
+When a decision is genuinely yours, the agent explains it in plain language,
+recommends one answer, offers at most one genuinely safe alternative, and
+explains the practical consequence. You may answer `use the recommendation`.
+
 You do not need to choose frameworks, write code, design test commands, organize
 tickets, or relay review comments.
 
@@ -17,8 +21,8 @@ say:
 
 ```text
 Set up Ultimate Agent Stack in this project. My idea is: [describe the result].
-Recommend safe defaults, ask one important question at a time, and handle all
-routine technical work.
+For each consequential decision, recommend one safe choice, offer at most one
+genuinely safe alternative, and handle all routine technical work.
 ```
 
 The agent runs:
@@ -32,11 +36,14 @@ For Claude Code support it adds `--claude`. The agent then:
 1. reads existing project instructions and preserves them;
 2. reconciles any proposals instead of overwriting files;
 3. detects the project's real checks;
-4. inspects and approves argument arrays and delegated package-script
+4. detects review and knowledge capabilities;
+5. asks only consequential profile, provider, external-data, and authority
+   questions, then records the approved configuration;
+6. inspects and approves argument arrays and delegated package-script
    definitions;
-5. applies `$secure-launch` to classify exposure and add proportionate gates;
-6. runs `doctor` and the initial verification baseline;
-7. starts `$run-autonomous-delivery` and asks the first meaningful question.
+7. applies `$secure-launch` to classify exposure and add proportionate gates;
+8. runs `doctor` and the initial verification baseline;
+9. starts `$run-autonomous-delivery` and asks the first meaningful question.
 
 If you prefer to run setup yourself, that one `npx` command is enough. Open a
 fresh agent session afterward if the agent harness discovers new skills only at
@@ -68,6 +75,29 @@ work on phones and preserve the existing accounting database.
 The agent should research and recommend the implementation. Add constraints
 only when they are real. [../STARTER_PROMPT.md](../STARTER_PROMPT.md) provides a
 longer copy-and-paste contract for harnesses that need it.
+
+## Review and Knowledge Providers
+
+The agent runs:
+
+```bash
+node .agent-stack/bin/agent-stack.mjs capabilities
+```
+
+It then recommends a project profile and provider combination. The portable
+baseline uses built-in review plus repository knowledge. Production profiles
+require either CodeRabbit or an explicitly allowed GitHub human reviewer.
+GBrain is optional and requires approval for external data.
+
+The agent records the approved choices with `configure`; you should not have to
+construct the command. Provider, external-data, execution, or merge changes
+invalidate the prior configuration approval.
+
+If GBrain is selected, Ultimate Agent Stack uses only scoped retrieval and
+verified capture. It does not install GBrain's complete skills or autonomous
+runtime. If GBrain is unavailable, the agent continues with repository
+artifacts. Memory never overrides current code, tests, locked decisions, or
+security policy.
 
 ## What Happens With Subagents
 
@@ -102,7 +132,12 @@ A valid question should:
 - materially affect product intent, cost, credentials, risk, deletion, or
   release;
 - recommend one answer and explain the consequence;
-- ask one decision, not present a technical questionnaire.
+- provide at most one genuinely safe alternative when useful;
+- ask one decision, not present a technical questionnaire;
+- allow `use the recommendation`.
+
+If only one safe choice exists, the agent should say so. It must not present a
+dangerous option merely to make a two-item list.
 
 Answer in plain language. If it asks you to choose an ordinary technical detail,
 reply:
@@ -169,6 +204,20 @@ node .agent-stack/bin/agent-stack.mjs approve-checks \
 ```
 
 You should not be asked to interpret those commands.
+
+### Setup says onboarding is pending
+
+The agent should inspect `capabilities`, recommend the safest project profile
+and provider combination, ask only the remaining consequential choices, and run
+`configure`. This is expected for a new install and after migrating an older
+configuration.
+
+### An optional provider is unavailable
+
+Review and knowledge fail differently. An optional knowledge provider falls
+back to repository state and produces a warning. A review provider required by
+the selected profile blocks release until a current qualifying review exists;
+the agent may not silently downgrade the profile or switch providers.
 
 ### An update reports pending reconciliation
 

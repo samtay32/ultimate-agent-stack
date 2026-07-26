@@ -1,6 +1,6 @@
 interface:
   display_name: "Close Review Loop"
-  short_description: "Drive GitHub and CodeRabbit to closure"
+  short_description: "Drive GitHub review providers to closure"
   default_prompt: "Use $close-review-loop to resolve actionable review findings and finish the pull request."
 policy:
   allow_implicit_invocation: true

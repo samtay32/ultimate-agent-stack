@@ -110,6 +110,19 @@ function main() {
     }
     if (
       !existsSync(
+        join(
+          project,
+          ".agents",
+          "skills",
+          "use-project-knowledge",
+          "SKILL.md",
+        ),
+      )
+    ) {
+      throw new Error("packed install did not create the knowledge skill");
+    }
+    if (
+      !existsSync(
         join(project, ".codex", "agents", "uas_researcher.toml"),
       )
     ) {
@@ -140,6 +153,24 @@ function main() {
       version.version !== packageData.version
     ) {
       throw new Error("packed CLI version does not match package.json");
+    }
+    const config = JSON.parse(
+      readFileSync(join(project, ".agent-stack", "config.json"), "utf8"),
+    );
+    if (
+      config.schema_version !== 2 ||
+      config.onboarding?.status !== "pending" ||
+      config.capabilities?.review?.provider !== "builtin" ||
+      config.capabilities?.knowledge?.provider !== "repository" ||
+      config.capabilities?.knowledge?.scope !== "project"
+    ) {
+      throw new Error("packed install did not preserve safe guided defaults");
+    }
+    const start = JSON.parse(
+      run(process.execPath, [localCli, "start", "--target", project], project),
+    );
+    if (start.phase !== "onboarding") {
+      throw new Error("packed install did not enter guided onboarding");
     }
     process.stdout.write(
       `${JSON.stringify(

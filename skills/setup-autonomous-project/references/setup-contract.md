@@ -12,6 +12,9 @@ Install these repository-owned files first:
 - `.github/pull_request_template.md`: evidence-oriented PR contract.
 - `.coderabbit.yaml`: review defaults.
 
+The generated review files are inert unless configuration requires an external
+review provider. Their presence does not make CodeRabbit mandatory.
+
 The setup command is non-destructive. When a destination exists, it preserves
 the file and writes a proposed copy under
 `.agent-stack/update-proposals/<version>/`. The agent must reconcile it
@@ -29,6 +32,22 @@ The skills use the Agent Skills directory format. Copy or install the skill dire
 - Cursor: rely on root `AGENTS.md`; add small `.cursor/rules/*.mdc` or `.cursor/commands/*.md` adapters only if the current Cursor version does not discover the skills directly.
 
 Do not duplicate the entire workflow into each harness rule. Keep `AGENTS.md`, `.agent-stack/`, and the skill source canonical; adapters should only point to them.
+
+## Capability Adapters
+
+Keep the core dependent on capabilities rather than provider brands:
+
+- review: `builtin`, `coderabbit`, or `github-human`;
+- knowledge: `repository` or `gbrain`.
+
+`builtin` review and `repository` knowledge are always available. Production
+profiles require a current independent external review, but CodeRabbit itself
+remains replaceable. Knowledge is never a release dependency and always falls
+back to repository state.
+
+Provider selection is configuration, not permission to install arbitrary
+software. Verify current official instructions, platform compatibility,
+credentials, cost, and data scope before enabling an external provider.
 
 ## Trust Boundaries
 

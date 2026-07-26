@@ -27,15 +27,11 @@ Reason: <one concise explanation>
 Risk: <remaining risk or none>
 ```
 
-## CodeRabbit Commands
+## Provider Selection
 
-- `@coderabbitai review`: incremental review after a verified fix batch.
-- `@coderabbitai full review`: full review after a major rebase, large rewrite, or uncertain coverage.
-- `@coderabbitai pause` / `@coderabbitai resume`: control automatic reviews during noisy intermediate work.
-- `@coderabbitai resolve`: resolve CodeRabbit's open threads only after verifying closure.
-- `@coderabbitai approve`: resolve CodeRabbit threads and approve only when request-changes workflow is enabled and all actionable issues are closed.
-
-Check current CodeRabbit documentation before relying on command semantics; integrations evolve.
+Read `.agent-stack/config.json`. Use only the selected review provider. Built-in
+review remains part of delivery but cannot satisfy a production profile's
+external-review requirement.
 
 ## Production-Grade Closure
 
@@ -49,9 +45,10 @@ Required independent gates remain:
 - conversation resolution;
 - final-revision evidence.
 
-CodeRabbit cannot waive repository policy or authorize merge.
+No review provider can waive repository policy or authorize merge.
 
-An actual review submission tied to the current PR head is required. A
-walkthrough, summary, reaction, successful status, chat response, or
-rate-limit/quota message is not review evidence. Every fix push invalidates the
-previous review receipt and requires another explicit `@coderabbitai review`.
+An actual qualifying review submission tied to the current PR head is required
+when configuration requires external review. A walkthrough, summary, reaction,
+successful status, chat response, or rate-limit/quota message is not review
+evidence. Every fix push invalidates the previous receipt and requires a fresh
+provider review.

@@ -8,9 +8,10 @@
 | `run-autonomous-delivery` | Explicit | User wants an end-to-end product/change outcome | Verified PR or merge-ready result |
 | `coordinate-parallel-delivery` | Routed by delivery | Two or more independent tracks may shorten the critical path | Serial or bounded parallel strategy with primary-agent integration |
 | `shape-project` | Implicit or explicit | Intent, acceptance, architecture, migration, or UX is unclear | Lockable delivery contract |
+| `use-project-knowledge` | Routed by setup/delivery | Prior knowledge may inform work or verified learning should be preserved | Scoped retrieval receipt or redacted learning proposal |
 | `build-vertical-slice` | Implicit or explicit | A locked slice is ready to implement | Demonstrable increment with focused tests/docs |
 | `verify-change` | Implicit or explicit | Implementation or a repair batch needs proof | Evidence matrix and binary readiness result |
-| `close-review-loop` | Implicit or explicit | PR, CI, human feedback, or CodeRabbit needs closure | Closed actionable set and merge decision |
+| `close-review-loop` | Implicit or explicit | PR, CI, human feedback, or configured-provider review needs closure | Closed actionable set and merge decision |
 | `maintain-agent-stack` | Explicit | Package flow, source watch, version, or release needs a safe change | Reviewed package update or authority-gated release |
 | `secure-launch` | Explicit or routed | A project has public, auth, tenant, data, upload, webhook, paid-API, or launch exposure | Proportionate security gates with deterministic evidence |
 
@@ -23,6 +24,7 @@ implicitly from precise descriptions.
 ```mermaid
 flowchart LR
     SET["setup-autonomous-project"] --> RUN["run-autonomous-delivery"]
+    RUN --> KNOW["use-project-knowledge"]
     RUN --> SHAPE["shape-project"]
     SHAPE --> SECURE["secure-launch"]
     SECURE --> COORD["coordinate-parallel-delivery"]
@@ -31,18 +33,19 @@ flowchart LR
     VERIFY --> CLOSE["close-review-loop"]
     CLOSE -->|repair| BUILD
     CLOSE -->|green| DONE["merge or merge-ready"]
+    DONE --> KNOW
     MAINTAIN["maintain-agent-stack"] --> PACKAGE["reviewed npm update"]
 ```
 
-## Why Nine
+## Why Ten
 
 Fewer skills would load large irrelevant procedures into every task. Many more
 skills would make discovery unreliable and spread state across shallow modules.
-Nine gives:
+Ten gives:
 
 - four stable user entry points;
 - one owner for each high-risk seam: intent, launch security, implementation,
-  delegation, verification, and external review;
+  knowledge, delegation, verification, and external review;
 - one-level references for progressive disclosure;
 - no persona catalog, mandatory swarm, or separate orchestration runtime.
 
@@ -95,7 +98,8 @@ and the baseline.
 ## Optional Tools, Not Dependencies
 
 - `gh` or a connected GitHub app for PR work;
-- CodeRabbit for adversarial PR review;
+- CodeRabbit or an allowed GitHub human for adversarial PR review;
+- GBrain for scoped cross-session or cross-project knowledge;
 - Treehouse for reusable isolated worktrees;
 - no-mistakes for an additional local push gate;
 - AXI wrappers for token-efficient structured tool output;

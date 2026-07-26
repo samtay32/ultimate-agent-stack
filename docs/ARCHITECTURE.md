@@ -10,7 +10,7 @@ Ultimate Agent Stack is a repository-owned control loop: it turns intent into a 
 flowchart TD
     U["Human supplies intent and authority"] --> E["Explicit entry skill"]
     E --> S{"Stack configured?"}
-    S -- "No" --> SET["Setup: inspect, preserve, detect, baseline"]
+    S -- "No" --> SET["Setup: inspect, detect capabilities, guided choices, baseline"]
     SET --> R
     S -- "Yes" --> R{"Route by risk and ambiguity"}
     R -->|T0-T1| M["Micro-brief"]
@@ -33,7 +33,7 @@ flowchart TD
     A -->|Finding| V
     A -->|Clear| PR["Draft PR + evidence"]
     PR --> CI["Required CI + GitHub protections"]
-    PR --> CR["CodeRabbit review"]
+    PR --> CR["Configured independent review provider"]
     CI --> D{"Actionable issue?"}
     CR --> D
     D -- "Yes" --> B["Fix/rebut/defer with evidence"]
@@ -49,8 +49,15 @@ flowchart TD
 flowchart LR
     subgraph Intent["Intent plane"]
         SP["Starter prompt"]
+        ON["Guided onboarding"]
         SH["shape-project"]
         AR["DELIVERY / ARCHITECTURE / DECISIONS"]
+    end
+
+    subgraph Knowledge["Knowledge plane"]
+        KM["use-project-knowledge"]
+        RM["Repository memory"]
+        GB["GBrain adapter"]
     end
 
     subgraph Execution["Execution plane"]
@@ -72,10 +79,13 @@ flowchart LR
         VC["verify-change"]
         RL["close-review-loop"]
         GH["GitHub CI / protections"]
-        CR["CodeRabbit"]
+        CR["Configured review adapter"]
     end
 
-    SP --> RD
+    SP --> ON --> RD
+    RD --> KM
+    KM --> RM
+    KM --> GB
     RD --> SH --> AR
     AR --> LOCK
     LOCK --> PD
@@ -91,13 +101,29 @@ flowchart LR
     CR --> RL
 ```
 
-## Five Planes
+## Seven Planes
 
-1. **Intent plane** — separates user outcome, capabilities, constraints, non-goals, assumptions, and acceptance. It scales from a micro-brief to a full product/migration contract.
-2. **Execution plane** — builds one vertical slice at a time. It uses the repository's own language, framework, and tools rather than imposing a product stack.
-3. **Evidence plane** — provides deterministic setup, check discovery, fail-closed verification, bounded logs, and artifact hashes. It deliberately contains no LLM decision logic.
-4. **Review plane** — independently checks engineering standards and locked intent, then uses GitHub and CodeRabbit as additional adversarial surfaces.
-5. **Authority plane** — limits interruptions without pretending authority does not exist. Reversible engineering is agent-owned; credentials, cost, legal risk, destructive production actions, and unauthorized releases remain human-owned.
+1. **Configuration plane** — detects project capabilities, asks only
+   consequential setup questions, recommends safe choices, and fingerprints the
+   approved profile, providers, external-data policy, and authority mode.
+2. **Intent plane** — separates user outcome, capabilities, constraints,
+   non-goals, assumptions, and acceptance. It scales from a micro-brief to a
+   full product or migration contract.
+3. **Knowledge plane** — retrieves scoped advisory context and captures only
+   verified, provenance-backed learning. Repository state is authoritative and
+   remains the fallback for optional providers such as GBrain.
+4. **Execution plane** — builds one vertical slice at a time. It uses the
+   repository's language, framework, and tools rather than imposing a stack.
+5. **Evidence plane** — provides deterministic setup, check discovery,
+   fail-closed verification, bounded logs, and artifact hashes. It deliberately
+   contains no LLM decision logic.
+6. **Review plane** — independently checks engineering standards and locked
+   intent, then uses the configured CodeRabbit or allowed GitHub-human adapter
+   as an additional adversarial surface when required.
+7. **Authority plane** — limits interruptions without pretending authority does
+   not exist. Reversible engineering is agent-owned; credentials, cost, legal
+   risk, destructive production actions, and unauthorized releases remain
+   human-owned.
 
 ## Durable State
 
@@ -116,6 +142,27 @@ flowchart LR
 | `.agent-stack/state.json` | CLI | Active hashes and lock history |
 | `.agent-stack/runs/` | Local evidence | Bounded command results; ignored by default |
 | Pull request | GitHub | Reviewable outcome, evidence, and disposition ledger |
+
+The configuration stores guided-interaction invariants, selected providers, and
+an approval hash. Changing provider, profile, external-data, execution, merge,
+or parallel-delivery policy invalidates approval. `doctor` fails before
+delivery continues.
+
+## Provider Boundaries
+
+| Capability | Baseline | Optional provider | Failure behavior |
+|---|---|---|---|
+| Review | Built-in standards and intent review | CodeRabbit or allowed GitHub human | A required provider fails closed; a stale review never counts |
+| Knowledge | Project-scoped repository instructions, artifacts, evidence, and Git | Project- or organization-scoped GBrain | Warn, retain provenance, and continue with repository fallback |
+
+Provider configuration is declarative and validated by package code. A
+repository cannot add an arbitrary executable adapter merely by naming it in
+JSON. Supporting another provider requires a normal reviewed package change.
+
+External memory never owns product truth or release authority. Its output is
+untrusted data until validated against current repository evidence. Capture is
+limited to redacted verified learning; skill candidates remain non-executable
+until reviewed and evaluated.
 
 ## Why It Adapts
 
