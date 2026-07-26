@@ -55,6 +55,8 @@ flowchart LR
 
     subgraph Execution["Execution plane"]
         RD["run-autonomous-delivery"]
+        PD["coordinate-parallel-delivery"]
+        NA["Native harness subagents"]
         BV["build-vertical-slice"]
         REPO["Project code and docs"]
     end
@@ -76,7 +78,10 @@ flowchart LR
     SP --> RD
     RD --> SH --> AR
     AR --> LOCK
-    RD --> BV --> REPO
+    LOCK --> PD
+    PD -->|serial| BV
+    PD -->|bounded delegation| NA --> BV
+    BV --> REPO
     REPO --> CLI --> CHECKS --> RUNS
     LOCK --> VC
     RUNS --> VC --> RL
@@ -107,6 +112,7 @@ flowchart LR
 | `DECISIONS.md` | Delivery | Audited changes to intent or architecture |
 | `VERIFICATION.md` | Delivery | Requirement-to-evidence coverage |
 | `SECURITY.md` | Delivery | Classified exposure and applicable launch gates |
+| `.agent-stack/artifacts/DELEGATION.md` | Primary agent | Execution strategy, worker assignments, and dispositions |
 | `.agent-stack/state.json` | CLI | Active hashes and lock history |
 | `.agent-stack/runs/` | Local evidence | Bounded command results; ignored by default |
 | Pull request | GitHub | Reviewable outcome, evidence, and disposition ledger |
@@ -119,19 +125,32 @@ It is not literally universal: a project without executable checks, a required u
 
 ## Parallelism
 
-Default execution is serial. Parallel work is allowed only when:
+The configured default is adaptive: the primary agent chooses the lowest
+capability level that safely helps the current request.
 
-- tasks are independent;
-- each has an isolated branch or worktree;
-- inputs and output interfaces are locked;
-- one integration owner is named;
-- the expected time saving exceeds coordination cost.
+| Level | Execution |
+|---|---|
+| C0 | Primary agent works serially |
+| C1 | Native workers perform parallel read-only research or review in the shared checkout |
+| C2 | Native workers perform disjoint writes in verified isolated worktrees/workspaces |
 
-The architecture can use worktree managers or agent supervisors, but neither is required. This preserves low operational complexity for ordinary work.
+The primary agent always owns decomposition, worker prompts, monitoring,
+recovery, integration, verification, and cleanup. Worker count is capped;
+nested delegation and authority expansion are forbidden; a branch alone is not
+write isolation. The strategy falls back to serial work when tasks are coupled,
+the expected saving is small, or the harness cannot prove the required
+capability.
+
+This is a portable coordination protocol with native read-only worker adapters
+for Codex, Claude Code, Gemini CLI, and OpenCode. Grok, Cursor, and other
+harnesses can use a proven native delegation surface or the serial fallback. It
+is not a bundled agent framework, always-running supervisor, tmux dependency,
+or cross-vendor CLI launcher.
 
 ## Package and Upgrade Boundary
 
-The npm package is a distribution vehicle, not a remote orchestrator. `init`
+The npm package is a distribution vehicle, not a remote orchestration service.
+The current primary coding agent is the coordinator. `init`
 copies the portable policy, skills, artifacts, and dependency-free CLI into the
 project. The project then remains runnable from repository-owned files.
 

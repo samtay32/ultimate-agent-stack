@@ -1,7 +1,7 @@
 {
   "name": "ultimate-agent-stack",
-  "version": "0.2.0",
-  "description": "A guarded, npm-distributed operating system for taking software work from plain-language intent through verified review closure.",
+  "version": "0.3.0",
+  "description": "A guarded, npm-distributed operating system for taking software work from plain-language intent through managed parallel delivery and verified review closure.",
   "author": {
     "name": "Samson Taylor"
   },
@@ -9,12 +9,13 @@
   "interface": {
     "displayName": "Ultimate Agent Stack",
     "shortDescription": "Autonomous delivery with proof and review gates.",
-    "longDescription": "Safely installs and updates a repository, shapes ambiguous work conversationally, implements vertical slices, verifies behavior, and closes GitHub and CodeRabbit review loops while preserving human authority over irreversible decisions.",
+    "longDescription": "Safely installs and updates a repository, shapes ambiguous work conversationally, manages bounded native subagents behind one primary agent, implements vertical slices, verifies behavior, and closes GitHub and CodeRabbit review loops while preserving human authority over irreversible decisions.",
     "developerName": "Samson Taylor",
     "category": "Productivity",
     "capabilities": [
       "Project setup",
       "Requirements shaping",
+      "Adaptive parallel delivery",
       "Implementation",
       "Verification",
       "Risk-adaptive launch security",

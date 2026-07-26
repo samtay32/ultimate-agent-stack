@@ -6,6 +6,7 @@
 |---|---|---|---|
 | `setup-autonomous-project` | Explicit | New/existing repository needs autonomous setup or repair | Instructions, templates, detected checks, baseline evidence |
 | `run-autonomous-delivery` | Explicit | User wants an end-to-end product/change outcome | Verified PR or merge-ready result |
+| `coordinate-parallel-delivery` | Routed by delivery | Two or more independent tracks may shorten the critical path | Serial or bounded parallel strategy with primary-agent integration |
 | `shape-project` | Implicit or explicit | Intent, acceptance, architecture, migration, or UX is unclear | Lockable delivery contract |
 | `build-vertical-slice` | Implicit or explicit | A locked slice is ready to implement | Demonstrable increment with focused tests/docs |
 | `verify-change` | Implicit or explicit | Implementation or a repair batch needs proof | Evidence matrix and binary readiness result |
@@ -24,7 +25,8 @@ flowchart LR
     SET["setup-autonomous-project"] --> RUN["run-autonomous-delivery"]
     RUN --> SHAPE["shape-project"]
     SHAPE --> SECURE["secure-launch"]
-    SECURE --> BUILD["build-vertical-slice"]
+    SECURE --> COORD["coordinate-parallel-delivery"]
+    COORD --> BUILD["build-vertical-slice"]
     BUILD --> VERIFY["verify-change"]
     VERIFY --> CLOSE["close-review-loop"]
     CLOSE -->|repair| BUILD
@@ -32,17 +34,22 @@ flowchart LR
     MAINTAIN["maintain-agent-stack"] --> PACKAGE["reviewed npm update"]
 ```
 
-## Why Eight
+## Why Nine
 
 Fewer skills would load large irrelevant procedures into every task. Many more
 skills would make discovery unreliable and spread state across shallow modules.
-Eight gives:
+Nine gives:
 
 - four stable user entry points;
 - one owner for each high-risk seam: intent, launch security, implementation,
-  verification, and external review;
+  delegation, verification, and external review;
 - one-level references for progressive disclosure;
-- no persona catalog or agent swarm.
+- no persona catalog, mandatory swarm, or separate orchestration runtime.
+
+`coordinate-parallel-delivery` is a policy coordinator, not a worker persona.
+It selects serial, shared-checkout read-only delegation, or isolated parallel
+writes from the current harness capability. The primary agent remains
+responsible for every worker and the final result.
 
 ## Installation Locations
 
@@ -67,6 +74,16 @@ Grok discovers `.grok/skills/`, plugins, and user paths, and it also reads `.age
 ### Cursor
 
 Cursor uses the generated root `AGENTS.md`, `.cursor/rules/agent-stack.mdc`, and `.cursor/commands/deliver.md`. Cursor's official rules system is the adapter; do not assume identical skill loading semantics across versions.
+
+### Native Subagents
+
+Codex, Gemini CLI, and OpenCode receive conservative read-only native worker
+profiles. Claude Code receives the equivalent profile and skill copies with
+`--claude`. The coordination skill translates one assignment and authority
+contract onto those surfaces. It never shells from one vendor into another.
+Grok, Cursor, and other harnesses use portable project instructions and only
+delegate when the current surface proves a safe native capability; otherwise
+they use serial delivery.
 
 ## Upgrade Rule
 

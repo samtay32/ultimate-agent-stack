@@ -20,10 +20,15 @@ This repository uses Ultimate Agent Stack.
      --reason "Inspected project-native quality command definitions"
    ```
 
-4. Use `$run-autonomous-delivery` for the user's request.
-5. For a new or ambiguous project, inspect first and then ask one consequential
+4. Use `$run-autonomous-delivery` for the user's request. It routes execution
+   through `$coordinate-parallel-delivery`, which may use bounded native
+   subagents when doing so is both safe and useful.
+5. The primary agent manages every worker and returns one integrated result.
+   The user never has to supervise subagents. Parallel writers require verified
+   isolated workspaces; otherwise keep write work serial.
+6. For a new or ambiguous project, inspect first and then ask one consequential
    question at a time. Recommend a safe default with each question.
-6. Own routine research, design, implementation, tests, documentation, and
+7. Own routine research, design, implementation, tests, documentation, and
    review closure. Do not return only a plan.
 
 ## User Protection

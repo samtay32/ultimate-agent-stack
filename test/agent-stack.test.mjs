@@ -65,6 +65,19 @@ function hashText(text) {
   return createHash("sha256").update(text).digest("hex");
 }
 
+function safeParallelPolicy(overrides = {}) {
+  return {
+    mode: "adaptive",
+    max_workers: 3,
+    serial_fallback: true,
+    require_isolation_for_parallel_writes: true,
+    allow_nested_delegation: false,
+    authority_inheritance: "no_expansion",
+    integration_owner: "primary_agent",
+    ...overrides,
+  };
+}
+
 function initializeGit(directory) {
   const result = spawnSync("git", ["init", directory], {
     encoding: "utf8",
@@ -191,6 +204,65 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
         ),
       ),
     );
+    assert.ok(
+      existsSync(
+        join(
+          fixture.directory,
+          ".agents",
+          "skills",
+          "coordinate-parallel-delivery",
+          "SKILL.md",
+        ),
+      ),
+    );
+    assert.ok(
+      existsSync(
+        join(
+          fixture.directory,
+          ".codex",
+          "agents",
+          "uas_researcher.toml",
+        ),
+      ),
+    );
+    assert.ok(
+      existsSync(
+        join(
+          fixture.directory,
+          ".gemini",
+          "agents",
+          "uas-researcher.md",
+        ),
+      ),
+    );
+    assert.ok(
+      existsSync(
+        join(
+          fixture.directory,
+          ".opencode",
+          "agents",
+          "uas-researcher.md",
+        ),
+      ),
+    );
+    assert.equal(
+      existsSync(
+        join(
+          fixture.directory,
+          ".claude",
+          "agents",
+          "uas-researcher.md",
+        ),
+      ),
+      false,
+    );
+    const initializedConfig = readJson(
+      join(fixture.directory, CONFIG_PATH),
+    );
+    assert.deepEqual(
+      initializedConfig.parallel_delivery,
+      safeParallelPolicy(),
+    );
 
     const copiedCli = spawnSync(
       "node",
@@ -248,6 +320,7 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
 
     const start = commandStart(fixture.directory, "Build a safe fixture");
     assert.match(start.prompt, /\$run-autonomous-delivery/);
+    assert.match(start.prompt, /\$coordinate-parallel-delivery/);
     assert.match(start.prompt, /one high-impact question at a time/);
   } finally {
     fixture.cleanup();
@@ -408,9 +481,151 @@ test("review receipt script and workflow install as protected guardrails", () =>
   }
 });
 
+test("Claude mode installs the native read-only worker and skill copy", () => {
+  const fixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    installOrUpgrade(fixture.directory, { claude: true, mode: "init" });
+    const installation = loadInstallation(fixture.directory);
+
+    assert.ok(
+      existsSync(
+        join(
+          fixture.directory,
+          ".claude",
+          "agents",
+          "uas-researcher.md",
+        ),
+      ),
+    );
+    assert.ok(
+      existsSync(
+        join(
+          fixture.directory,
+          ".claude",
+          "skills",
+          "coordinate-parallel-delivery",
+          "SKILL.md",
+        ),
+      ),
+    );
+    assert.ok(installation.harnesses.includes("claude"));
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("legacy serial policy migrates to safe adaptive coordination", () => {
+  const fixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    createJavaScriptFixture(fixture.directory);
+    writeJson(join(fixture.directory, CONFIG_PATH), {
+      schema_version: 1,
+      project: { name: "legacy-fixture" },
+      autonomy: {
+        execution: "agent_owned",
+        merge: "human_approval_required",
+        parallel_work: "isolated_independent_only",
+        max_repair_loops: 5,
+      },
+      safety: {
+        require_check_approval: true,
+        approved_checks_hash: null,
+        project_root_only: true,
+        forbid_shell_commands: true,
+        max_check_timeout_seconds: 7200,
+      },
+      quality: {
+        require_project_checks: true,
+        checks: [],
+        evidence_directory: ".agent-stack/runs",
+      },
+      lock_artifacts: [".agent-stack/artifacts/DELIVERY.md"],
+    });
+
+    installOrUpgrade(fixture.directory, { mode: "init" });
+
+    const migrated = readJson(join(fixture.directory, CONFIG_PATH));
+    assert.equal(
+      migrated.autonomy.parallel_work,
+      "coordinator_managed_isolated_only",
+    );
+    assert.deepEqual(migrated.parallel_delivery, safeParallelPolicy());
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("shipped native worker adapters are read-only and non-recursive", () => {
+  const codex = readFileSync(
+    join(
+      import.meta.dirname,
+      "..",
+      "assets",
+      "project-template",
+      ".codex",
+      "agents",
+      "uas_researcher.toml",
+    ),
+    "utf8",
+  );
+  const claude = readFileSync(
+    join(
+      import.meta.dirname,
+      "..",
+      "assets",
+      "project-template",
+      ".claude",
+      "agents",
+      "uas-researcher.md",
+    ),
+    "utf8",
+  );
+  const gemini = readFileSync(
+    join(
+      import.meta.dirname,
+      "..",
+      "assets",
+      "project-template",
+      ".gemini",
+      "agents",
+      "uas-researcher.md",
+    ),
+    "utf8",
+  );
+  const opencode = readFileSync(
+    join(
+      import.meta.dirname,
+      "..",
+      "assets",
+      "project-template",
+      ".opencode",
+      "agents",
+      "uas-researcher.md",
+    ),
+    "utf8",
+  );
+
+  assert.match(codex, /sandbox_mode = "read-only"/);
+  assert.match(codex, /Do not edit files, delegate/);
+  assert.match(claude, /tools: Read, Grep, Glob/);
+  assert.doesNotMatch(claude, /\bBash\b|\bWrite\b|\bEdit\b/);
+  assert.match(gemini, /read_file/);
+  assert.match(gemini, /grep_search/);
+  assert.doesNotMatch(gemini, /run_shell_command/);
+  assert.match(opencode, /edit: deny/);
+  assert.match(opencode, /bash: deny/);
+  assert.match(opencode, /"\*": deny/);
+});
+
 test("shell and destructive quality checks are rejected", () => {
   const config = {
     schema_version: 1,
+    autonomy: {
+      parallel_work: "coordinator_managed_isolated_only",
+    },
+    parallel_delivery: safeParallelPolicy(),
     safety: {
       project_root_only: true,
       forbid_shell_commands: true,
@@ -437,6 +652,10 @@ test("shell and destructive quality checks are rejected", () => {
 test("quality guardrails cannot be disabled in project config", () => {
   const errors = validateConfig({
     schema_version: 1,
+    autonomy: {
+      parallel_work: "coordinator_managed_isolated_only",
+    },
+    parallel_delivery: safeParallelPolicy(),
     safety: {
       project_root_only: true,
       forbid_shell_commands: true,
@@ -462,6 +681,73 @@ test("quality guardrails cannot be disabled in project config", () => {
   assert.match(errors.join("\n"), /require_project_checks must remain true/);
   assert.match(errors.join("\n"), /required must remain true/);
   assert.match(errors.join("\n"), /must be run or test/);
+});
+
+test("parallel-delivery guardrails cannot be disabled in project config", () => {
+  const fixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    createJavaScriptFixture(fixture.directory);
+    installOrUpgrade(fixture.directory, { mode: "init" });
+    const configFile = join(fixture.directory, CONFIG_PATH);
+    const config = readJson(configFile);
+    config.parallel_delivery = safeParallelPolicy({
+      max_workers: 99,
+      serial_fallback: false,
+      require_isolation_for_parallel_writes: false,
+      allow_nested_delegation: true,
+      authority_inheritance: "worker_decides",
+      integration_owner: "any_worker",
+    });
+    config.autonomy.parallel_work = "unrestricted";
+    writeJson(configFile, config);
+
+    const doctor = commandDoctor(fixture.directory);
+    const parallelReport = doctor.reports.find(
+      (report) => report.name === "parallel-delivery",
+    );
+    const configReport = doctor.reports.find(
+      (report) => report.name === "config",
+    );
+
+    assert.equal(doctor.ok, false);
+    assert.equal(parallelReport.ok, false);
+    assert.match(JSON.stringify(configReport.detail), /max_workers/);
+    assert.match(JSON.stringify(configReport.detail), /serial_fallback/);
+    assert.match(JSON.stringify(configReport.detail), /nested_delegation/);
+    assert.match(JSON.stringify(configReport.detail), /authority_inheritance/);
+    assert.match(JSON.stringify(configReport.detail), /integration_owner/);
+    assert.match(JSON.stringify(configReport.detail), /autonomy\.parallel_work/);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("doctor rejects a malformed whole parallel-delivery policy", () => {
+  const fixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    createJavaScriptFixture(fixture.directory);
+    installOrUpgrade(fixture.directory, { mode: "init" });
+    const configFile = join(fixture.directory, CONFIG_PATH);
+    const config = readJson(configFile);
+    config.parallel_delivery = "unrestricted";
+    writeJson(configFile, config);
+
+    const doctor = commandDoctor(fixture.directory);
+    const parallelReport = doctor.reports.find(
+      (report) => report.name === "parallel-delivery",
+    );
+
+    assert.equal(doctor.ok, false);
+    assert.equal(parallelReport.ok, false);
+    assert.match(
+      JSON.stringify(parallelReport.detail),
+      /parallel_delivery must be an object/,
+    );
+  } finally {
+    fixture.cleanup();
+  }
 });
 
 test("detect invalidates approval when discovered checks change", () => {

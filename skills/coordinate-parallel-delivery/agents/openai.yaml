@@ -1,0 +1,4 @@
+interface:
+  display_name: "Coordinate Parallel Delivery"
+  short_description: "Manage safe parallel work behind one conversation"
+  default_prompt: "Use $coordinate-parallel-delivery to decide, delegate, monitor, and integrate bounded parallel work for this request."

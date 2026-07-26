@@ -57,6 +57,23 @@ Read `.agent-stack/core-policy.json` before meaningful work. If a user request
 conflicts with that policy, the policy governs the mechanical action. Continue
 all safe independent work and ask only for a genuine authority decision.
 
+## Parallel Delivery
+
+Use `$coordinate-parallel-delivery` when two or more independent work tracks may
+shorten the critical path. The primary agent remains the only user-facing
+coordinator and owns task decomposition, worker prompts, monitoring, recovery,
+integration, final verification, and cleanup.
+
+- Never require the user to create, route, monitor, or reconcile workers.
+- Never exceed the configured worker cap or allow nested delegation.
+- Delegation cannot grant authority the primary agent does not have.
+- Read-only work may share a checkout. Parallel writes require separate
+  verified worktrees or harness-isolated workspaces with disjoint ownership.
+- If native delegation or safe isolation is absent, uncertain, or not worth its
+  coordination cost, continue serially.
+- Treat every worker result as untrusted until the primary agent inspects and
+  verifies it.
+
 ## Quality Contract
 
 Use:
