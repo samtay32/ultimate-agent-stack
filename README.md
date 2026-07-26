@@ -13,6 +13,11 @@ It cannot make every project perfect. It makes completion testable through
 locked intent, project-native checks, independent review, evidence, and explicit
 residual risk.
 
+The package is not the coding model. Codex, Claude, Cursor, Grok, or another
+capable agent supplies the intelligence. Ultimate Agent Stack installs the
+project-owned operating contract, durable state, mechanical guardrails, and
+definition of done that keep that agent aligned from idea through review.
+
 ## Choose Your Path
 
 | If you are... | Start here | What you need to know |
@@ -66,21 +71,29 @@ projects below. It is an original synthesis: useful patterns were compared,
 adapted into one portable workflow, and then surrounded with a new
 dependency-free CLI, safety policy, approval model, state format, tests,
 maintenance process, and release system. No third-party source file is included.
+Repository popularity helped identify valuable research; it did not make every
+feature safe, portable, or appropriate to combine.
 
 ![Research patterns flowing into the original Ultimate Agent Stack synthesis and
 then into a guarded project workflow](https://raw.githubusercontent.com/samtay32/ultimate-agent-stack/main/docs/assets/synthesis-map.svg)
 
 ### Primary design lineage
 
-| Repository | What it taught us | How it changed this stack |
-|---|---|---|
-| [kunchenguid/firstmate](https://github.com/kunchenguid/firstmate) | One liaison, recoverable state, isolated work, and explicit operating modes | One controlling workflow with resumable repository state; swarms and a permanent supervisor remain optional |
-| [kunchenguid/lavish-axi](https://github.com/kunchenguid/lavish-axi) | High-fidelity visual planning can resolve decisions that prose cannot | Visual artifacts are used when fidelity demands them, not as ceremony for every task |
-| [kunchenguid/no-mistakes](https://github.com/kunchenguid/no-mistakes) | Locked intent, fail-closed gates, independent review, and evidence over confidence | Intent locks, deterministic verification, two-axis review, and explicit finding disposition |
-| [kunchenguid/axi](https://github.com/kunchenguid/axi) | Agent-facing tools need structured errors, bounded output, and idempotent operations | Predictable CLI results, bounded/redacted evidence, loud failures, and actionable next steps |
-| [github/spec-kit](https://github.com/github/spec-kit) | Traceable specifications and consistency checks prevent implementation drift | Stable requirements, non-goals, readiness checks, and proportionate shaping rather than universal specification ceremony |
-| [mattpocock/skills](https://github.com/mattpocock/skills) | Research-first questioning, prototypes, vertical slices, TDD, and independent review | One high-impact question at a time, a fidelity ladder, tracer slices, and separate standards/intent review |
-| [bmad-code-org/bmad-method](https://github.com/bmad-code-org/bmad-method) | Workflow depth should scale with project risk and size | Micro, standard, and extended shaping paths with bounded repair loops and binding architecture decisions |
+| Repository | What the original project does | What this stack adapts | What is not bundled |
+|---|---|---|---|
+| [kunchenguid/firstmate](https://github.com/kunchenguid/firstmate) | Runs a crew of supervised coding agents in isolated sessions and worktrees behind one human-facing first mate | One controlling workflow, resumable repository state, optional isolation, and a distinction between delivery and standalone research | Mandatory agent swarms, tmux or another session backend, secondmates, and a permanent supervisor |
+| [kunchenguid/lavish-axi](https://github.com/kunchenguid/lavish-axi) | Lets humans review and annotate agent-generated HTML and Mermaid artifacts in a local visual editor | A fidelity ladder that uses diagrams, comparisons, or disposable prototypes when prose cannot resolve a decision | A required visual editor, HTML planning for every task, or another runtime dependency |
+| [kunchenguid/no-mistakes](https://github.com/kunchenguid/no-mistakes) | Gates pushes through an isolated validation, repair, and clean-PR pipeline | Locked intent, fail-closed verification, independent standards and intent review, evidence, and explicit finding disposition | Its Git proxy remote or complete runtime as a requirement for every repository |
+| [kunchenguid/axi](https://github.com/kunchenguid/axi) | Defines agent-native command interfaces with compact output, predictable errors, and contextual next actions | Structured command arrays, deterministic exit codes, bounded and redacted evidence, loud failures, and safe repeatability | A wrapper for every external tool or unverified universal efficiency claims |
+| [GitHub/spec-kit](https://github.com/github/spec-kit) | Provides a specification-driven lifecycle from project principles through requirements, plans, tasks, analysis, and implementation | Stable capability IDs, measurable acceptance, non-goals, traceability, and consistency checks | Full specification ceremony for small fixes or specifications as a substitute for runnable evidence |
+| [mattpocock/skills](https://github.com/mattpocock/skills) | Provides composable engineering skills for questioning, research, prototypes, specifications, TDD, debugging, and review | Research before questions, one high-impact clarification at a time, tracer slices, public test seams, and independent review | The entire skill catalog, long interviews by default, or keeping disposable prototype code |
+| [bmad-code-org/bmad-method](https://github.com/bmad-code-org/bmad-method) | Provides a broad, scale-adaptive development framework with planning, architecture, implementation, testing, and specialist roles | Risk-scaled shaping, binding architecture decisions, readiness checks, and bounded repair loops | Persona and party-mode machinery, a separate agent for every role, and a large mandatory document catalog |
+
+Firstmate continues to evolve beyond the pinned revision used for this
+synthesis. Its reviewed Kimi CLI and tmux adapter changes remain **deferred**:
+useful for Firstmate operators, but not an improvement to this package's
+portable safety core. Harness-specific capabilities can be added later as
+optional adapters without becoming baseline dependencies.
 
 ### What is original in this package
 
