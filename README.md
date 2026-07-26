@@ -1,5 +1,10 @@
 # Ultimate Agent Stack
 
+[![npm version](https://img.shields.io/npm/v/ultimate-agent-stack.svg)](https://www.npmjs.com/package/ultimate-agent-stack)
+[![CI](https://github.com/samtay32/ultimate-agent-stack/actions/workflows/ci.yml/badge.svg)](https://github.com/samtay32/ultimate-agent-stack/actions/workflows/ci.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![runtime dependencies: 0](https://img.shields.io/badge/runtime%20dependencies-0-2ea44f.svg)](package.json)
+
 A guarded npm-installed operating system for software agents. It turns a
 plain-language idea into a shaped, implemented, verified, review-ready change
 while leaving the human only genuine product and authority decisions.
@@ -8,10 +13,17 @@ It cannot make every project perfect. It makes completion testable through
 locked intent, project-native checks, independent review, evidence, and explicit
 residual risk.
 
+## Choose Your Path
+
+| If you are... | Start here | What you need to know |
+|---|---|---|
+| A non-coder with an idea | Give the conversational prompt below to your coding agent | Describe the result you want. The agent explains important choices in plain language and handles routine setup, implementation, testing, and documentation. |
+| A coder adding it to a project | Run the three commands below | The stack detects and wraps your existing tools; it does not replace your framework, tests, CI, or architecture. |
+| A maintainer evaluating trust | Read [Guardrails Behind the Scenes](#guardrails-behind-the-scenes) and [the architecture](docs/ARCHITECTURE.md) | The CLI has no runtime dependencies, writes are containment-checked, verification fails closed, and upstream code never updates automatically. |
+
 ## The Three Commands
 
-After the first public npm release, open a terminal in a dedicated project
-folder and use:
+Open a terminal in a dedicated project folder and use:
 
 ```bash
 # Install into this project
@@ -36,6 +48,88 @@ The agent runs the commands, reviews detected project checks, fixes the
 baseline, invokes `$run-autonomous-delivery`, and starts the product
 conversation. [STARTER_PROMPT.md](STARTER_PROMPT.md) contains the full operating
 contract when a harness needs an explicit prompt.
+
+## How It Works
+
+![Flow from a human idea through shaping, implementation, verification, review,
+evidence, and human authority](https://raw.githubusercontent.com/samtay32/ultimate-agent-stack/main/docs/assets/delivery-flow.svg)
+
+The human stays at the two points where human judgment matters: defining the
+outcome and exercising real-world authority. Between them, the agent follows a
+durable, inspectable workflow rather than improvising an unbounded autonomous
+loop.
+
+## Built From Research, Finished With Original Engineering
+
+Ultimate Agent Stack is not a fork, wrapper bundle, or repackaging of the
+projects below. It is an original synthesis: useful patterns were compared,
+adapted into one portable workflow, and then surrounded with a new
+dependency-free CLI, safety policy, approval model, state format, tests,
+maintenance process, and release system. No third-party source file is included.
+
+![Research patterns flowing into the original Ultimate Agent Stack synthesis and
+then into a guarded project workflow](https://raw.githubusercontent.com/samtay32/ultimate-agent-stack/main/docs/assets/synthesis-map.svg)
+
+### Primary design lineage
+
+| Repository | What it taught us | How it changed this stack |
+|---|---|---|
+| [kunchenguid/firstmate](https://github.com/kunchenguid/firstmate) | One liaison, recoverable state, isolated work, and explicit operating modes | One controlling workflow with resumable repository state; swarms and a permanent supervisor remain optional |
+| [kunchenguid/lavish-axi](https://github.com/kunchenguid/lavish-axi) | High-fidelity visual planning can resolve decisions that prose cannot | Visual artifacts are used when fidelity demands them, not as ceremony for every task |
+| [kunchenguid/no-mistakes](https://github.com/kunchenguid/no-mistakes) | Locked intent, fail-closed gates, independent review, and evidence over confidence | Intent locks, deterministic verification, two-axis review, and explicit finding disposition |
+| [kunchenguid/axi](https://github.com/kunchenguid/axi) | Agent-facing tools need structured errors, bounded output, and idempotent operations | Predictable CLI results, bounded/redacted evidence, loud failures, and actionable next steps |
+| [github/spec-kit](https://github.com/github/spec-kit) | Traceable specifications and consistency checks prevent implementation drift | Stable requirements, non-goals, readiness checks, and proportionate shaping rather than universal specification ceremony |
+| [mattpocock/skills](https://github.com/mattpocock/skills) | Research-first questioning, prototypes, vertical slices, TDD, and independent review | One high-impact question at a time, a fidelity ladder, tracer slices, and separate standards/intent review |
+| [bmad-code-org/bmad-method](https://github.com/bmad-code-org/bmad-method) | Workflow depth should scale with project risk and size | Micro, standard, and extended shaping paths with bounded repair loops and binding architecture decisions |
+
+### What is original in this package
+
+- one scale-adaptive conversation that works for non-coders and experienced
+  engineers without pretending they need the same amount of ceremony;
+- a containment-checked installer and local project CLI with tamper-resistant
+  approvals, canonical policy verification, intent locks, and secret-isolated
+  evidence;
+- eight composable skills that connect shaping, vertical delivery, conditional
+  security, verification, review closure, and maintenance into one flow;
+- safe upgrades that propose reconciliations instead of overwriting project
+  decisions;
+- project-native verification discovery across common ecosystems, with
+  definition fingerprints that prevent an approved script name from hiding
+  changed behavior;
+- a read-only upstream watcher and human-reviewed adoption policy;
+- an npm/GitHub release chain designed around protected branches, OIDC,
+  provenance, staged publishing, 2FA approval, and no long-lived publish token.
+
+<!-- markdownlint-disable MD033 -->
+<details>
+<summary>Supporting repository audit (all additional repositories)</summary>
+
+These repositories refined individual decisions without becoming runtime
+dependencies:
+
+| Repository | Focus carried into the evaluation |
+|---|---|
+| [kunchenguid/treehouse](https://github.com/kunchenguid/treehouse) | Leased, recoverable worktree isolation |
+| [kunchenguid/gnhf](https://github.com/kunchenguid/gnhf) | Bounded autonomous iterations and rollback |
+| [kunchenguid/gh-axi](https://github.com/kunchenguid/gh-axi) | Compact, structured GitHub operations |
+| [kunchenguid/chrome-devtools-axi](https://github.com/kunchenguid/chrome-devtools-axi) | Observable browser evidence |
+| [kunchenguid/agent-browser-axi](https://github.com/kunchenguid/agent-browser-axi) | Accessibility-oriented browser snapshots |
+| [kunchenguid/quota-axi](https://github.com/kunchenguid/quota-axi) | Cost visibility and explicit time bounds |
+| [kunchenguid/tasks-axi](https://github.com/kunchenguid/tasks-axi) | Idempotent durable task state |
+| [kunchenguid/rough-cut-axi](https://github.com/kunchenguid/rough-cut-axi) | Plain-file truth and structured decisions |
+| [kunchenguid/mcp-compressor](https://github.com/kunchenguid/mcp-compressor) | Task-relevant tools and context cost |
+| [kunchenguid/acpx](https://github.com/kunchenguid/acpx) | Structured delegation and persistent sessions |
+| [kunchenguid/superpowers-bench](https://github.com/kunchenguid/superpowers-bench) | Measured skill discovery |
+| [kunchenguid/ProgramBench](https://github.com/kunchenguid/ProgramBench) | Executable behavioral evaluation |
+| [kunchenguid/harness-exam](https://github.com/kunchenguid/harness-exam) | Clean-repository and fail/pass harness fixtures |
+
+</details>
+<!-- markdownlint-enable MD033 -->
+
+The exact revisions, video research, platform documentation, adopted ideas,
+rejected complexity, and Firstmate/Kimi decision are recorded in
+[Sources, Synthesis, and Tradeoffs](docs/SOURCES_AND_TRADEOFFS.md). That file is
+the evidence ledger; this README is the useful map.
 
 ## What the Agent Owns
 
