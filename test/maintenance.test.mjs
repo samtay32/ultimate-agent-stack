@@ -40,6 +40,10 @@ const reviewReceiptWorkflow = readFileSync(
   ),
   "utf8",
 );
+const repositoryReviewReceiptWorkflow = readFileSync(
+  join(PACKAGE_ROOT, ".github/workflows/review-receipt.yml"),
+  "utf8",
+);
 
 test("package, plugin, and CLI identity stay synchronized", () => {
   assert.equal(PACKAGE_NAME, packageData.name);
@@ -64,6 +68,23 @@ test("review receipt workflow never executes the pull request copy of its gate",
     /node \.agent-stack\/bin\/review-receipt\.mjs/,
   );
   assert.doesNotMatch(reviewReceiptWorkflow, /pull_request\.head|bootstrap-gate/);
+});
+
+test("repository and installed receipt workflows share the same controls", () => {
+  assert.equal(
+    repositoryReviewReceiptWorkflow.replace(
+      "scripts/review-receipt.mjs",
+      ".agent-stack/bin/review-receipt.mjs",
+    ),
+    reviewReceiptWorkflow,
+  );
+  assert.match(reviewReceiptWorkflow, /workflow_dispatch:/);
+  assert.match(reviewReceiptWorkflow, /pr_number:/);
+  assert.match(reviewReceiptWorkflow, /concurrency:/);
+  assert.match(
+    reviewReceiptWorkflow,
+    /--repo "\$GITHUB_REPOSITORY"\s+--pr "\$PR_NUMBER"/,
+  );
 });
 
 test("package has no install hooks and guards publication with prepublishOnly", () => {

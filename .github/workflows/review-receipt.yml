@@ -39,6 +39,6 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
         run: >-
-          node .agent-stack/bin/review-receipt.mjs
+          node scripts/review-receipt.mjs
           --repo "$GITHUB_REPOSITORY"
           --pr "$PR_NUMBER"
