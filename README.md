@@ -242,7 +242,9 @@ publication unless project policy explicitly grants it.
   the package automatically.
 - Accidental direct npm publication fails closed. The first release uses a
   documented owner/2FA bootstrap; later releases use protected stage-only
-  trusted publishing and human npm approval.
+  trusted publishing and human npm approval. A commit-bound draft GitHub
+  Release is then published automatically only after npm exposes the matching
+  version and provenance.
 
 These controls protect a non-technical owner without asking them to approve
 technical details they cannot reasonably evaluate. The agent must translate an

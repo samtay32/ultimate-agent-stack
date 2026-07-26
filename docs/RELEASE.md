@@ -55,6 +55,7 @@ The owner then:
 
    Complete npm's browser and 2FA prompts. Never paste the password, recovery
    codes, or authenticator code into chat.
+
 4. verifies `ultimate-agent-stack@0.1.0` on npm.
 
 No long-lived npm token is created or stored in GitHub.
@@ -90,6 +91,21 @@ The owner approves the protected GitHub `npm` environment. GitHub uses
 short-lived OIDC credentials to run `npm stage publish`. The owner then reviews
 and approves the staged version through npm with 2FA. Publication never happens
 silently.
+
+After staging succeeds, the protected workflow creates a draft GitHub Release
+bound to the exact staged commit. The hourly **Sync GitHub release** workflow
+checks npm's public registry, package digest, publish attestation, SLSA
+repository/workflow/branch identity, and provenance commit. Only then does it
+publish the matching draft and mark the npm `latest` version as GitHub's latest
+release. It may also be run manually for immediate synchronization after npm
+approval.
+
+The synchronization fails closed if a tag or draft points at a different
+commit, npm cannot cryptographically verify the registry signature and
+provenance, or attestation claims are inconsistent. A public historical version
+without attestations is left as a draft without blocking later verified
+releases. Synchronization never approves an npm stage and never publishes a
+package.
 
 The release job requires Node.js 22.14+ and npm 11.15+. Project users may run
 the package with Node.js 20.12+.
