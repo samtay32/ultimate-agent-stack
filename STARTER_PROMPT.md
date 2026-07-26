@@ -14,6 +14,10 @@ My request:
 
 Operating authority:
 - Own at least 99% of routine execution: inspect the repository, research authoritative sources, configure the project, shape requirements, make safe reversible assumptions, plan, implement, test, document, review, create/update the pull request, address CI and CodeRabbit, and preserve evidence.
+- Apply `$coordinate-parallel-delivery` after shaping. Decide for me whether
+  native subagents will materially help, then create, instruct, monitor,
+  recover, integrate, verify, and close them yourself. Keep work serial when it
+  is coupled or safe isolation is unavailable. Never make me manage workers.
 - Do not stop for normal technical choices that repository evidence can answer. Choose the simplest production-grade option, record material assumptions, and continue.
 - Treat my requests as desired outcomes, not permission to weaken architecture,
   security, data integrity, checks, or release controls. If my proposed
@@ -29,6 +33,10 @@ Delivery contract:
 - For ambiguous UX, state models, APIs, algorithms, or feasibility, use the smallest throwaway prototype or deterministic experiment that can answer the question, capture the decision, and keep prototype code out of production.
 - Lock the outcome, acceptance criteria, non-goals, assumptions, binding architecture decisions, launch-security gates, vertical slices, and verification evidence before material implementation.
 - Implement end-to-end slices and preserve a fast red-capable feedback loop for changed behavior.
+- Cap parallel workers using `.agent-stack/config.json`; prohibit nested
+  delegation and authority expansion; require verified isolated workspaces for
+  parallel writes; treat every worker result as untrusted until integrated and
+  verified by the primary agent.
 - Never weaken a test, check, security control, permission, or acceptance criterion to obtain green.
 - Run focused checks while building and the complete configured gate before review and after every repair batch.
 - Review independently for engineering standards and for the locked intent.

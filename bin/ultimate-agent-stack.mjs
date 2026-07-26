@@ -35,7 +35,7 @@ const PACKAGE_JSON = existsSync(join(PACKAGE_ROOT, "package.json"))
   ? JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8"))
   : {
       name: "ultimate-agent-stack",
-      version: "0.2.0",
+      version: "0.3.0",
     };
 const PACKAGE_NAME = PACKAGE_JSON.name;
 const PACKAGE_VERSION = PACKAGE_JSON.version;
@@ -599,8 +599,17 @@ function defaultConfig(target, detected) {
     autonomy: {
       execution: "agent_owned",
       merge: "human_approval_required",
-      parallel_work: "isolated_independent_only",
+      parallel_work: "coordinator_managed_isolated_only",
       max_repair_loops: 5,
+    },
+    parallel_delivery: {
+      mode: "adaptive",
+      max_workers: 3,
+      serial_fallback: true,
+      require_isolation_for_parallel_writes: true,
+      allow_nested_delegation: false,
+      authority_inheritance: "no_expansion",
+      integration_owner: "primary_agent",
     },
     safety: {
       require_check_approval: true,
@@ -626,8 +635,21 @@ function migrateConfig(config) {
   config.autonomy ??= {};
   config.autonomy.execution ??= "agent_owned";
   config.autonomy.merge ??= "human_approval_required";
-  config.autonomy.parallel_work ??= "isolated_independent_only";
+  if (
+    config.autonomy.parallel_work === undefined ||
+    config.autonomy.parallel_work === "isolated_independent_only"
+  ) {
+    config.autonomy.parallel_work = "coordinator_managed_isolated_only";
+  }
   config.autonomy.max_repair_loops ??= 5;
+  config.parallel_delivery ??= {};
+  config.parallel_delivery.mode ??= "adaptive";
+  config.parallel_delivery.max_workers ??= 3;
+  config.parallel_delivery.serial_fallback ??= true;
+  config.parallel_delivery.require_isolation_for_parallel_writes ??= true;
+  config.parallel_delivery.allow_nested_delegation ??= false;
+  config.parallel_delivery.authority_inheritance ??= "no_expansion";
+  config.parallel_delivery.integration_owner ??= "primary_agent";
   config.safety ??= {};
   config.safety.require_check_approval ??= true;
   config.safety.approved_checks_hash ??= null;
@@ -753,6 +775,53 @@ function validateConfig(config, target = undefined) {
   }
   if (!config.safety || typeof config.safety !== "object") {
     return [...errors, "safety must be an object"];
+  }
+  if (
+    !config.parallel_delivery ||
+    typeof config.parallel_delivery !== "object" ||
+    Array.isArray(config.parallel_delivery)
+  ) {
+    return [...errors, "parallel_delivery must be an object"];
+  }
+  if (config.autonomy?.parallel_work !== "coordinator_managed_isolated_only") {
+    errors.push(
+      "autonomy.parallel_work must remain coordinator_managed_isolated_only",
+    );
+  }
+  if (!["adaptive", "serial"].includes(config.parallel_delivery.mode)) {
+    errors.push("parallel_delivery.mode must be adaptive or serial");
+  }
+  if (
+    !Number.isInteger(config.parallel_delivery.max_workers) ||
+    config.parallel_delivery.max_workers < 1 ||
+    config.parallel_delivery.max_workers > 4
+  ) {
+    errors.push("parallel_delivery.max_workers must be between 1 and 4");
+  }
+  if (config.parallel_delivery.serial_fallback !== true) {
+    errors.push("parallel_delivery.serial_fallback must remain true");
+  }
+  if (
+    config.parallel_delivery.require_isolation_for_parallel_writes !== true
+  ) {
+    errors.push(
+      "parallel_delivery.require_isolation_for_parallel_writes must remain true",
+    );
+  }
+  if (config.parallel_delivery.allow_nested_delegation !== false) {
+    errors.push(
+      "parallel_delivery.allow_nested_delegation must remain false",
+    );
+  }
+  if (config.parallel_delivery.authority_inheritance !== "no_expansion") {
+    errors.push(
+      "parallel_delivery.authority_inheritance must remain no_expansion",
+    );
+  }
+  if (config.parallel_delivery.integration_owner !== "primary_agent") {
+    errors.push(
+      "parallel_delivery.integration_owner must remain primary_agent",
+    );
   }
   if (config.safety.project_root_only !== true) {
     errors.push("safety.project_root_only must remain true");
@@ -905,6 +974,9 @@ function sourceEntries({ claude = false } = {}) {
     let destination = relative(templateRoot, source)
       .split(sep)
       .join("/");
+    if (!claude && destination.startsWith(".claude/")) {
+      continue;
+    }
     if (destination === ".agent-stack/gitignore.template") {
       destination = ".agent-stack/.gitignore";
     }
@@ -1124,7 +1196,9 @@ function installOrUpgrade(target, { claude = false, mode = "init" } = {}) {
   manifest.harnesses = [
     "codex",
     "cursor",
+    "gemini",
     "grok",
+    "opencode",
     ...(claude || manifest.harnesses.includes("claude") ? ["claude"] : []),
   ];
   atomicProjectJson(
@@ -1146,7 +1220,7 @@ function installOrUpgrade(target, { claude = false, mode = "init" } = {}) {
     next_prompt:
       pending.length > 0
         ? "Reconcile the listed proposals, run adopt-managed for each, then run doctor."
-        : "Read .agent-stack/HANDOFF.md, run doctor, review and approve detected checks, then begin conversational project shaping.",
+        : "Read .agent-stack/HANDOFF.md, run doctor, review and approve detected checks, then begin conversational project shaping. The primary agent may coordinate safe parallel work automatically.",
   };
 }
 
@@ -1301,6 +1375,26 @@ function commandDoctor(target) {
     const config = loadConfig(target);
     const errors = validateConfig(config, target);
     report("config", errors.length === 0, errors.length === 0 ? "valid" : errors);
+    const parallel = config.parallel_delivery;
+    report(
+      "parallel-delivery",
+      errors.length === 0 ||
+        !errors.some(
+          (error) =>
+            error.startsWith("parallel_delivery.") ||
+            error.startsWith("autonomy.parallel_work"),
+        ),
+      parallel
+        ? {
+            mode: parallel.mode,
+            max_workers: parallel.max_workers,
+            write_isolation_required:
+              parallel.require_isolation_for_parallel_writes,
+            nested_delegation: parallel.allow_nested_delegation,
+            integration_owner: parallel.integration_owner,
+          }
+        : "missing parallel_delivery policy",
+    );
     const actualHash = checksHash(config.quality.checks, target);
     report(
       "check-approval",
@@ -1654,7 +1748,7 @@ function commandStart(target, idea) {
   const request = idea?.trim() || "[describe what you want to build or change]";
   return {
     ok: true,
-    prompt: `Read AGENTS.md, .agent-stack/HANDOFF.md, and the installed skills. Use $run-autonomous-delivery for this request: ${request}\n\nInspect the project first. Then ask me one high-impact question at a time, recommend a safe default, and own all routine implementation and verification.`,
+    prompt: `Read AGENTS.md, .agent-stack/HANDOFF.md, and the installed skills. Use $run-autonomous-delivery for this request: ${request}\n\nInspect the project first. Use $coordinate-parallel-delivery to manage independent subagent work when it is safe and useful; keep it serial otherwise. You remain the integration owner, and the user must not manage workers. Then ask me one high-impact question at a time, recommend a safe default, and own all routine implementation and verification.`,
   };
 }
 
@@ -1759,7 +1853,8 @@ Maintainer:
   ultimate-agent-stack upstream-check [--target DIR] [--output PATH]
 
 All commands are non-interactive and return JSON. init and upgrade never overwrite
-customized files; they create reconciliation proposals instead.`;
+customized files; they create reconciliation proposals instead. Parallel delivery
+is coordinator-managed and falls back to serial work when safe isolation is absent.`;
 }
 
 function execute(command, args) {

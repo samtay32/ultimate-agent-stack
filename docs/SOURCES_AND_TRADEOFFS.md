@@ -23,6 +23,18 @@ Firstmate users but does not improve this package's portable setup, safety,
 verification, or release interfaces. The pin remains unchanged; no upstream
 code or instructions were copied or executed.
 
+### Parallel Delivery Decision on July 26, 2026
+
+The useful Firstmate principle—one liaison owning a bounded crew—has now been
+implemented as original package policy rather than by adopting Firstmate's
+runtime. The new coordinator uses native Codex, Claude Code, Gemini CLI, or
+OpenCode subagents when available, caps workers, forbids recursive
+delegation and authority expansion, requires verified isolation for parallel
+writes, persists dispositions, and falls back to serial work. Other harnesses
+may delegate only when their current native surface is proven. The Kimi/tmux
+adapter remains deferred because it solves Firstmate-specific process control,
+not this package's portable contract.
+
 ## Related Kunchenguid Repository Review
 
 The linked profile was reviewed for related original work rather than treating every fork as a new design source.
@@ -60,6 +72,7 @@ The linked profile was reviewed for related original work rather than treating e
 - [Anthropic Agent Skills best practices](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/best-practices): concise skill metadata, progressive disclosure, scripts for deterministic work, and forward testing.
 - [Cursor rules](https://docs.cursor.com/context/rules-for-ai) and [commands](https://docs.cursor.com/en/agent/chat/commands): root `AGENTS.md`, project rules, and reusable command adapters.
 - [Grok skills and plugins](https://docs.x.ai/build/features/skills-plugins-marketplaces): `.grok/skills`, plugin discovery, Claude compatibility, and `.agents/skills` compatibility.
+- [Codex subagents](https://developers.openai.com/codex/subagents/), [Claude Code subagents](https://code.claude.com/docs/en/sub-agents), [Gemini CLI subagents](https://github.com/google-gemini/gemini-cli/blob/main/docs/core/subagents.md), and [OpenCode agents](https://opencode.ai/docs/agents/): native delegation capabilities differ, so one portable assignment contract must degrade safely rather than pretend every harness is identical.
 - [CodeRabbit configuration](https://docs.coderabbit.ai/reference/configuration) and [commands](https://docs.coderabbit.ai/guides/commands): current schema, review controls, and re-review commands.
 - [GitHub protected branches](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches): required status checks, approvals, conversation resolution, and merge controls.
 
@@ -80,9 +93,13 @@ dependency-free Node.js CLI travel well and can be distributed through npm.
 Harness-specific hooks and custom orchestrators could automate more, but would
 increase trust surface, drift, and lock-in. They remain adapters.
 
-### Serial default versus agent swarm
+### Adaptive coordination versus agent swarm
 
-Parallel agents can shorten independent research or changes. They also add merge conflicts, duplicated context, and integration failure. The default is one liaison and serial slices; parallelism requires isolation and a named integration owner.
+Parallel agents can shorten independent research or changes. They also add
+merge conflicts, duplicated context, and integration failure. The default is
+one primary liaison choosing adaptively: serial for coupled or small work,
+shared-checkout parallelism for read-only work, and verified isolated
+workspaces for disjoint writes. The coordinator—not the user—owns integration.
 
 ### Manual review trigger versus every-push review
 

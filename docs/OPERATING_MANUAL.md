@@ -69,6 +69,31 @@ The agent should research and recommend the implementation. Add constraints
 only when they are real. [../STARTER_PROMPT.md](../STARTER_PROMPT.md) provides a
 longer copy-and-paste contract for harnesses that need it.
 
+## What Happens With Subagents
+
+You continue speaking only with the primary coding agent. It decides whether
+parallel work is useful after the request is understood:
+
+- a small fix or tightly connected change stays with the primary agent;
+- independent research, review, tests, or documentation may run in parallel;
+- independent code changes run in parallel only in verified isolated
+  workspaces;
+- if a worker fails or the coding tool has no safe subagent feature, the primary
+  agent continues serially.
+
+The primary agent writes the assignments, limits their authority, watches
+progress, rejects bad output, combines accepted work, runs the final checks, and
+returns one result. You should never be asked to open extra chats, copy messages
+between workers, resolve branches, or decide how many agents to use.
+
+If an agent asks you to manage its workers, reply:
+
+```text
+Apply $coordinate-parallel-delivery. You own worker assignment, monitoring,
+integration, verification, and cleanup. Keep the work serial if you cannot do
+that safely.
+```
+
 ## When the Agent Asks a Question
 
 A valid question should:

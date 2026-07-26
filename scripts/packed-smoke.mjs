@@ -95,6 +95,40 @@ function main() {
     if (!existsSync(join(project, ".agent-stack", ".gitignore"))) {
       throw new Error("packed install did not create the project evidence ignore");
     }
+    if (
+      !existsSync(
+        join(
+          project,
+          ".agents",
+          "skills",
+          "coordinate-parallel-delivery",
+          "SKILL.md",
+        ),
+      )
+    ) {
+      throw new Error("packed install did not create the coordination skill");
+    }
+    if (
+      !existsSync(
+        join(project, ".codex", "agents", "uas_researcher.toml"),
+      )
+    ) {
+      throw new Error("packed install did not create the Codex worker adapter");
+    }
+    if (
+      !existsSync(
+        join(project, ".gemini", "agents", "uas-researcher.md"),
+      )
+    ) {
+      throw new Error("packed install did not create the Gemini worker adapter");
+    }
+    if (
+      !existsSync(
+        join(project, ".opencode", "agents", "uas-researcher.md"),
+      )
+    ) {
+      throw new Error("packed install did not create the OpenCode worker adapter");
+    }
     const version = JSON.parse(
       run(process.execPath, [localCli, "--version"], project),
     );

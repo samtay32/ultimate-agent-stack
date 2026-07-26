@@ -2,6 +2,39 @@
 
 All notable changes to Ultimate Agent Stack are documented here.
 
+## 0.3.0 - 2026-07-26
+
+### Added
+
+- `$coordinate-parallel-delivery`, a portable coordinator that lets the primary
+  agent choose serial or bounded native-subagent execution and own assignment,
+  monitoring, recovery, integration, verification, and cleanup.
+- Conservative read-only worker adapters for Codex, Gemini CLI, and OpenCode,
+  plus a Claude Code adapter installed with `--claude`.
+- A durable delegation record and capability model for serial, shared-checkout
+  read-only, and isolated-write execution.
+- README and architecture diagrams explaining the one-conversation coordination
+  model for non-coders and coders.
+
+### Changed
+
+- The end-to-end delivery workflow now routes every shaped request through an
+  adaptive execution decision instead of relying on an informal serial default.
+- Project configuration caps workers, requires serial fallback and isolated
+  parallel writes, forbids nested delegation and authority expansion, and keeps
+  integration with the primary agent.
+- The Firstmate principle of one human-facing coordinator is now implemented as
+  original portable policy; Firstmate's Kimi/tmux runtime adapter remains
+  deliberately deferred.
+
+### Upgrade impact
+
+This is a compatible minor release. Existing projects receive versioned
+proposals for changed managed instructions and new coordinator assets. The
+config migrator adds the safe parallel-delivery defaults. Upgrade never
+overwrites an existing differing file; the agent must reconcile proposals,
+approve any changed project checks, and rerun `doctor` and `verify`.
+
 ## 0.2.0 - 2026-07-26
 
 ### Added

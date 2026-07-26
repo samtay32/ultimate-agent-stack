@@ -38,15 +38,19 @@ Do not say "done" until all applicable conditions hold:
    node .agent-stack/bin/agent-stack.mjs lock
    ```
 
-4. **Plan vertical slices.** Each slice must be user-observable or operationally demonstrable, independently verifiable, small enough for one focused context, and explicit about blockers.
-5. **Implement.** Apply `$build-vertical-slice` one slice at a time. Keep the repository runnable. Do not mix unrelated cleanup into the change.
-6. **Verify.** Apply `$verify-change`; run focused checks during development and the deterministic full gate before review.
-7. **Review adversarially.** Review two axes independently:
+4. **Choose the execution strategy.** Apply
+   `$coordinate-parallel-delivery`. The primary agent decides whether work stays
+   serial or uses bounded native subagents, owns every assignment and
+   integration, and never makes the user manage workers.
+5. **Plan vertical slices.** Each slice must be user-observable or operationally demonstrable, independently verifiable, small enough for one focused context, and explicit about blockers.
+6. **Implement.** Apply `$build-vertical-slice` one slice at a time. Keep the repository runnable. Do not mix unrelated cleanup into the change.
+7. **Verify.** Apply `$verify-change`; run focused checks during development and the deterministic full gate before review.
+8. **Review adversarially.** Review two axes independently:
    - standards: correctness, security, reliability, performance, maintainability, operations;
    - intent: acceptance criteria, non-goals, UX, migrations, documentation, compatibility.
-8. **Open or update the PR.** Use a draft while material work remains. Include intent, decisions, test evidence, migration/rollback notes, screenshots or recordings when visual behavior changed, and known risks.
-9. **Close feedback.** Apply `$close-review-loop`. Repair in bounded batches, re-run the full gate, push, re-trigger incremental review, and repeat until the closure contract is met.
-10. **Hand off.** State the outcome, PR, evidence, decisions, residual risks, and only actions requiring human authority.
+9. **Open or update the PR.** Use a draft while material work remains. Include intent, decisions, test evidence, migration/rollback notes, screenshots or recordings when visual behavior changed, and known risks.
+10. **Close feedback.** Apply `$close-review-loop`. Repair in bounded batches, re-run the full gate, push, re-trigger incremental review, and repeat until the closure contract is met.
+11. **Hand off.** State the outcome, PR, evidence, decisions, residual risks, and only actions requiring human authority.
 
 ## Control Rules
 
@@ -60,6 +64,9 @@ Do not say "done" until all applicable conditions hold:
 - One repair loop must produce new evidence. Stop after five non-converging repair loops and report the smallest blocking decision with attempted remedies.
 - Never weaken tests, checks, permissions, or acceptance criteria to manufacture green.
 - Never hide pre-existing failures. Prove they predate the change and record them separately.
-- Default to serial execution. Parallelize only independent work with isolated state and an explicit integration owner.
+- Let `$coordinate-parallel-delivery` choose the strategy. Parallel work is
+  bounded, non-recursive, authority-preserving, isolated for writes, and always
+  integrated by the primary agent. Fall back to serial work when any condition
+  is unavailable.
 - Treat tokens, elapsed time, and tool calls as costs. Optimize verified outcomes, not agent activity.
 - Persist decisions and evidence in the repository so a fresh session can resume.

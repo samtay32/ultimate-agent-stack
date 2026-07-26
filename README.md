@@ -64,6 +64,55 @@ outcome and exercising real-world authority. Between them, the agent follows a
 durable, inspectable workflow rather than improvising an unbounded autonomous
 loop.
 
+## One Conversation, Automatically Managed Subagents
+
+You still talk to one primary coding agent. For each shaped request, that agent
+now applies `$coordinate-parallel-delivery` and decides whether native
+subagents would actually shorten the work. When they help, the primary agent
+creates their assignments, monitors them, handles failures, integrates their
+results, verifies the combined change, and closes them. You do not become the
+project manager for a collection of bots.
+
+```mermaid
+flowchart LR
+    U["You describe the outcome"] --> P["Primary coding agent"]
+    P --> D{"Independent work worth parallelizing?"}
+    D -- "No or uncertain" --> S["Primary agent works serially"]
+    D -- "Yes" --> A["Native harness adapter"]
+    A --> R["Research or review worker"]
+    A --> T["Test or documentation worker"]
+    A --> W["Isolated implementation worker"]
+    R --> I["Primary agent inspects and integrates"]
+    T --> I
+    W --> I
+    S --> V["Full verification and review"]
+    I --> V
+    V --> O["One evidence-backed result"]
+```
+
+This is adaptive parallel delivery, not a mandatory swarm:
+
+- the default cap is three workers, configurable only within a safe limit;
+- workers cannot create more workers or gain authority the primary agent lacks;
+- read-only tasks may share a checkout, but parallel writes require verified
+  separate worktrees or harness-isolated workspaces;
+- coupled work, small work, unsupported harnesses, and uncertain isolation stay
+  serial automatically;
+- every worker result is treated as untrusted until the primary agent inspects
+  and verifies it.
+
+The core contract is harness-agnostic. The package ships conservative native
+read-only worker profiles for
+[Codex](https://developers.openai.com/codex/subagents/),
+[Gemini CLI](https://github.com/google-gemini/gemini-cli/blob/main/docs/core/subagents.md),
+and [OpenCode](https://opencode.ai/docs/agents/), plus
+[Claude Code](https://code.claude.com/docs/en/sub-agents) when initialized with
+`--claude`. Grok, Cursor, and other agents use the same portable rules and may
+use a native delegation surface only when its current capability and isolation
+are known; otherwise they fall back to serial execution. Ultimate Agent Stack
+does not launch one vendor's CLI from another or add a separate orchestration
+framework to the project.
+
 ## Built From Research, Finished With Original Engineering
 
 Ultimate Agent Stack is not a fork, wrapper bundle, or repackaging of the
@@ -81,7 +130,7 @@ then into a guarded project workflow](https://raw.githubusercontent.com/samtay32
 
 | Repository | What the original project does | What this stack adapts | What is not bundled |
 |---|---|---|---|
-| [kunchenguid/firstmate](https://github.com/kunchenguid/firstmate) | Runs a crew of supervised coding agents in isolated sessions and worktrees behind one human-facing first mate | One controlling workflow, resumable repository state, optional isolation, and a distinction between delivery and standalone research | Mandatory agent swarms, tmux or another session backend, secondmates, and a permanent supervisor |
+| [kunchenguid/firstmate](https://github.com/kunchenguid/firstmate) | Runs a crew of supervised coding agents in isolated sessions and worktrees behind one human-facing first mate | One primary coordinator, bounded native subagents for useful independent work, resumable repository state, verified write isolation, and serial fallback | Mandatory agent swarms, tmux or another session backend, fixed worker personas, and a permanent supervisor |
 | [kunchenguid/lavish-axi](https://github.com/kunchenguid/lavish-axi) | Lets humans review and annotate agent-generated HTML and Mermaid artifacts in a local visual editor | A fidelity ladder that uses diagrams, comparisons, or disposable prototypes when prose cannot resolve a decision | A required visual editor, HTML planning for every task, or another runtime dependency |
 | [kunchenguid/no-mistakes](https://github.com/kunchenguid/no-mistakes) | Gates pushes through an isolated validation, repair, and clean-PR pipeline | Locked intent, fail-closed verification, independent standards and intent review, evidence, and explicit finding disposition | Its Git proxy remote or complete runtime as a requirement for every repository |
 | [kunchenguid/axi](https://github.com/kunchenguid/axi) | Defines agent-native command interfaces with compact output, predictable errors, and contextual next actions | Structured command arrays, deterministic exit codes, bounded and redacted evidence, loud failures, and safe repeatability | A wrapper for every external tool or unverified universal efficiency claims |
@@ -91,9 +140,10 @@ then into a guarded project workflow](https://raw.githubusercontent.com/samtay32
 
 Firstmate continues to evolve beyond the pinned revision used for this
 synthesis. Its reviewed Kimi CLI and tmux adapter changes remain **deferred**:
-useful for Firstmate operators, but not an improvement to this package's
-portable safety core. Harness-specific capabilities can be added later as
-optional adapters without becoming baseline dependencies.
+they are useful for Firstmate operators, but would couple this package to
+another supervisor and session backend. Version 0.3 instead adds an original,
+portable coordination contract that uses each supported coding harness's native
+subagent capability and retains a safe serial fallback.
 
 ### What is original in this package
 
@@ -102,8 +152,9 @@ optional adapters without becoming baseline dependencies.
 - a containment-checked installer and local project CLI with tamper-resistant
   approvals, canonical policy verification, intent locks, and secret-isolated
   evidence;
-- eight composable skills that connect shaping, vertical delivery, conditional
-  security, verification, review closure, and maintenance into one flow;
+- nine composable skills that connect shaping, adaptive parallel coordination,
+  vertical delivery, conditional security, verification, review closure, and
+  maintenance into one flow;
 - safe upgrades that propose reconciliations instead of overwriting project
   decisions;
 - project-native verification discovery across common ecosystems, with
@@ -179,6 +230,10 @@ publication unless project policy explicitly grants it.
 - A protected review-receipt check rejects absent, stale, rate-limited, or
   unresolved CodeRabbit reviews; each fix push requires another actual review.
 - Intent locks detect silent requirement or architecture drift.
+- Parallel delivery is bounded by protected policy: the primary agent owns
+  delegation and integration, workers cannot recursively delegate or expand
+  authority, parallel writes require isolation, and unavailable or unsafe
+  parallelism falls back to serial work.
 - Captured command output is bounded and secret-like assignments are redacted.
 - `$secure-launch` derives authentication, tenant isolation, privacy, abuse,
   cost, dependency, and supply-chain gates only when the project exposure makes
@@ -221,8 +276,9 @@ copies, executes, merges, or publishes upstream code.
 
 ## Package Contents
 
-- `skills/`: eight validated Agent Skills, including setup, secure launch, delivery,
-  verification, review closure, and maintenance.
+- `skills/`: nine validated Agent Skills, including setup, secure launch,
+  adaptive parallel coordination, delivery, verification, review closure, and
+  maintenance.
 - `bin/ultimate-agent-stack.mjs`: dependency-free Node.js CLI.
 - `assets/project-template/`: protected policy, planning artifacts, PR
   template, CodeRabbit configuration, review-receipt workflow, and harness

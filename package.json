@@ -1,7 +1,7 @@
 {
   "name": "ultimate-agent-stack",
-  "version": "0.2.0",
-  "description": "A guarded, project-adaptive agent workflow from idea through verified review closure.",
+  "version": "0.3.0",
+  "description": "A guarded, project-adaptive agent workflow with managed parallel delivery from idea through verified review closure.",
   "type": "module",
   "bin": {
     "ultimate-agent-stack": "bin/ultimate-agent-stack.mjs"
@@ -45,6 +45,8 @@
     "claude-code",
     "cursor",
     "grok",
+    "subagents",
+    "multi-agent",
     "software-delivery"
   ],
   "publishConfig": {
