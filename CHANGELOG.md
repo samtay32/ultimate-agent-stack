@@ -4,6 +4,16 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ## Unreleased
 
+### Fixed
+
+- GitHub draft-release preparation now treats GitHub's specific HTTP 422
+  "No commit found for SHA" response as an absent version tag while preserving
+  fail-closed behavior for unrelated API errors.
+- npm package contents exclude macOS-style " 2" duplicate-copy paths, and the
+  packed-install smoke test rejects them if they ever reappear.
+
+## 0.4.0 - 2026-07-26
+
 ### Added
 
 - Guided onboarding that detects capabilities, recommends one choice with at

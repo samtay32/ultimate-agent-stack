@@ -46,6 +46,14 @@ function main() {
     if (!Array.isArray(packed) || !packed[0]?.filename) {
       throw new Error("npm pack did not return a tarball filename");
     }
+    const duplicatePaths = (packed[0].files ?? [])
+      .map((entry) => entry.path)
+      .filter((path) => /(?:^|\/)[^/]+ 2\.[^/]+$/.test(path));
+    if (duplicatePaths.length > 0) {
+      throw new Error(
+        `npm pack included duplicate-copy paths: ${duplicatePaths.join(", ")}`,
+      );
+    }
     const tarball = join(sandbox, packed[0].filename);
     const project = join(sandbox, "project");
     mkdirSync(project);
