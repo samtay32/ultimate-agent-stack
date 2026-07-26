@@ -472,6 +472,60 @@ test("guided configuration enforces safe provider combinations", () => {
       /allowed GitHub logins/,
     );
 
+    const validArguments = {
+      profile: "standard",
+      review: "builtin",
+      knowledge: "repository",
+      externalData: "local_only",
+      execution: "agent_owned",
+      merge: "human_approval_required",
+      reason: "Approved values used to exercise configuration validation",
+    };
+    const invalidArguments = [
+      {
+        override: { reason: "too short" },
+        expected: /Configuration reason/,
+      },
+      {
+        override: { profile: "unknown-profile" },
+        expected: /--profile must be/,
+      },
+      {
+        override: { review: "unknown-review" },
+        expected: /--review must be/,
+      },
+      {
+        override: { knowledge: "unknown-knowledge" },
+        expected: /--knowledge must be/,
+      },
+      {
+        override: { externalData: "unknown-policy" },
+        expected: /--external-data must be/,
+      },
+      {
+        override: { execution: "unknown-execution" },
+        expected: /--execution must be/,
+      },
+      {
+        override: { merge: "unknown-merge" },
+        expected: /--merge must be/,
+      },
+    ];
+    for (const { override, expected } of invalidArguments) {
+      assert.throws(
+        () =>
+          commandConfigure(fixture.directory, {
+            ...validArguments,
+            ...override,
+          }),
+        expected,
+      );
+    }
+    const unapproved = readJson(join(fixture.directory, CONFIG_PATH));
+    assert.equal(unapproved.onboarding.status, "pending");
+    assert.equal(unapproved.safety.approved_configuration_hash, null);
+    assert.equal(unapproved.safety.configuration_approved_at, null);
+
     const configured = commandConfigure(fixture.directory, {
       profile: "production",
       review: "github-human",
@@ -496,6 +550,21 @@ test("guided configuration enforces safe provider combinations", () => {
   } finally {
     fixture.cleanup();
   }
+});
+
+test("github-human validation returns errors for non-array allowlists", () => {
+  const config = safeConfig();
+  config.capabilities.review = {
+    provider: "github-human",
+    required_for_release: true,
+    current_revision_required: true,
+    allowed_logins: null,
+  };
+
+  const errors = validateConfig(config);
+
+  assert.match(errors.join("\n"), /allowed_logins must contain/);
+  assert.match(errors.join("\n"), /requires at least one allowed/);
 });
 
 test("provider or authority changes invalidate configuration approval", () => {

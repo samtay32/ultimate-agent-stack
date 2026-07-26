@@ -1023,7 +1023,8 @@ function validateConfig(config, target = undefined) {
     }
     if (
       review.provider === "github-human" &&
-      review.allowed_logins.length === 0
+      (!Array.isArray(review.allowed_logins) ||
+        review.allowed_logins.length === 0)
     ) {
       errors.push(
         "github-human review requires at least one allowed GitHub login",

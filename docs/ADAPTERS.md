@@ -39,7 +39,7 @@ Use repeated `--reviewer LOGIN` arguments when selecting `github-human`.
 |---|---|---|
 | `builtin` | Repository-owned standards and intent review | Available everywhere; cannot satisfy production external-review policy |
 | `coderabbit` | Current-head CodeRabbit `COMMENTED` or `APPROVED` review and no unresolved current provider threads | Required selection fails closed; rate-limit comments never count |
-| `github-human` | Current-head `APPROVED` review from an explicitly allowed GitHub `User` login and no unresolved current provider threads | Required selection fails closed; bots, stale, dismissed, unlisted, or comment-only reviews never count |
+| `github-human` | Current-head `APPROVED` review from an explicitly allowed GitHub `User` login other than the pull-request author, with no unresolved current provider threads | Required selection fails closed; self, bot, stale, dismissed, unlisted, or comment-only reviews never count |
 
 The protected installed workflow reads configuration from the default branch.
 It does not execute a pull request's changed evaluator or provider policy.

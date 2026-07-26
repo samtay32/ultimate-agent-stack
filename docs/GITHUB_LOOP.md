@@ -62,7 +62,8 @@ configuration, queries GitHub review evidence, and passes only when:
 
 For CodeRabbit, `COMMENTED` or `APPROVED` review submissions qualify, but a
 summary, reaction, top-level comment, or rate-limit message does not. For
-`github-human`, only `APPROVED` from an explicitly allowed login qualifies.
+`github-human`, only `APPROVED` from an explicitly allowed login other than the
+pull-request author qualifies.
 Built-in review does not manufacture an external receipt requirement for
 profiles where external review is optional.
 

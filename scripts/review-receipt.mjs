@@ -20,7 +20,11 @@ function isCodeRabbit(login) {
   return normalizeLogin(login) === "coderabbitai";
 }
 
-function reviewerPolicy(provider, allowedLogins = []) {
+function reviewerPolicy(
+  provider,
+  allowedLogins = [],
+  excludedLogin = undefined,
+) {
   if (provider === "coderabbit") {
     return {
       label: "CodeRabbit",
@@ -30,6 +34,7 @@ function reviewerPolicy(provider, allowedLogins = []) {
   }
   if (provider === "github-human") {
     const allowed = new Set(allowedLogins.map(normalizeLogin));
+    const excluded = normalizeLogin(excludedLogin);
     if (allowed.size === 0) {
       throw new Error(
         "github-human review requires at least one allowed GitHub login.",
@@ -37,9 +42,14 @@ function reviewerPolicy(provider, allowedLogins = []) {
     }
     return {
       label: "An allowed GitHub human reviewer",
-      matches: (author) =>
-        author?.__typename === "User" &&
-        allowed.has(normalizeLogin(author?.login)),
+      matches: (author) => {
+        const login = normalizeLogin(author?.login);
+        return (
+          author?.__typename === "User" &&
+          allowed.has(login) &&
+          login !== excluded
+        );
+      },
       passingStates: new Set(["APPROVED"]),
     };
   }
@@ -65,8 +75,21 @@ function evaluateReviewReceipt({
   truncated = [],
   provider = "coderabbit",
   allowedLogins = [],
+  pullRequestAuthor = undefined,
 }) {
-  const policy = reviewerPolicy(provider, allowedLogins);
+  if (
+    provider === "github-human" &&
+    normalizeLogin(pullRequestAuthor?.login).length === 0
+  ) {
+    return failure(
+      "GitHub did not return the pull request author required for independent human review.",
+    );
+  }
+  const policy = reviewerPolicy(
+    provider,
+    allowedLogins,
+    provider === "github-human" ? pullRequestAuthor.login : undefined,
+  );
   if (provider === "builtin") {
     return {
       ok: true,
@@ -230,6 +253,11 @@ function resolveReviewSelection(options) {
       "Production configuration requires an external review provider.",
     );
   }
+  if (review.current_revision_required !== true) {
+    throw new Error(
+      "Review configuration must require the current pull request revision.",
+    );
+  }
   return {
     provider: review.provider,
     required,
@@ -281,6 +309,7 @@ async function fetchReviewEvidence({ owner, name, pullRequest, token }) {
     query ReviewReceipt($owner: String!, $name: String!, $number: Int!) {
       repository(owner: $owner, name: $name) {
         pullRequest(number: $number) {
+          author { login __typename }
           headRefOid
           reviews(first: ${REVIEW_PAGE_LIMIT}) {
             nodes {
@@ -350,6 +379,7 @@ async function fetchReviewEvidence({ owner, name, pullRequest, token }) {
     }
   }
   return {
+    pullRequestAuthor: pullRequestData.author,
     headOid: pullRequestData.headRefOid,
     reviews: pullRequestData.reviews?.nodes ?? [],
     threads: pullRequestData.reviewThreads?.nodes ?? [],

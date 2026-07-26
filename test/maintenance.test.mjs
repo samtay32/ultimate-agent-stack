@@ -64,6 +64,75 @@ const releaseSyncWorkflow = readFileSync(
   "utf8",
 );
 
+function assertCheckoutCredentialsDisabled(workflow) {
+  const lines = workflow.split("\n");
+  let checkoutCount = 0;
+  for (let index = 0; index < lines.length; index += 1) {
+    const usesMatch = lines[index].match(
+      /^(\s*)uses:\s+actions\/checkout@/,
+    );
+    if (!usesMatch) {
+      continue;
+    }
+    checkoutCount += 1;
+    const usesIndent = usesMatch[1].length;
+    let stepStart = -1;
+    let stepIndent = -1;
+    for (let cursor = index; cursor >= 0; cursor -= 1) {
+      const stepMatch = lines[cursor].match(/^(\s*)-\s+/);
+      if (stepMatch && stepMatch[1].length < usesIndent) {
+        stepStart = cursor;
+        stepIndent = stepMatch[1].length;
+        break;
+      }
+    }
+    assert.notEqual(stepStart, -1, "checkout must belong to a workflow step");
+    let stepEnd = lines.length;
+    for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
+      const stepMatch = lines[cursor].match(/^(\s*)-\s+/);
+      if (stepMatch && stepMatch[1].length === stepIndent) {
+        stepEnd = cursor;
+        break;
+      }
+    }
+    const withIndex = lines.findIndex(
+      (line, cursor) =>
+        cursor > index &&
+        cursor < stepEnd &&
+        /^\s*with:\s*$/.test(line) &&
+        line.length - line.trimStart().length > stepIndent,
+    );
+    assert.notEqual(
+      withIndex,
+      -1,
+      "checkout must contain a with block",
+    );
+    const withIndent =
+      lines[withIndex].length - lines[withIndex].trimStart().length;
+    let credentialsDisabled = false;
+    for (let cursor = withIndex + 1; cursor < stepEnd; cursor += 1) {
+      const line = lines[cursor];
+      if (line.trim().length === 0) {
+        continue;
+      }
+      const indentation = line.length - line.trimStart().length;
+      if (indentation <= withIndent) {
+        break;
+      }
+      if (line.trim() === "persist-credentials: false") {
+        credentialsDisabled = true;
+        break;
+      }
+    }
+    assert.equal(
+      credentialsDisabled,
+      true,
+      "checkout with block must disable persisted credentials",
+    );
+  }
+  assert.ok(checkoutCount > 0, "workflow must contain a checkout step");
+}
+
 test("package, plugin, and CLI identity stay synchronized", () => {
   assert.equal(PACKAGE_NAME, packageData.name);
   assert.equal(PACKAGE_VERSION, packageData.version);
@@ -125,7 +194,7 @@ test("read-only workflow checkouts do not persist Git credentials", () => {
     repositoryReviewReceiptWorkflow,
     reviewReceiptWorkflow,
   ]) {
-    assert.match(workflow, /persist-credentials: false/);
+    assertCheckoutCredentialsDisabled(workflow);
   }
 });
 

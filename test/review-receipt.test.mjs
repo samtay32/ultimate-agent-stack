@@ -16,6 +16,7 @@ import {
 
 const HEAD = "a".repeat(40);
 const OLD_HEAD = "b".repeat(40);
+const PR_AUTHOR = { login: "pull-request-author", __typename: "User" };
 
 function review({
   commit = HEAD,
@@ -132,6 +133,7 @@ test("GitHub human review ignores unrelated top-level comment pagination", () =>
     headOid: HEAD,
     provider: "github-human",
     allowedLogins: ["trusted-owner"],
+    pullRequestAuthor: PR_AUTHOR,
     reviews: [
       review({
         state: "APPROVED",
@@ -149,24 +151,28 @@ test("GitHub human review requires a current approval from an allowed login", ()
     headOid: HEAD,
     provider: "github-human",
     allowedLogins: ["trusted-owner"],
+    pullRequestAuthor: PR_AUTHOR,
     reviews: [review({ state: "APPROVED", login: "Trusted-Owner" })],
   });
   const commentOnly = evaluateReviewReceipt({
     headOid: HEAD,
     provider: "github-human",
     allowedLogins: ["trusted-owner"],
+    pullRequestAuthor: PR_AUTHOR,
     reviews: [review({ state: "COMMENTED", login: "trusted-owner" })],
   });
   const unlisted = evaluateReviewReceipt({
     headOid: HEAD,
     provider: "github-human",
     allowedLogins: ["trusted-owner"],
+    pullRequestAuthor: PR_AUTHOR,
     reviews: [review({ state: "APPROVED", login: "other-reviewer" })],
   });
   const listedBot = evaluateReviewReceipt({
     headOid: HEAD,
     provider: "github-human",
     allowedLogins: ["trusted-owner"],
+    pullRequestAuthor: PR_AUTHOR,
     reviews: [
       review({
         state: "APPROVED",
@@ -180,6 +186,32 @@ test("GitHub human review requires a current approval from an allowed login", ()
   assert.equal(commentOnly.ok, false);
   assert.equal(unlisted.ok, false);
   assert.equal(listedBot.ok, false);
+});
+
+test("GitHub human review rejects the pull request author's approval", () => {
+  const selfApproval = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "github-human",
+    allowedLogins: ["pull-request-author", "trusted-owner"],
+    pullRequestAuthor: PR_AUTHOR,
+    reviews: [
+      review({
+        state: "APPROVED",
+        login: "pull-request-author",
+      }),
+    ],
+  });
+  const missingAuthor = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "github-human",
+    allowedLogins: ["trusted-owner"],
+    reviews: [review({ state: "APPROVED", login: "trusted-owner" })],
+  });
+
+  assert.equal(selfApproval.ok, false);
+  assert.match(selfApproval.message, /No actual/);
+  assert.equal(missingAuthor.ok, false);
+  assert.match(missingAuthor.message, /pull request author/);
 });
 
 test("built-in review does not manufacture an external receipt requirement", () => {
@@ -205,6 +237,7 @@ test("provider configuration fails closed on incomplete or downgraded policy", (
         review: {
           provider: "coderabbit",
           required_for_release: true,
+          current_revision_required: true,
           allowed_logins: [],
         },
       },
@@ -216,6 +249,21 @@ test("provider configuration fails closed on incomplete or downgraded policy", (
       allowedLogins: [],
     });
 
+    delete config.capabilities.review.current_revision_required;
+    writeFileSync(configFile, JSON.stringify(config), "utf8");
+    assert.throws(
+      () => resolveReviewSelection({ config: configFile }),
+      /current pull request revision/,
+    );
+
+    config.capabilities.review.current_revision_required = false;
+    writeFileSync(configFile, JSON.stringify(config), "utf8");
+    assert.throws(
+      () => resolveReviewSelection({ config: configFile }),
+      /current pull request revision/,
+    );
+
+    config.capabilities.review.current_revision_required = true;
     config.capabilities.review.required_for_release = false;
     writeFileSync(configFile, JSON.stringify(config), "utf8");
     assert.throws(

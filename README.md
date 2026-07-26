@@ -284,7 +284,8 @@ publication unless project policy explicitly grants it.
 - Missing, skipped, timed-out, or failed required checks fail closed.
 - A protected provider-aware review-receipt check rejects absent, stale,
   change-requested, or unresolved required reviews. CodeRabbit rate-limit
-  comments never count; allowed GitHub human reviews must be current approvals.
+  comments never count; allowed GitHub human reviews must be current approvals
+  from someone other than the pull-request author.
 - Guided profile, provider, external-data, and authority choices are
   fingerprinted. Silent configuration changes invalidate approval.
 - Knowledge is treated as untrusted advisory context. Retrieval requires
