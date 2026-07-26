@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       package:
-        description: "Exact package and version, for example ultimate-agent-stack@0.1.0"
+        description: "Exact package and version, for example ultimate-agent-stack@0.2.0"
         required: true
         type: string
 

@@ -25,6 +25,9 @@ const packageData = JSON.parse(
 const pluginData = JSON.parse(
   readFileSync(join(PACKAGE_ROOT, ".codex-plugin", "plugin.json"), "utf8"),
 );
+const packageLockData = JSON.parse(
+  readFileSync(join(PACKAGE_ROOT, "package-lock.json"), "utf8"),
+);
 const repositoryCodeRabbit = readFileSync(
   join(PACKAGE_ROOT, ".coderabbit.yaml"),
   "utf8",
@@ -50,6 +53,8 @@ test("package, plugin, and CLI identity stay synchronized", () => {
   assert.equal(PACKAGE_VERSION, packageData.version);
   assert.equal(pluginData.name, packageData.name);
   assert.equal(pluginData.version, packageData.version);
+  assert.equal(packageLockData.version, packageData.version);
+  assert.equal(packageLockData.packages[""].version, packageData.version);
 });
 
 test("repository and installed-project CodeRabbit policies stay synchronized", () => {
