@@ -24,10 +24,11 @@ const SEMVER_PATTERN =
   /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
 class RequestError extends Error {
-  constructor(message, status) {
+  constructor(message, status, apiMessage = null) {
     super(message);
     this.name = "RequestError";
     this.status = status;
+    this.apiMessage = apiMessage;
   }
 }
 
@@ -206,11 +207,13 @@ async function requestJson(
     }
   }
   if (!response.ok) {
-    const detail =
-      typeof parsed?.message === "string" ? `: ${parsed.message}` : "";
+    const apiMessage =
+      typeof parsed?.message === "string" ? parsed.message : null;
+    const detail = apiMessage ? `: ${apiMessage}` : "";
     throw new RequestError(
       `${method} ${new URL(url).pathname} failed with ${response.status}${detail}`,
       response.status,
+      apiMessage,
     );
   }
   return parsed;
@@ -248,7 +251,12 @@ async function tagCommit(repository, tag, token, fetchImplementation = fetch) {
     );
     return validateCommit(commit?.sha, `tag ${tag} commit`);
   } catch (error) {
-    if (error instanceof RequestError && error.status === 404) {
+    const missingTag =
+      error instanceof RequestError &&
+      (error.status === 404 ||
+        (error.status === 422 &&
+          /^No commit found for SHA:/i.test(error.apiMessage ?? "")));
+    if (missingTag) {
       return null;
     }
     throw error;

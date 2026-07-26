@@ -351,7 +351,9 @@ test("draft preparation creates only a commit-bound draft", async () => {
       return response(200, []);
     }
     if (url.endsWith(`/commits/v${VERSION}`)) {
-      return response(404, { message: "Not Found" });
+      return response(422, {
+        message: `No commit found for SHA: v${VERSION}`,
+      });
     }
     if (url.endsWith("/releases") && options.method === "POST") {
       releaseRequest = JSON.parse(options.body);
@@ -385,6 +387,31 @@ test("draft preparation creates only a commit-bound draft", async () => {
     tag_name: `v${VERSION}`,
     target_commitish: COMMIT,
   });
+});
+
+test("draft preparation rejects unrelated GitHub 422 responses", async () => {
+  const fetchImplementation = async (url) => {
+    if (url.includes("/releases?")) {
+      return response(200, []);
+    }
+    if (url.endsWith(`/commits/v${VERSION}`)) {
+      return response(422, { message: "Validation Failed" });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  };
+
+  await assert.rejects(
+    prepareDraftRelease(
+      {
+        packageData: { name: PACKAGE_NAME, version: VERSION },
+        repository: REPOSITORY,
+        sha: COMMIT,
+        token: "test-token",
+      },
+      fetchImplementation,
+    ),
+    /422: Validation Failed/,
+  );
 });
 
 test("synchronization publishes older drafts before npm latest", async () => {

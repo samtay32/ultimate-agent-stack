@@ -223,6 +223,10 @@ test("package has no install hooks and guards publication with prepublishOnly", 
       "scripts/upstream-issue.mjs",
     ],
   );
+  assert.ok(
+    packageData.files.includes("!**/* 2.*"),
+    "npm package must exclude duplicate-copy paths",
+  );
   assert.deepEqual(packageData.dependencies ?? {}, {});
 });
 
