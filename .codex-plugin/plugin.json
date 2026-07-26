@@ -1,6 +1,6 @@
 {
   "name": "ultimate-agent-stack",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A guarded, npm-distributed operating system for taking software work from plain-language intent through verified review closure.",
   "author": {
     "name": "Samson Taylor"

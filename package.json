@@ -1,6 +1,6 @@
 {
   "name": "ultimate-agent-stack",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A guarded, project-adaptive agent workflow from idea through verified review closure.",
   "type": "module",
   "bin": {
@@ -8,6 +8,7 @@
   },
   "files": [
     ".codex-plugin/",
+    "CHANGELOG.md",
     "assets/",
     "bin/",
     "docs/",

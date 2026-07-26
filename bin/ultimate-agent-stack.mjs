@@ -35,7 +35,7 @@ const PACKAGE_JSON = existsSync(join(PACKAGE_ROOT, "package.json"))
   ? JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8"))
   : {
       name: "ultimate-agent-stack",
-      version: "0.1.0",
+      version: "0.2.0",
     };
 const PACKAGE_NAME = PACKAGE_JSON.name;
 const PACKAGE_VERSION = PACKAGE_JSON.version;
