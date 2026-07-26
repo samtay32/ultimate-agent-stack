@@ -33,6 +33,13 @@ const templateCodeRabbit = readFileSync(
   join(PACKAGE_ROOT, "assets/project-template/.coderabbit.yaml"),
   "utf8",
 );
+const reviewReceiptWorkflow = readFileSync(
+  join(
+    PACKAGE_ROOT,
+    "assets/project-template/.github/workflows/review-receipt.yml",
+  ),
+  "utf8",
+);
 
 test("package, plugin, and CLI identity stay synchronized", () => {
   assert.equal(PACKAGE_NAME, packageData.name);
@@ -45,6 +52,18 @@ test("repository and installed-project CodeRabbit policies stay synchronized", (
   assert.equal(repositoryCodeRabbit, templateCodeRabbit);
   assert.match(repositoryCodeRabbit, /profile: "assertive"/);
   assert.match(repositoryCodeRabbit, /auto_incremental_review: false/);
+});
+
+test("review receipt workflow never executes the pull request copy of its gate", () => {
+  assert.match(
+    reviewReceiptWorkflow,
+    /ref: \$\{\{ github\.event\.repository\.default_branch \}\}/,
+  );
+  assert.match(
+    reviewReceiptWorkflow,
+    /node \.agent-stack\/bin\/review-receipt\.mjs/,
+  );
+  assert.doesNotMatch(reviewReceiptWorkflow, /pull_request\.head|bootstrap-gate/);
 });
 
 test("package has no install hooks and guards publication with prepublishOnly", () => {

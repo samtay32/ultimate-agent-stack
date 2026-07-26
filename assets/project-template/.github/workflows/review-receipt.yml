@@ -22,21 +22,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ github.event.repository.default_branch }}
-          path: protected-gate
-      - name: Check out bootstrap review gate
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          path: bootstrap-gate
-      - name: Select the review gate
-        id: gate
-        run: |
-          if test -f protected-gate/.agent-stack/bin/review-receipt.mjs; then
-            echo "path=protected-gate/.agent-stack/bin/review-receipt.mjs" >> "$GITHUB_OUTPUT"
-          else
-            echo "path=bootstrap-gate/.agent-stack/bin/review-receipt.mjs" >> "$GITHUB_OUTPUT"
-          fi
       - name: Require a current CodeRabbit review
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: node "${{ steps.gate.outputs.path }}"
+        run: node .agent-stack/bin/review-receipt.mjs

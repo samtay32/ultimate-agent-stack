@@ -21,11 +21,13 @@ CodeRabbit adds an adversarial reviewer. It does not replace project tests, CI, 
 4. Ensure the agent has least-privilege GitHub access for the actions it is allowed to perform.
 5. Keep merge and deployment authority explicit in `.agent-stack/config.json` and repository policy.
 
-The first setup PR bootstraps the receipt script and workflow from the reviewed
-PR revision because the default branch does not contain them yet. After that
-merge, the workflow always executes the protected script from the default
-branch. Add `review-receipt` to branch protection only after its first
-successful run exists.
+The first setup PR cannot produce a receipt because the default branch does not
+contain the protected evaluator yet. Review that controlled bootstrap with
+CodeRabbit and the repository's existing gates, then merge it without requiring
+`review-receipt`. The installed workflow never executes the PR's copy of the
+evaluator. On the next PR it executes the protected default-branch copy; require
+`review-receipt` in branch protection only after that first successful run
+exists.
 
 GitHub documents these controls in [About protected branches](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches).
 
