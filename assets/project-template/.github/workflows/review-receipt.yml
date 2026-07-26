@@ -7,15 +7,27 @@ on:
     types: [submitted, edited, dismissed]
   pull_request_review_comment:
     types: [created, edited, deleted]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Pull request number to re-evaluate after resolving a thread"
+        required: true
+        type: number
 
 permissions:
   contents: read
   issues: read
   pull-requests: read
 
+concurrency:
+  group: review-receipt-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: true
+
 jobs:
   review-receipt:
-    if: github.event.pull_request.draft == false
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
       - name: Check out protected review gate
@@ -25,4 +37,8 @@ jobs:
       - name: Require a current CodeRabbit review
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: node .agent-stack/bin/review-receipt.mjs
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+        run: >-
+          node .agent-stack/bin/review-receipt.mjs
+          --repo "$GITHUB_REPOSITORY"
+          --pr "$PR_NUMBER"

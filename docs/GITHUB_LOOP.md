@@ -58,6 +58,17 @@ check queries GitHub's review evidence and passes only when:
 A summary, reaction, top-level comment, or rate-limit message is not a review
 receipt. Every push makes the previous receipt stale.
 
+GitHub Actions does not emit an event when a review conversation is resolved.
+After resolving the final CodeRabbit thread, re-evaluate the receipt from the
+Actions page with the PR number, or run:
+
+```bash
+gh workflow run review-receipt.yml -f pr_number=<PR_NUMBER>
+```
+
+This manual path executes the same protected default-branch evaluator. It does
+not waive or synthesize review evidence.
+
 ## Pull Request State Machine
 
 ```mermaid
