@@ -78,7 +78,7 @@ flowchart LR
     SP --> RD
     RD --> SH --> AR
     AR --> LOCK
-    RD --> PD
+    LOCK --> PD
     PD -->|serial| BV
     PD -->|bounded delegation| NA --> BV
     BV --> REPO
@@ -112,7 +112,7 @@ flowchart LR
 | `DECISIONS.md` | Delivery | Audited changes to intent or architecture |
 | `VERIFICATION.md` | Delivery | Requirement-to-evidence coverage |
 | `SECURITY.md` | Delivery | Classified exposure and applicable launch gates |
-| `DELEGATION.md` | Primary agent | Execution strategy, worker assignments, and dispositions |
+| `.agent-stack/artifacts/DELEGATION.md` | Primary agent | Execution strategy, worker assignments, and dispositions |
 | `.agent-stack/state.json` | CLI | Active hashes and lock history |
 | `.agent-stack/runs/` | Local evidence | Bounded command results; ignored by default |
 | Pull request | GitHub | Reviewable outcome, evidence, and disposition ledger |

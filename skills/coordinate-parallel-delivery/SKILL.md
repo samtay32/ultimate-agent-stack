@@ -56,7 +56,8 @@ Use parallel work only when all are true:
 - the primary agent can verify and integrate every result;
 - failure can safely fall back to serial work.
 
-Otherwise, continue serially without asking the user to choose.
+Otherwise, continue serially without asking the user to choose the execution
+strategy. Still stop at every human-authority boundary in the project contract.
 
 ## Completion Contract
 

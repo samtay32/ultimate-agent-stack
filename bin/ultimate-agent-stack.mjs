@@ -643,13 +643,18 @@ function migrateConfig(config) {
   }
   config.autonomy.max_repair_loops ??= 5;
   config.parallel_delivery ??= {};
-  config.parallel_delivery.mode ??= "adaptive";
-  config.parallel_delivery.max_workers ??= 3;
-  config.parallel_delivery.serial_fallback ??= true;
-  config.parallel_delivery.require_isolation_for_parallel_writes ??= true;
-  config.parallel_delivery.allow_nested_delegation ??= false;
-  config.parallel_delivery.authority_inheritance ??= "no_expansion";
-  config.parallel_delivery.integration_owner ??= "primary_agent";
+  if (
+    typeof config.parallel_delivery === "object" &&
+    !Array.isArray(config.parallel_delivery)
+  ) {
+    config.parallel_delivery.mode ??= "adaptive";
+    config.parallel_delivery.max_workers ??= 3;
+    config.parallel_delivery.serial_fallback ??= true;
+    config.parallel_delivery.require_isolation_for_parallel_writes ??= true;
+    config.parallel_delivery.allow_nested_delegation ??= false;
+    config.parallel_delivery.authority_inheritance ??= "no_expansion";
+    config.parallel_delivery.integration_owner ??= "primary_agent";
+  }
   config.safety ??= {};
   config.safety.require_check_approval ??= true;
   config.safety.approved_checks_hash ??= null;
@@ -1376,15 +1381,17 @@ function commandDoctor(target) {
     const errors = validateConfig(config, target);
     report("config", errors.length === 0, errors.length === 0 ? "valid" : errors);
     const parallel = config.parallel_delivery;
+    const parallelErrors = errors.filter(
+      (error) =>
+        error.startsWith("parallel_delivery") ||
+        error.startsWith("autonomy.parallel_work"),
+    );
+    const parallelObject =
+      parallel && typeof parallel === "object" && !Array.isArray(parallel);
     report(
       "parallel-delivery",
-      errors.length === 0 ||
-        !errors.some(
-          (error) =>
-            error.startsWith("parallel_delivery.") ||
-            error.startsWith("autonomy.parallel_work"),
-        ),
-      parallel
+      Boolean(parallelObject) && parallelErrors.length === 0,
+      parallelObject && parallelErrors.length === 0
         ? {
             mode: parallel.mode,
             max_workers: parallel.max_workers,
@@ -1393,7 +1400,7 @@ function commandDoctor(target) {
             nested_delegation: parallel.allow_nested_delegation,
             integration_owner: parallel.integration_owner,
           }
-        : "missing parallel_delivery policy",
+        : parallelErrors,
     );
     const actualHash = checksHash(config.quality.checks, target);
     report(

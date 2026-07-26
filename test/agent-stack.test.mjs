@@ -723,6 +723,33 @@ test("parallel-delivery guardrails cannot be disabled in project config", () => 
   }
 });
 
+test("doctor rejects a malformed whole parallel-delivery policy", () => {
+  const fixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    createJavaScriptFixture(fixture.directory);
+    installOrUpgrade(fixture.directory, { mode: "init" });
+    const configFile = join(fixture.directory, CONFIG_PATH);
+    const config = readJson(configFile);
+    config.parallel_delivery = "unrestricted";
+    writeJson(configFile, config);
+
+    const doctor = commandDoctor(fixture.directory);
+    const parallelReport = doctor.reports.find(
+      (report) => report.name === "parallel-delivery",
+    );
+
+    assert.equal(doctor.ok, false);
+    assert.equal(parallelReport.ok, false);
+    assert.match(
+      JSON.stringify(parallelReport.detail),
+      /parallel_delivery must be an object/,
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("detect invalidates approval when discovered checks change", () => {
   const fixture = temporaryProject();
   try {
