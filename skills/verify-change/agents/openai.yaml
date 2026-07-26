@@ -1,0 +1,6 @@
+interface:
+  display_name: "Verify Change"
+  short_description: "Prove behavior with deterministic evidence"
+  default_prompt: "Use $verify-change to validate this change against its acceptance contract."
+policy:
+  allow_implicit_invocation: true

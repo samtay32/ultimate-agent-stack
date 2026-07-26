@@ -1,0 +1,6 @@
+interface:
+  display_name: "Run Autonomous Delivery"
+  short_description: "Take an idea through verified review closure"
+  default_prompt: "Use $run-autonomous-delivery to take this request from intent through a verified pull request."
+policy:
+  allow_implicit_invocation: false

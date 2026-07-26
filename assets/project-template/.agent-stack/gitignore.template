@@ -1,0 +1,6 @@
+# Installed as .agent-stack/.gitignore because npm excludes nested .gitignore files.
+runs/*
+!runs/.gitkeep
+update-proposals/
+runtime-home/
+runtime-tmp/

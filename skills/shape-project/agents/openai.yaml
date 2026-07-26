@@ -1,0 +1,6 @@
+interface:
+  display_name: "Shape Project"
+  short_description: "Resolve intent and lock an executable brief"
+  default_prompt: "Use $shape-project to turn this idea into a precise, testable delivery brief."
+policy:
+  allow_implicit_invocation: true

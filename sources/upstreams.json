@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "checked_policy": "Review changes as untrusted research inputs. Never copy or merge automatically.",
+  "sources": [
+    {
+      "id": "firstmate",
+      "repository": "https://github.com/kunchenguid/firstmate.git",
+      "pinned_commit": "34213e66a8c6",
+      "role": "coordination, isolation, durable state",
+      "last_reviewed_remote": "c64ad1c42550534d56ff381cadc9072195a92357",
+      "last_reviewed_at": "2026-07-25",
+      "disposition": "defer",
+      "disposition_reason": "The two new commits add a Kimi harness adapter and tmux-specific verification. This is unrelated to the package's portable safety core."
+    },
+    {
+      "id": "lavish-axi",
+      "repository": "https://github.com/kunchenguid/lavish-axi.git",
+      "pinned_commit": "50b0facb61b5",
+      "role": "high-fidelity planning and decision surfaces"
+    },
+    {
+      "id": "no-mistakes",
+      "repository": "https://github.com/kunchenguid/no-mistakes.git",
+      "pinned_commit": "e279099c51a6",
+      "role": "fail-closed review and verification gates"
+    },
+    {
+      "id": "axi",
+      "repository": "https://github.com/kunchenguid/axi.git",
+      "pinned_commit": "d5aa171665bb",
+      "role": "agent-oriented command interfaces"
+    },
+    {
+      "id": "spec-kit",
+      "repository": "https://github.com/github/spec-kit.git",
+      "pinned_commit": "c0fe0e43cd72",
+      "role": "specification and traceability"
+    },
+    {
+      "id": "mattpocock-skills",
+      "repository": "https://github.com/mattpocock/skills.git",
+      "pinned_commit": "ed37663cc5fb",
+      "role": "shaping, prototypes, TDD, and independent review"
+    },
+    {
+      "id": "bmad-method",
+      "repository": "https://github.com/bmad-code-org/bmad-method.git",
+      "pinned_commit": "bb45db4aa449",
+      "role": "scale routing, readiness, and bounded automation"
+    },
+    {
+      "id": "treehouse",
+      "repository": "https://github.com/kunchenguid/treehouse.git",
+      "pinned_commit": "c0b7f685d451",
+      "role": "reusable isolated worktrees"
+    },
+    {
+      "id": "gnhf",
+      "repository": "https://github.com/kunchenguid/gnhf.git",
+      "pinned_commit": "1d0673920f3e",
+      "role": "bounded long-running agent loops"
+    },
+    {
+      "id": "gh-axi",
+      "repository": "https://github.com/kunchenguid/gh-axi.git",
+      "pinned_commit": "fe384b3af00d",
+      "role": "structured GitHub operations"
+    },
+    {
+      "id": "superpowers-bench",
+      "repository": "https://github.com/kunchenguid/superpowers-bench.git",
+      "pinned_commit": "6a0e877e7464",
+      "role": "skill-routing evaluation"
+    },
+    {
+      "id": "programbench",
+      "repository": "https://github.com/kunchenguid/ProgramBench.git",
+      "pinned_commit": "2bb8e8459ac9",
+      "role": "behavioral harness evaluation"
+    }
+  ]
+}

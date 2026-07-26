@@ -1,0 +1,6 @@
+interface:
+  display_name: "Build Vertical Slice"
+  short_description: "Implement one end-to-end verified slice"
+  default_prompt: "Use $build-vertical-slice to implement the next complete user-visible slice."
+policy:
+  allow_implicit_invocation: true

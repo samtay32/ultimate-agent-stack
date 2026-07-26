@@ -1,0 +1,6 @@
+interface:
+  display_name: "Maintain Agent Stack"
+  short_description: "Safely update sources, flow, and npm release"
+  default_prompt: "Use $maintain-agent-stack to audit upstream changes or safely update and release the agent stack."
+policy:
+  allow_implicit_invocation: false

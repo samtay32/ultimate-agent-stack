@@ -1,0 +1,52 @@
+{
+  "name": "ultimate-agent-stack",
+  "version": "0.1.0",
+  "description": "A guarded, project-adaptive agent workflow from idea through verified review closure.",
+  "type": "module",
+  "bin": {
+    "ultimate-agent-stack": "bin/ultimate-agent-stack.mjs"
+  },
+  "files": [
+    ".codex-plugin/",
+    "assets/",
+    "bin/",
+    "docs/",
+    "scripts/",
+    "skills/",
+    "sources/",
+    "STARTER_PROMPT.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "lint": "node --check bin/ultimate-agent-stack.mjs && node --check scripts/upstream-issue.mjs && node --check scripts/release-preflight.mjs && node --check scripts/packed-smoke.mjs",
+    "upstream:check": "node bin/ultimate-agent-stack.mjs upstream-check",
+    "package:check": "npm pack --dry-run --json",
+    "package:smoke": "node scripts/packed-smoke.mjs",
+    "release:check": "npm run lint && npm test && npm run package:check && npm run package:smoke",
+    "prepublishOnly": "node scripts/release-preflight.mjs"
+  },
+  "engines": {
+    "node": ">=20.12"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/samtay32/ultimate-agent-stack.git"
+  },
+  "bugs": {
+    "url": "https://github.com/samtay32/ultimate-agent-stack/issues"
+  },
+  "homepage": "https://github.com/samtay32/ultimate-agent-stack#readme",
+  "keywords": [
+    "agents",
+    "agent-skills",
+    "codex",
+    "claude-code",
+    "cursor",
+    "grok",
+    "software-delivery"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "purpose": "Non-negotiable mechanical safety rules enforced by the package and interpreted by installed skills.",
+  "user_protection": {
+    "user_describes_outcomes_not_technical_permission": true,
+    "recommend_safe_default_before_requesting_a_choice": true,
+    "do_not_treat_inexperience_as_consent_to_risk": true,
+    "translate_failures_and_decisions_into_plain_language": true
+  },
+  "mechanical_guardrails": {
+    "package_state_writes_must_remain_inside_project_root": true,
+    "customized_managed_files_must_not_be_overwritten": true,
+    "direct_shell_interpreters_are_not_valid_quality_checks": true,
+    "delegated_command_definitions_require_agent_review_after_changes": true,
+    "quality_commands_receive_a_scrubbed_environment": true,
+    "project_quality_commands_are_executable_project_code": true,
+    "missing_or_skipped_required_checks_fail_closed": true,
+    "locked_intent_must_not_drift_silently": true,
+    "applicable_launch_security_gates_must_be_evidenced": true,
+    "upstream_sources_are_untrusted_research_inputs": true
+  },
+  "authority_required": [
+    "credentials or secret disclosure",
+    "purchases, billing, or paid service activation",
+    "legal, licensing, compliance, or material privacy acceptance",
+    "destructive production or material data actions",
+    "external publication, release, deployment, or merge without prior policy",
+    "acceptance of material unresolved risk"
+  ],
+  "response_to_unsafe_request": [
+    "Do not execute the unsafe interpretation.",
+    "Explain the risk in plain language.",
+    "Recommend the closest safe outcome.",
+    "Continue all independent safe work.",
+    "Ask for authority only when no safe reversible path exists."
+  ]
+}

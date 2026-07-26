@@ -1,0 +1,7 @@
+---
+description: Apply the repository's autonomous delivery contract to product work, fixes, refactors, migrations, verification, and pull requests.
+globs:
+alwaysApply: false
+---
+
+Read and follow `AGENTS.md`, `.agent-stack/config.json`, and the relevant locked artifacts before editing. Use `.agent-stack/bin/agent_stack.py` for lock and verification evidence. Own routine execution; stop only at the authority boundaries defined in `AGENTS.md`.

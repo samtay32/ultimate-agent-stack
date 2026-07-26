@@ -1,0 +1,4 @@
+interface:
+  display_name: "Secure Launch"
+  short_description: "Risk-adaptive security gates before launch"
+  default_prompt: "Use $secure-launch to derive and verify the security gates required before this project launches."
