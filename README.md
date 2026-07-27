@@ -142,6 +142,7 @@ The CLI checks the controls it owns:
 - Changed project intent is detected through locked file hashes.
 - Required review must be current with no unresolved actionable thread.
 - Updates preserve local changes and never silently delete old package files.
+- Direct npm publishing still runs the release preflight outside GitHub Actions.
 
 Checks are still executable project code. They must run inside the sandbox and
 permissions supplied by your coding tool or operating system.
