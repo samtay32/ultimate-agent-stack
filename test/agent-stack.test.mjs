@@ -444,6 +444,26 @@ test("simple preset expands to the safe local project configuration", () => {
         ]),
       /--preset must be one of: simple/,
     );
+    for (const inheritedPreset of [
+      "constructor",
+      "toString",
+      "hasOwnProperty",
+      "valueOf",
+      "__proto__",
+    ]) {
+      assert.throws(
+        () =>
+          execute("configure", [
+            "--target",
+            fixture.directory,
+            "--preset",
+            inheritedPreset,
+            "--reason",
+            "Rejected an inherited object property as a preset name",
+          ]),
+        /--preset must be one of: simple/,
+      );
+    }
     assert.throws(
       () =>
         execute("configure", [

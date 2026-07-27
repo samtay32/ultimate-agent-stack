@@ -1666,7 +1666,9 @@ function commandCapabilities(target) {
 function resolveConfigureOptions(options) {
   const preset = options.preset;
   if (preset !== undefined) {
-    const presetOptions = CONFIGURATION_PRESETS[preset];
+    const presetOptions = Object.hasOwn(CONFIGURATION_PRESETS, preset)
+      ? CONFIGURATION_PRESETS[preset]
+      : undefined;
     if (!presetOptions) {
       throw new StackError(
         `--preset must be one of: ${Object.keys(CONFIGURATION_PRESETS).join(", ")}`,
@@ -2117,59 +2119,74 @@ function formatDoctorHuman(result) {
     failures.length > 0 &&
     failures.every((report) => setupFailureNames.has(report.name));
 
-  let status;
-  let explanation;
-  let nextAction;
-  if (result.ok) {
-    status = "Ready.";
-    explanation =
-      "Ultimate Agent Stack is installed and its required safety checks are configured.";
-    nextAction =
-      "Tell your coding agent what you want to build or change.";
-  } else if (failureNames.has("installation")) {
-    status = "Not set up yet.";
-    explanation =
-      "Ultimate Agent Stack is not installed in this project folder.";
-    nextAction =
-      'Tell your coding agent: "Set up Ultimate Agent Stack in this project."';
-  } else if (failureNames.has("protected-files")) {
-    status = "Needs attention.";
-    explanation =
-      "One or more protected safety files are missing or changed.";
-    nextAction =
-      "Ask your coding agent to repair the Ultimate Agent Stack installation and run doctor again. Do not edit the protected files yourself.";
-  } else if (failureNames.has("update-proposals")) {
-    status = "Update review needed.";
-    explanation =
-      "A safe update proposal is waiting to be reconciled; your customized files were not overwritten.";
-    nextAction =
-      "Ask your coding agent to review the update proposal, adopt the reconciled files, and run doctor again.";
-  } else if (setupOnly) {
-    status = "Almost ready.";
-    explanation =
-      "The package is installed, but guided setup or project-check approval is not complete.";
-    nextAction =
-      'Tell your coding agent: "Finish Ultimate Agent Stack setup, recommend the safe choices, inspect the project checks, and run doctor again." You do not need to edit configuration files yourself.';
-  } else if (failureNames.has("config")) {
-    status = "Needs attention.";
-    explanation = "The project configuration is missing or invalid.";
-    nextAction =
-      "Ask your coding agent to repair the Ultimate Agent Stack configuration and run doctor again.";
-  } else if (
-    failures.some((report) => report.name.startsWith("command:"))
-  ) {
-    status = "Project tool needed.";
-    explanation =
-      "At least one approved project check cannot run with the tools currently available.";
-    nextAction =
-      "Ask your coding agent to repair the missing project tool or safely update the approved check, then run doctor again.";
-  } else {
-    status = "Setup needs attention.";
-    explanation =
-      "One or more required project safeguards are not ready.";
-    nextAction =
-      "Ask your coding agent to inspect this doctor result, fix the required items without weakening safety, and run doctor again.";
-  }
+  const outcomes = [
+    {
+      matches: result.ok,
+      status: "Ready.",
+      explanation:
+        "Ultimate Agent Stack is installed and its required safety checks are configured.",
+      nextAction:
+        "Tell your coding agent what you want to build or change.",
+    },
+    {
+      matches: failureNames.has("installation"),
+      status: "Not set up yet.",
+      explanation:
+        "Ultimate Agent Stack is not installed in this project folder.",
+      nextAction:
+        'Tell your coding agent: "Set up Ultimate Agent Stack in this project."',
+    },
+    {
+      matches: failureNames.has("protected-files"),
+      status: "Needs attention.",
+      explanation:
+        "One or more protected safety files are missing or changed.",
+      nextAction:
+        "Ask your coding agent to repair the Ultimate Agent Stack installation and run doctor again. Do not edit the protected files yourself.",
+    },
+    {
+      matches: failureNames.has("update-proposals"),
+      status: "Update review needed.",
+      explanation:
+        "A safe update proposal is waiting to be reconciled; your customized files were not overwritten.",
+      nextAction:
+        "Ask your coding agent to review the update proposal, adopt the reconciled files, and run doctor again.",
+    },
+    {
+      matches: setupOnly,
+      status: "Almost ready.",
+      explanation:
+        "The package is installed, but guided setup or project-check approval is not complete.",
+      nextAction:
+        'Tell your coding agent: "Finish Ultimate Agent Stack setup, recommend the safe choices, inspect the project checks, and run doctor again." You do not need to edit configuration files yourself.',
+    },
+    {
+      matches: failureNames.has("config"),
+      status: "Needs attention.",
+      explanation: "The project configuration is missing or invalid.",
+      nextAction:
+        "Ask your coding agent to repair the Ultimate Agent Stack configuration and run doctor again.",
+    },
+    {
+      matches: failures.some((report) => report.name.startsWith("command:")),
+      status: "Project tool needed.",
+      explanation:
+        "At least one approved project check cannot run with the tools currently available.",
+      nextAction:
+        "Ask your coding agent to repair the missing project tool or safely update the approved check, then run doctor again.",
+    },
+    {
+      matches: true,
+      status: "Setup needs attention.",
+      explanation:
+        "One or more required project safeguards are not ready.",
+      nextAction:
+        "Ask your coding agent to inspect this doctor result, fix the required items without weakening safety, and run doctor again.",
+    },
+  ];
+  const { status, explanation, nextAction } = outcomes.find(
+    (outcome) => outcome.matches,
+  );
 
   const lines = [
     "Ultimate Agent Stack doctor",
