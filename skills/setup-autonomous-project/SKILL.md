@@ -41,7 +41,25 @@ Configure the repository without erasing its conventions. Setup is complete only
    that materially affect release protection, external data, provider access, or
    authority. Ask one at a time in plain language; recommend one option, offer
    at most one genuinely safe alternative, and explain the consequence. Record
-   the approved choices with:
+   the approved choices.
+
+   For a local prototype or straightforward project that does not require
+   production release protection, external data, external memory, or delegated
+   merge authority, recommend the simple setup. After the user approves that
+   recommendation, use:
+
+   ```bash
+   node .agent-stack/bin/agent-stack.mjs configure \
+     --preset simple \
+     --reason "Approved the recommended simple project configuration"
+   ```
+
+   This preset retains the complete safety installation and selects standard,
+   built-in review, repository knowledge, local-only data, agent-owned routine
+   execution, and human-controlled merge authority. Do not use it when the
+   repository evidence requires production review or an external provider.
+
+   For advanced configuration, use:
 
    ```bash
    node .agent-stack/bin/agent-stack.mjs configure \

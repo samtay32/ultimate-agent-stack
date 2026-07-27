@@ -14,6 +14,12 @@ explains the practical consequence. You may answer `use the recommendation`.
 You do not need to choose frameworks, write code, design test commands, organize
 tickets, or relay review comments.
 
+Ultimate Agent Stack enforces the controls owned by its CLI, including
+containment, protected files, approval fingerprints, and fail-closed checks. It
+cannot guarantee that every coding agent will follow conversational
+instructions, and it does not replace the agent harness's sandbox, repository
+permissions, backups, human judgment, or production access controls.
+
 ## First-Time Setup
 
 Open a dedicated project folder in Codex or another capable coding agent and
@@ -21,8 +27,9 @@ say:
 
 ```text
 Set up Ultimate Agent Stack in this project. My idea is: [describe the result].
-For each consequential decision, recommend one safe choice, offer at most one
-genuinely safe alternative, and handle all routine technical work.
+If this is a simple project, recommend the simple setup. For each consequential
+decision, recommend one safe choice, offer at most one genuinely safe
+alternative, and handle all routine technical work.
 ```
 
 The agent runs:
@@ -48,6 +55,33 @@ For Claude Code support it adds `--claude`. The agent then:
 If you prefer to run setup yourself, that one `npx` command is enough. Open a
 fresh agent session afterward if the agent harness discovers new skills only at
 session start.
+
+## Simple Project Path
+
+For a local prototype or straightforward project that does not require
+production release protection, external data, external memory, or delegated
+merge authority, the agent should recommend the simple setup. After you approve
+the recommendation, it records the choice with:
+
+```bash
+node .agent-stack/bin/agent-stack.mjs configure \
+  --preset simple \
+  --reason "Approved the recommended simple project configuration"
+```
+
+You should not have to construct or interpret that command. The preset selects:
+
+- the standard project profile;
+- built-in repository review;
+- repository-owned project knowledge;
+- local-only data handling;
+- agent-owned routine execution;
+- human approval for merging.
+
+The complete safety installation remains in place. Small work stays serial
+through the adaptive coordinator; safely isolated subagents remain available
+when they would materially help. Projects needing production release protection
+or an external provider use guided advanced configuration instead.
 
 ## Account-Only Connections
 
@@ -207,10 +241,11 @@ You should not be asked to interpret those commands.
 
 ### Setup says onboarding is pending
 
-The agent should inspect `capabilities`, recommend the safest project profile
-and provider combination, ask only the remaining consequential choices, and run
-`configure`. This is expected for a new install and after migrating an older
-configuration.
+Run `doctor --human` if you want one plain-language next action. The agent should
+inspect `capabilities`, recommend the simple preset when its constraints fit or
+the safest advanced profile/provider combination otherwise, ask only the
+remaining consequential choices, and run `configure`. This is expected for a
+new install and after migrating an older configuration.
 
 ### An optional provider is unavailable
 
@@ -263,7 +298,7 @@ Updates never replace an existing differing managed file or delete removed
 package files. The agent resolves proposals, then runs:
 
 ```bash
-npx -y ultimate-agent-stack@latest doctor
+npx -y ultimate-agent-stack@latest doctor --human
 node .agent-stack/bin/agent-stack.mjs verify
 ```
 

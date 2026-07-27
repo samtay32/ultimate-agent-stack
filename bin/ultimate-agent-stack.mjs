@@ -117,6 +117,18 @@ const MERGE_MODES = new Set([
   "human_approval_required",
   "policy_authorized",
 ]);
+const CONFIGURATION_PRESETS = Object.freeze({
+  simple: Object.freeze({
+    profile: "standard",
+    review: "builtin",
+    knowledge: "repository",
+    knowledgeScope: "project",
+    externalData: "local_only",
+    execution: "agent_owned",
+    merge: "human_approval_required",
+    reviewers: Object.freeze([]),
+  }),
+});
 
 class StackError extends Error {
   constructor(message, exitCode = 2, details = undefined) {
@@ -1651,20 +1663,66 @@ function commandCapabilities(target) {
   };
 }
 
-function commandConfigure(
-  target,
-  {
+function resolveConfigureOptions(options) {
+  const preset = options.preset;
+  if (preset !== undefined) {
+    const presetOptions = CONFIGURATION_PRESETS[preset];
+    if (!presetOptions) {
+      throw new StackError(
+        `--preset must be one of: ${Object.keys(CONFIGURATION_PRESETS).join(", ")}`,
+      );
+    }
+    const incompatibleOptions = [
+      ["--profile", options.profile],
+      ["--review", options.review],
+      ["--knowledge", options.knowledge],
+      ["--knowledge-scope", options.knowledgeScope],
+      ["--external-data", options.externalData],
+      ["--execution", options.execution],
+      ["--merge", options.merge],
+      [
+        "--reviewer",
+        Array.isArray(options.reviewers) && options.reviewers.length > 0
+          ? options.reviewers
+          : undefined,
+      ],
+    ]
+      .filter(([, value]) => value !== undefined)
+      .map(([name]) => name);
+    if (incompatibleOptions.length > 0) {
+      throw new StackError(
+        `--preset cannot be combined with manual configuration options: ${incompatibleOptions.join(", ")}`,
+      );
+    }
+    return {
+      ...presetOptions,
+      reviewers: [...presetOptions.reviewers],
+      preset,
+      reason: options.reason,
+    };
+  }
+  return {
+    ...options,
+    knowledgeScope: options.knowledgeScope ?? "project",
+    execution: options.execution ?? "agent_owned",
+    merge: options.merge ?? "human_approval_required",
+    reviewers: options.reviewers ?? [],
+  };
+}
+
+function commandConfigure(target, options) {
+  const {
     profile,
     review,
     knowledge,
-    knowledgeScope = "project",
+    knowledgeScope,
     externalData,
-    execution = "agent_owned",
-    merge = "human_approval_required",
-    reviewers = [],
+    execution,
+    merge,
+    reviewers,
+    preset,
     reason,
-  },
-) {
+  } = resolveConfigureOptions(options);
   if (typeof reason !== "string" || reason.trim().length < 12) {
     throw new StackError(
       "Configuration reason must record the user's approved project and provider choices.",
@@ -1774,6 +1832,7 @@ function commandConfigure(
   atomicProjectJson(target, CONFIG_PATH, config, "project config");
   return {
     ok: true,
+    ...(preset ? { preset } : {}),
     onboarding: config.onboarding,
     capabilities: config.capabilities,
     autonomy: {
@@ -2039,6 +2098,101 @@ function commandDoctor(target) {
       (item) => !item.ok && item.severity === "warning",
     ),
   };
+}
+
+function formatDoctorHuman(result) {
+  const failures = result.reports.filter(
+    (report) => !report.ok && report.severity === "required",
+  );
+  const warnings = result.reports.filter(
+    (report) => !report.ok && report.severity === "warning",
+  );
+  const failureNames = new Set(failures.map((report) => report.name));
+  const setupFailureNames = new Set([
+    "onboarding",
+    "configuration-approval",
+    "check-approval",
+  ]);
+  const setupOnly =
+    failures.length > 0 &&
+    failures.every((report) => setupFailureNames.has(report.name));
+
+  let status;
+  let explanation;
+  let nextAction;
+  if (result.ok) {
+    status = "Ready.";
+    explanation =
+      "Ultimate Agent Stack is installed and its required safety checks are configured.";
+    nextAction =
+      "Tell your coding agent what you want to build or change.";
+  } else if (failureNames.has("installation")) {
+    status = "Not set up yet.";
+    explanation =
+      "Ultimate Agent Stack is not installed in this project folder.";
+    nextAction =
+      'Tell your coding agent: "Set up Ultimate Agent Stack in this project."';
+  } else if (failureNames.has("protected-files")) {
+    status = "Needs attention.";
+    explanation =
+      "One or more protected safety files are missing or changed.";
+    nextAction =
+      "Ask your coding agent to repair the Ultimate Agent Stack installation and run doctor again. Do not edit the protected files yourself.";
+  } else if (failureNames.has("update-proposals")) {
+    status = "Update review needed.";
+    explanation =
+      "A safe update proposal is waiting to be reconciled; your customized files were not overwritten.";
+    nextAction =
+      "Ask your coding agent to review the update proposal, adopt the reconciled files, and run doctor again.";
+  } else if (setupOnly) {
+    status = "Almost ready.";
+    explanation =
+      "The package is installed, but guided setup or project-check approval is not complete.";
+    nextAction =
+      'Tell your coding agent: "Finish Ultimate Agent Stack setup, recommend the safe choices, inspect the project checks, and run doctor again." You do not need to edit configuration files yourself.';
+  } else if (failureNames.has("config")) {
+    status = "Needs attention.";
+    explanation = "The project configuration is missing or invalid.";
+    nextAction =
+      "Ask your coding agent to repair the Ultimate Agent Stack configuration and run doctor again.";
+  } else if (
+    failures.some((report) => report.name.startsWith("command:"))
+  ) {
+    status = "Project tool needed.";
+    explanation =
+      "At least one approved project check cannot run with the tools currently available.";
+    nextAction =
+      "Ask your coding agent to repair the missing project tool or safely update the approved check, then run doctor again.";
+  } else {
+    status = "Setup needs attention.";
+    explanation =
+      "One or more required project safeguards are not ready.";
+    nextAction =
+      "Ask your coding agent to inspect this doctor result, fix the required items without weakening safety, and run doctor again.";
+  }
+
+  const lines = [
+    "Ultimate Agent Stack doctor",
+    "",
+    status,
+    explanation,
+    "",
+    `Next: ${nextAction}`,
+  ];
+  if (failures.length > 0) {
+    lines.push(
+      "",
+      `Required items needing attention: ${failures
+        .map((report) => report.name)
+        .join(", ")}`,
+    );
+  }
+  if (warnings.length > 0) {
+    lines.push(
+      `Optional notices: ${warnings.map((report) => report.name).join(", ")}`,
+    );
+  }
+  return lines.join("\n");
 }
 
 function commandAdoptManaged(target, destination, reason) {
@@ -2493,12 +2647,13 @@ Safe project setup:
   ultimate-agent-stack init [--target DIR] [--claude]
   ultimate-agent-stack upgrade [--target DIR] [--claude]
   ultimate-agent-stack status [--target DIR]
-  ultimate-agent-stack doctor [--target DIR]
+  ultimate-agent-stack doctor [--target DIR] [--human]
   ultimate-agent-stack capabilities [--target DIR]
   ultimate-agent-stack start [--target DIR] [--idea TEXT]
 
 Agent-operated quality controls:
   ultimate-agent-stack detect [--target DIR] [--write]
+  ultimate-agent-stack configure --preset simple --reason TEXT [--target DIR]
   ultimate-agent-stack configure --profile PROFILE --review PROVIDER
     --knowledge PROVIDER [--knowledge-scope SCOPE] --external-data POLICY
     --reason TEXT [--reviewer LOGIN ...]
@@ -2513,10 +2668,13 @@ Agent-operated quality controls:
 Maintainer:
   ultimate-agent-stack upstream-check [--target DIR] [--output PATH]
 
-All commands are non-interactive and return JSON. init and upgrade never overwrite
-customized files; they create reconciliation proposals instead. Parallel delivery
-is coordinator-managed and falls back to serial work when safe isolation is absent.
-The coding agent conducts guided onboarding; configure records the approved choices.`;
+Commands are non-interactive and return JSON by default. doctor --human prints a
+plain-language summary with one recommended next action. init and upgrade never
+overwrite customized files; they create reconciliation proposals instead.
+Parallel delivery is coordinator-managed and falls back to serial work when safe
+isolation is absent. The coding agent conducts guided onboarding; configure records
+the approved choices. The simple preset selects standard, local-only, repository-
+backed defaults with built-in review and human-controlled merge authority.`;
 }
 
 function execute(command, args) {
@@ -2550,6 +2708,7 @@ function execute(command, args) {
     case "configure": {
       assertNoUnknownOptions(args, [
         "--target",
+        "--preset",
         "--profile",
         "--review",
         "--knowledge",
@@ -2562,13 +2721,14 @@ function execute(command, args) {
       ]);
       const target = resolveTarget(getOption(args, "--target", "."));
       return commandConfigure(target, {
+        preset: getOption(args, "--preset"),
         profile: getOption(args, "--profile"),
         review: getOption(args, "--review"),
         knowledge: getOption(args, "--knowledge"),
-        knowledgeScope: getOption(args, "--knowledge-scope", "project"),
+        knowledgeScope: getOption(args, "--knowledge-scope"),
         externalData: getOption(args, "--external-data"),
-        execution: getOption(args, "--execution", "agent_owned"),
-        merge: getOption(args, "--merge", "human_approval_required"),
+        execution: getOption(args, "--execution"),
+        merge: getOption(args, "--merge"),
         reviewers: getRepeatedOption(args, "--reviewer"),
         reason: getOption(args, "--reason"),
       });
@@ -2579,9 +2739,12 @@ function execute(command, args) {
       return commandApproveChecks(target, getOption(args, "--reason"));
     }
     case "doctor": {
-      assertNoUnknownOptions(args, ["--target"]);
+      assertNoUnknownOptions(args, ["--target"], ["--human"]);
       const target = resolveTarget(getOption(args, "--target", "."));
-      return commandDoctor(target);
+      const result = commandDoctor(target);
+      return hasFlag(args, "--human")
+        ? { ...result, human: formatDoctorHuman(result) }
+        : result;
     }
     case "verify": {
       assertNoUnknownOptions(args, ["--target"], ["--fail-fast"]);
@@ -2644,6 +2807,10 @@ function execute(command, args) {
 function emit(result) {
   if (result.help) {
     process.stdout.write(`${result.help}\n`);
+    return;
+  }
+  if (result.human) {
+    process.stdout.write(`${result.human}\n`);
     return;
   }
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
@@ -2711,10 +2878,12 @@ export {
   defaultConfig,
   detectProject,
   execute,
+  formatDoctorHuman,
   installOrUpgrade,
   loadInstallation,
   main,
   pathInside,
+  resolveConfigureOptions,
   resolveTarget,
   validateConfig,
 };

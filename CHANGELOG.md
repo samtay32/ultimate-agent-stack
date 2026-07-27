@@ -4,6 +4,25 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ## Unreleased
 
+### Added
+
+- `doctor --human` provides non-coders with a plain-language readiness summary
+  and one concrete next action while preserving JSON as the default agent and
+  automation contract.
+- `configure --preset simple` records approved standard, built-in-review,
+  repository-knowledge, local-only, human-merge defaults without creating a
+  weaker installation or separate policy tier.
+
+### Changed
+
+- The README and operating manual now lead with a 30-second non-coder path,
+  explain when the simple-project recommendation applies, and state plainly
+  that package guardrails do not replace sandboxing, permissions, backups, or
+  human judgment.
+- Installed setup guidance recommends the simple preset only when repository
+  evidence does not require production release protection or external
+  providers.
+
 ### Fixed
 
 - GitHub draft-release preparation now treats GitHub's specific HTTP 422

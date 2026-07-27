@@ -21,7 +21,10 @@ This repository uses Ultimate Agent Stack.
    If onboarding is pending or provider choices changed, inspect the repository,
    ask one consequential decision at a time with one recommendation and at most
    one safe alternative, then record the approved profile and providers with
-   `configure`.
+   `configure`. For a local or straightforward project that does not require
+   production release protection, external data, external memory, or delegated
+   merge authority, recommend the `simple` preset. Use advanced configuration
+   when repository evidence requires stronger or external capabilities.
 4. If checks were newly detected or changed, inspect their definitions in the
    project manifests. Reject shell or destructive checks. Then run:
 
