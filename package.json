@@ -1,6 +1,6 @@
 {
   "name": "ultimate-agent-stack",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "A guided, provider-neutral agent workflow from plain-language idea through verified review closure and durable learning.",
   "type": "module",
   "bin": {
