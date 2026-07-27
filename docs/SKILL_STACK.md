@@ -52,7 +52,9 @@ Ten gives:
 `coordinate-parallel-delivery` is a policy coordinator, not a worker persona.
 It selects serial, shared-checkout read-only delegation, or isolated parallel
 writes from the current harness capability. The primary agent remains
-responsible for every worker and the final result.
+responsible for every worker and the final result. That primary agent is the
+Project Steward: it alone retains the checkout coordinator token and writes the
+repository checkpoint.
 
 ## Installation Locations
 
@@ -102,7 +104,8 @@ and the baseline.
 
 - `gh` or a connected GitHub app for PR work;
 - CodeRabbit or an allowed GitHub human for adversarial PR review;
-- GBrain for scoped cross-session or cross-project knowledge;
+- GBrain for optional scoped cross-conversation or cross-project knowledge,
+  with repository checkpoint fallback;
 - Treehouse for reusable isolated worktrees;
 - no-mistakes for an additional local push gate;
 - AXI wrappers for token-efficient structured tool output;

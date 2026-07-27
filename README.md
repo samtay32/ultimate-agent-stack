@@ -5,6 +5,8 @@
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![runtime dependencies: 0](https://img.shields.io/badge/runtime%20dependencies-0-2ea44f.svg)](package.json)
 
+**Your Project Steward — one conversation managing the entire build.**
+
 Ultimate Agent Stack gives a coding agent a clear path from your idea to a
 tested, reviewed result. It installs project rules, reusable skills, safety
 checks, and durable progress files through one npm package.
@@ -62,6 +64,42 @@ The CLI is non-interactive. The coding agent runs the guided conversation and
 records the choices you approve. Existing files are preserved when they differ;
 updates create proposals for review instead of overwriting them.
 
+## Continuing in Another Conversation
+
+You do not have to keep an entire project in one enormous chat. Before leaving,
+the Project Steward writes a small verified checkpoint containing what is done,
+what was decided, what comes next, blockers, evidence paths, and Git state. It
+does not copy the whole conversation.
+
+In a new conversation opened in the same project, say:
+
+```text
+Continue this project with Ultimate Agent Stack. Load its checkpoint, inspect
+the repository, and resume from the first unfinished step.
+```
+
+The agent runs `start`, which loads and integrity-checks the repository
+checkpoint, tests configured memory, and acquires the checkout's Project
+Steward lease. If the previous conversation is still working, the new one is
+prevented from becoming a second independent writer. If the previous
+conversation ended unexpectedly, the new agent asks you to confirm it stopped
+before performing an explicit takeover.
+
+Repository checkpoints are enough to resume. GBrain is an optional searchable
+mirror, not a continuity requirement.
+
+## Existing Projects
+
+Yes—Ultimate Agent Stack is designed for projects that already contain code,
+tests, instructions, and local conventions. Open the existing project folder
+and use the same starter prompt. Setup inspects first, detects the real project
+commands, and preserves existing files.
+
+When package guidance conflicts with a customized file, setup creates a
+reconciliation proposal instead of overwriting the project. The agent reviews
+and merges the useful parts, keeps project-specific rules, then verifies the
+result. It does not restart the product or force a new architecture.
+
 ## What You Will Be Asked
 
 The agent asks only when your answer changes the product, risk, outside data,
@@ -73,6 +111,8 @@ It may ask:
 - Who will use it?
 - Are outside services or data allowed?
 - Does a production release need independent review?
+- Should progress live only in repository files, or also in private local
+  searchable memory?
 - May it merge after every required check passes?
 
 It should not ask you to choose routine frameworks, write test commands, manage
@@ -104,6 +144,46 @@ When parallel work is useful, the primary agent may use a few isolated native
 subagents. The primary agent owns their instructions, integration, checks, and
 cleanup. If safe isolation is unavailable, work stays serial.
 
+## Repository Memory Versus GBrain
+
+| | Repository memory | Optional local GBrain |
+|---|---|---|
+| Best for | Every project; simple and portable | Long builds spanning many conversations |
+| Stores | Checkpoint, decisions, evidence, docs, code, and Git history | Searchable mirror of verified checkpoints and approved learning |
+| Authority | Source of truth | Advisory retrieval only |
+| Failure behavior | Required for normal project continuity | Falls back to repository state |
+| Data boundary | Files in the project | Checkout-local PGLite home, ignored by Git |
+| Setup | Included | Separate approval, guided install, project-scoped MCP connection |
+
+Onboarding asks this as a plain-language choice and recommends a safe answer
+based on the project. Local GBrain starts without embeddings, so the setup does
+not silently request or inherit an external model API key. An embedding
+provider, remote brain, or organization scope is a separate data and
+credential decision.
+
+When GBrain is selected, `doctor` does more than look for its command. It checks
+that the active database is inside this project's approved memory directory,
+runs GBrain's live health check, reads the brain identity, and confirms the
+current checkpoint can be retrieved. Raw chat history, unrestricted
+environments, autonomous queues, dream cycles, and the full GBrain skill pack
+are not enabled.
+
+## One Coordinator Versus Subagents
+
+The Project Steward is the one user-facing primary coding agent. It owns the
+plan, the checkout lease, integration, verification, review loop, checkpoint,
+and final answer.
+
+Subagents are temporary bounded workers behind it. They may research, review,
+test, or make isolated changes when that is useful, but they never receive the
+coordinator token, never replace the Project Steward, and never make you manage
+their work. Parallel writers require separate verified workspaces. Otherwise,
+write work stays serial.
+
+The lease is a cooperative CLI guardrail. It prevents two Ultimate Agent Stack
+conversations from claiming the same checkout; it is not an operating-system
+sandbox against unrelated tools that ignore the package.
+
 ## What Gets Installed
 
 | Part | Purpose |
@@ -111,13 +191,14 @@ cleanup. If safe isolation is unavailable, work stays serial.
 | Project rules | Keep scope, authority, and completion standards visible |
 | Guided skills | Shape, build, verify, review, secure, and maintain the project |
 | Local CLI | Detect checks, protect approvals, lock intent, and record evidence |
-| Progress files | Preserve decisions and allow another session to resume |
+| Checkpoint and progress files | Preserve a verified handoff so another conversation can resume |
 | Harness adapters | Use supported native agent features without changing authority |
 | Review gate | Require current review evidence when project policy calls for it |
 
-The package has no runtime dependencies and no install hook. It does not run a
-cloud agent service, add a database, or replace your project's own tests and
-CI.
+The package has no runtime dependencies and no install hook. By default it does
+not run a cloud agent service, add a database, or replace your project's own
+tests and CI. A checkout-local GBrain database is added only after you approve
+that optional adapter.
 
 ## Replaceable Adapters
 
@@ -127,7 +208,7 @@ The core workflow depends on capabilities, not vendor names.
 |---|---|---|
 | Coding agent | Portable project rules and serial execution | Native Codex, Claude Code, Gemini, OpenCode, Cursor, or other supported features |
 | Independent review | Repository standards and intent review | CodeRabbit or an approved GitHub human |
-| Project knowledge | Repository files, evidence, and Git history | GBrain |
+| Project knowledge | Repository checkpoint, evidence, and Git history | Project-scoped local or separately approved remote GBrain |
 
 Optional providers cannot expand authority. A missing knowledge provider falls
 back to repository state. A required review provider fails closed.
@@ -143,6 +224,11 @@ The CLI checks the controls it owns:
 - Missing, failed, skipped, or timed-out required checks block completion.
 - Changed project intent is detected through locked file hashes.
 - Required review must be current with no unresolved actionable thread.
+- One active Project Steward lease owns a checkout; explicit confirmation is
+  required to take over an active lease.
+- Checkpoints reject common secret shapes, bind to Git state, and carry an
+  integrity hash.
+- Project-scoped GBrain must pass live health, identity, and containment checks.
 - Updates preserve local changes and never silently delete old package files.
 - Direct npm publishing still runs the release preflight outside GitHub Actions.
 

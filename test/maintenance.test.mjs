@@ -221,6 +221,7 @@ test("package has no install hooks and guards publication with prepublishOnly", 
     packageData.files.filter((entry) => entry.startsWith("scripts/")),
     [
       "scripts/github-release-sync.mjs",
+      "scripts/gbrain-project.mjs",
       "scripts/packed-smoke.mjs",
       "scripts/release-preflight.mjs",
       "scripts/review-receipt.mjs",

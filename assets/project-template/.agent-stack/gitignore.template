@@ -4,3 +4,6 @@ runs/*
 update-proposals/
 runtime-home/
 runtime-tmp/
+coordinator.json
+coordinator.mutex
+gbrain-home/

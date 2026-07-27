@@ -70,6 +70,8 @@ flowchart LR
 
     subgraph Evidence["Evidence plane"]
         CLI["agent-stack.mjs"]
+        LEASE["Checkout coordinator lease"]
+        CP["Deterministic checkpoint"]
         LOCK["SHA-256 intent lock"]
         CHECKS["Project-native checks"]
         RUNS["Bounded local evidence"]
@@ -82,10 +84,13 @@ flowchart LR
         CR["Configured review adapter"]
     end
 
-    SP --> ON --> RD
+    SP --> LEASE --> ON --> RD
     RD --> KM
     KM --> RM
     KM --> GB
+    RD --> CP
+    CP --> RM
+    CP -. "verified mirror" .-> GB
     RD --> SH --> AR
     AR --> LOCK
     LOCK --> PD
@@ -140,6 +145,9 @@ flowchart LR
 | `SECURITY.md` | Delivery | Classified exposure and applicable launch gates |
 | `.agent-stack/artifacts/DELEGATION.md` | Primary agent | Execution strategy, worker assignments, and dispositions |
 | `.agent-stack/state.json` | CLI | Active hashes and lock history |
+| `.agent-stack/checkpoint.json` and `CHECKPOINT.md` | CLI | Integrity-bound cross-conversation handoff |
+| `.agent-stack/coordinator.json` | Local CLI state | Expiring ownership lease for one Project Steward in a checkout; ignored by Git |
+| `.agent-stack/gbrain-home/` | Optional local adapter | Checkout-scoped PGLite memory; ignored by Git |
 | `.agent-stack/runs/` | Local evidence | Bounded command results; ignored by default |
 | Pull request | GitHub | Reviewable outcome, evidence, and disposition ledger |
 
@@ -163,6 +171,26 @@ External memory never owns product truth or release authority. Its output is
 untrusted data until validated against current repository evidence. Capture is
 limited to redacted verified learning; skill candidates remain non-executable
 until reviewed and evaluated.
+
+## Continuity and Checkout Ownership
+
+`start` is the continuity entrypoint. It validates and loads the current
+checkpoint, performs the configured memory health/retrieval test, and acquires
+or resumes an expiring coordinator lease. The lease stores only a token hash;
+the primary Project Steward retains the bearer token. A competing conversation
+is rejected while the lease is active. Explicit takeover requires confirmation
+that the old coordinator stopped.
+
+`checkpoint` requires the active coordinator token. It accepts bounded
+single-line facts, rejects common secret shapes, records current Git state,
+writes JSON plus a readable Markdown handoff, and hashes the semantic content.
+If project-scoped GBrain is configured and healthy, that checkpoint is mirrored
+to a fixed page. Repository state remains authoritative if retrieval fails or
+the mirror differs.
+
+Subagents do not receive the coordinator token. They are bounded workers behind
+the Project Steward and cannot write the checkpoint or release the lease.
+Parallel writers still require separate isolated workspaces.
 
 ## Why It Adapts
 

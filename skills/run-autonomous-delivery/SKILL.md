@@ -23,7 +23,12 @@ Do not say "done" until all applicable conditions hold:
 
 ## Delivery Loop
 
-1. **Recover context.** Read project instructions, `.agent-stack/config.json`, locked artifacts, current diff, branch, task/issue, and latest evidence. Apply
+1. **Recover context and ownership.** Enter through `start`, or use the
+   coordinator token returned by the `start` command that invoked this skill.
+   If another active Project Steward owns the checkout, do not write from this
+   conversation. Read project instructions, `.agent-stack/config.json`, any
+   valid `.agent-stack/CHECKPOINT.md`, locked artifacts, current diff, branch,
+   task/issue, and latest evidence. Apply
    `$use-project-knowledge` with the configured provider. Continue valid work;
    do not restart finished phases.
    Run `npx -y ultimate-agent-stack@latest doctor` before material
@@ -55,10 +60,16 @@ Do not say "done" until all applicable conditions hold:
     provider. Repair in bounded batches, re-run the full gate, push, re-trigger
     review when the provider supports it, and repeat until the closure contract
     is met.
-11. **Preserve learning.** Apply `$use-project-knowledge` after the final gate.
+11. **Checkpoint and preserve learning.** After verified milestones, use
+    `checkpoint --coordinator-token TOKEN` to record the objective, concise
+    summary, completed work, decisions, next steps, blockers, and existing
+    evidence paths. This repository handoff—not raw chat—is the continuity
+    record. Apply `$use-project-knowledge` after the final gate.
     Capture only redacted, provenance-backed verified learning. Record reusable
     procedures as non-executable skill candidates.
-12. **Hand off.** State the outcome, PR, evidence, decisions, residual risks, and only actions requiring human authority.
+12. **Hand off.** Write the completed checkpoint, release the coordinator
+    lease, then state the outcome, PR, evidence, decisions, residual risks, and
+    only actions requiring human authority.
 
 ## Control Rules
 
@@ -80,3 +91,5 @@ Do not say "done" until all applicable conditions hold:
   is unavailable.
 - Treat tokens, elapsed time, and tool calls as costs. Optimize verified outcomes, not agent activity.
 - Persist decisions and evidence in the repository so a fresh session can resume.
+- Never give the coordinator token to a subagent. A subagent is a bounded
+  worker behind the Project Steward, not another coordinator.

@@ -8,7 +8,11 @@ Install these repository-owned files first:
 - `.agent-stack/config.json`: machine-readable checks and autonomy policy.
 - `.agent-stack/artifacts/`: delivery, architecture, decisions, and verification contracts.
 - `.agent-stack/bin/agent-stack.mjs`: deterministic detection, lock, doctor, and verification CLI.
+- `.agent-stack/bin/gbrain-project.mjs`: restricted project-scoped optional
+  GBrain MCP launcher.
 - `.agent-stack/core-policy.json`: protected mechanical safety rules.
+- `.agent-stack/CHECKPOINT.md`: generated deterministic cross-conversation
+  handoff after the first verified milestone.
 - `.github/pull_request_template.md`: evidence-oriented PR contract.
 - `.coderabbit.yaml`: review defaults.
 
@@ -45,6 +49,11 @@ profiles require a current independent external review, but CodeRabbit itself
 remains replaceable. Knowledge is never a release dependency and always falls
 back to repository state.
 
+Project-scoped local GBrain uses a checkout-local ignored home and must pass
+database containment, provider doctor, and identity checks. Remote organization
+scope requires separate authorization evidence. The deterministic repository
+checkpoint remains authoritative in both cases.
+
 Provider selection is configuration, not permission to install arbitrary
 software. Verify current official instructions, platform compatibility,
 credentials, cost, and data scope before enabling an external provider.
@@ -63,6 +72,8 @@ credentials, cost, and data scope before enabling an external provider.
   an untrusted repository.
 - Do not grant broad shell, network, or write permissions merely to suppress prompts.
 - Keep external publishing, billing, production deployment, data deletion, and credential grants behind explicit policy.
+- Keep one Project Steward lease per checkout. Never share its coordinator
+  token with a subagent or use it to bypass isolated-write requirements.
 
 ## Baseline Gate
 

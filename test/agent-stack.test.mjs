@@ -17,7 +17,10 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  CHECKPOINT_MARKDOWN_PATH,
+  CHECKPOINT_PATH,
   CONFIG_PATH,
+  COORDINATOR_PATH,
   CORE_POLICY_PATH,
   INSTALLATION_PATH,
   PROJECT_CLI_PATH,
@@ -25,14 +28,18 @@ import {
   REVIEW_WORKFLOW_PATH,
   StackError,
   checksHash,
+  commandCheckpoint,
   commandCapabilities,
   commandAdoptManaged,
   commandApproveChecks,
   commandCheckLock,
   commandConfigure,
+  commandCoordinator,
   commandDetect,
   commandDoctor,
   commandLock,
+  commandMemoryHealth,
+  commandMemorySetup,
   commandStart,
   commandStatus,
   commandUnlock,
@@ -164,6 +171,67 @@ function fillLockArtifacts(directory) {
   );
 }
 
+function configureFixture(directory, knowledge = "repository") {
+  initializeGit(directory);
+  createJavaScriptFixture(directory);
+  installOrUpgrade(directory, { mode: "init" });
+  commandConfigure(directory, {
+    profile: "standard",
+    review: "builtin",
+    knowledge,
+    knowledgeScope: "project",
+    externalData:
+      knowledge === "gbrain" ? "approved_providers" : "local_only",
+    reason:
+      knowledge === "gbrain"
+        ? "Approved project-scoped local GBrain with repository fallback"
+        : "Approved project-scoped repository memory for this fixture",
+  });
+}
+
+function installFakeGbrain(directory) {
+  const toolDirectory = join(directory, "tool-bin");
+  const executable = join(toolDirectory, "gbrain");
+  mkdirSync(toolDirectory, { recursive: true });
+  writeFileSync(
+    executable,
+    `#!/usr/bin/env node
+import fs from "node:fs";
+import path from "node:path";
+const args = process.argv.slice(2);
+const home = process.env.GBRAIN_HOME;
+const cache = path.join(home, "checkpoint-cache.json");
+if (args[0] === "config" && args[1] === "get" && args[2] === "database_path") {
+  process.stdout.write(path.join(home, "brain.pglite") + "\\n");
+} else if (args[0] === "doctor") {
+  process.stdout.write(JSON.stringify({status:"healthy",health_score:100}) + "\\n");
+} else if (args[0] === "call" && args[1] === "get_brain_identity") {
+  process.stdout.write(JSON.stringify({version:"test",engine:"pglite",page_count:1,chunk_count:1}) + "\\n");
+} else if (args[0] === "capture") {
+  const file = args[args.indexOf("--file") + 1];
+  fs.writeFileSync(cache, JSON.stringify({compiled_truth:fs.readFileSync(file, "utf8")}));
+  process.stdout.write(JSON.stringify({slug:"projects/ultimate-agent-stack/checkpoint"}) + "\\n");
+} else if (args[0] === "call" && args[1] === "get_page") {
+  if (!fs.existsSync(cache)) process.exit(1);
+  process.stdout.write(fs.readFileSync(cache, "utf8") + "\\n");
+} else {
+  process.stderr.write("unexpected fake gbrain command: " + args.join(" ") + "\\n");
+  process.exit(2);
+}
+`,
+    "utf8",
+  );
+  chmodSync(executable, 0o755);
+  mkdirSync(join(directory, ".agent-stack", "gbrain-home"), {
+    recursive: true,
+  });
+  mkdirSync(
+    join(directory, ".agent-stack", "gbrain-home", "brain.pglite"),
+    { recursive: true },
+  );
+  return toolDirectory;
+}
+
 test("detectProject discovers project-native JavaScript checks", () => {
   const fixture = temporaryProject();
   try {
@@ -243,6 +311,16 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
     assert.equal(initialized.pending_reconciliation.length, 0);
     assert.ok(existsSync(join(fixture.directory, INSTALLATION_PATH)));
     assert.ok(existsSync(join(fixture.directory, PROJECT_CLI_PATH)));
+    assert.ok(
+      existsSync(
+        join(
+          fixture.directory,
+          ".agent-stack",
+          "bin",
+          "gbrain-project.mjs",
+        ),
+      ),
+    );
     assert.ok(existsSync(join(fixture.directory, CORE_POLICY_PATH)));
     assert.ok(
       existsSync(
@@ -336,6 +414,21 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
     );
     assert.equal(copiedCli.status, 0, copiedCli.stderr);
     assert.match(copiedCli.stdout, /ultimate-agent-stack/);
+    const restrictedGbrainLauncher = spawnSync(
+      "node",
+      [
+        join(
+          fixture.directory,
+          ".agent-stack",
+          "bin",
+          "gbrain-project.mjs",
+        ),
+        "doctor",
+      ],
+      { encoding: "utf8", shell: false },
+    );
+    assert.equal(restrictedGbrainLauncher.status, 2);
+    assert.match(restrictedGbrainLauncher.stderr, /only permits/);
 
     const initialDoctor = commandDoctor(fixture.directory);
     assert.equal(initialDoctor.ok, false);
@@ -356,6 +449,7 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
     );
     assert.equal(onboardingStart.phase, "onboarding");
     assert.match(onboardingStart.prompt, /at most one genuinely safe alternative/);
+    assert.match(onboardingStart.prompt, /private local searchable memory/);
 
     const capabilities = commandCapabilities(fixture.directory);
     assert.equal(capabilities.available.review.builtin.available, true);
@@ -407,7 +501,11 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
       true,
     );
 
-    const start = commandStart(fixture.directory, "Build a safe fixture");
+    const start = commandStart(
+      fixture.directory,
+      "Build a safe fixture",
+      onboardingStart.coordinator.coordinator_token,
+    );
     assert.equal(start.phase, "project-discovery");
     assert.match(start.prompt, /\$run-autonomous-delivery/);
     assert.match(start.prompt, /\$coordinate-parallel-delivery/);
@@ -415,6 +513,196 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
     assert.match(start.prompt, /at most one genuinely useful safe alternative/);
   } finally {
     fixture.cleanup();
+  }
+});
+
+test("one active Project Steward owns a checkout and stale leases recover", () => {
+  const fixture = temporaryProject();
+  try {
+    configureFixture(fixture.directory);
+
+    const first = commandStart(fixture.directory, "Continue the project");
+    const token = first.coordinator.coordinator_token;
+    assert.equal(first.coordinator.active, true);
+    assert.ok(token.length >= 32);
+    assert.throws(
+      () => commandStart(fixture.directory, "Competing conversation"),
+      /Another Project Steward/,
+    );
+
+    const heartbeat = commandCoordinator(fixture.directory, "heartbeat", {
+      token,
+    });
+    assert.equal(heartbeat.resumed, true);
+    assert.equal(
+      commandCoordinator(fixture.directory, "status").state,
+      "active",
+    );
+    assert.equal(
+      commandCoordinator(fixture.directory, "release", { token }).released,
+      true,
+    );
+
+    const second = commandStart(fixture.directory, "New conversation");
+    const leaseFile = join(fixture.directory, COORDINATOR_PATH);
+    const lease = readJson(leaseFile);
+    lease.expires_at = "2000-01-01T00:00:00.000Z";
+    writeJson(leaseFile, lease);
+    const recovered = commandStart(fixture.directory, "Recover stale work");
+    assert.equal(recovered.coordinator.replaced_stale_lease, true);
+    assert.notEqual(
+      recovered.coordinator.coordinator_token,
+      second.coordinator.coordinator_token,
+    );
+    assert.throws(
+      () =>
+        commandCoordinator(fixture.directory, "takeover", {
+          reason: "The prior conversation is no longer running",
+        }),
+      /requires --confirm-stopped/,
+    );
+    const takeover = commandCoordinator(fixture.directory, "takeover", {
+      reason: "The prior conversation is no longer running",
+      confirmStopped: true,
+    });
+    assert.equal(takeover.takeover, true);
+    assert.notEqual(
+      takeover.coordinator_token,
+      recovered.coordinator.coordinator_token,
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("checkpoint writes a validated handoff and start resumes it", () => {
+  const fixture = temporaryProject();
+  try {
+    configureFixture(fixture.directory);
+    const start = commandStart(fixture.directory, "Build continuity");
+    const token = start.coordinator.coordinator_token;
+    const checkpoint = commandCheckpoint(fixture.directory, {
+      objective: "Ship the continuity layer",
+      summary: "Coordinator and checkpoint behavior are implemented",
+      status: "in_progress",
+      completed: ["Added the coordinator lease"],
+      decisions: ["Repository checkpoints remain authoritative"],
+      nextSteps: ["Run the complete release check"],
+      blockers: [],
+      evidence: ["package.json"],
+      token,
+    });
+
+    assert.equal(checkpoint.ok, true);
+    assert.ok(existsSync(join(fixture.directory, CHECKPOINT_PATH)));
+    assert.ok(existsSync(join(fixture.directory, CHECKPOINT_MARKDOWN_PATH)));
+    assert.match(
+      readFileSync(join(fixture.directory, CHECKPOINT_MARKDOWN_PATH), "utf8"),
+      /Run the complete release check/,
+    );
+    const resumed = commandStart(
+      fixture.directory,
+      "Continue continuity",
+      token,
+    );
+    assert.equal(resumed.checkpoint.checkpoint_id, checkpoint.checkpoint_id);
+    assert.match(resumed.prompt, new RegExp(checkpoint.checkpoint_id));
+
+    assert.throws(
+      () =>
+        commandCheckpoint(fixture.directory, {
+          objective: "Unsafe handoff",
+          summary: "api_key=raw-test-secret-value",
+          status: "complete",
+          completed: [],
+          decisions: [],
+          nextSteps: [],
+          blockers: [],
+          evidence: [],
+          token,
+        }),
+      /appears to contain a secret/,
+    );
+
+    const checkpointFile = join(fixture.directory, CHECKPOINT_PATH);
+    const tampered = readJson(checkpointFile);
+    tampered.summary = "Manually altered";
+    writeJson(checkpointFile, tampered);
+    assert.throws(
+      () => commandStart(fixture.directory, "Use tampered state", token),
+      /integrity check failed/,
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("local GBrain setup is scoped and doctor performs live checks", () => {
+  const fixture = temporaryProject();
+  const outside = temporaryProject();
+  const originalPath = process.env.PATH;
+  try {
+    configureFixture(fixture.directory, "gbrain");
+    const toolDirectory = installFakeGbrain(fixture.directory);
+    process.env.PATH = `${toolDirectory}${platform() === "win32" ? ";" : ":"}${originalPath}`;
+
+    const setup = commandMemorySetup(fixture.directory, "codex");
+    assert.equal(setup.mode, "guided-local-project");
+    assert.match(
+      setup.steps.find((step) => step.id === "connect-project-mcp")
+        .connection.config,
+      /\[mcp_servers\.gbrain\]/,
+    );
+    assert.match(
+      setup.steps.find((step) => step.id === "initialize-local-brain")
+        .environment.GBRAIN_HOME,
+      /\.agent-stack\/gbrain-home$/,
+    );
+
+    const health = commandMemoryHealth(fixture.directory);
+    assert.equal(health.ok, true, JSON.stringify(health, null, 2));
+    assert.equal(health.scope_verified, true);
+    assert.equal(health.identity.engine, "pglite");
+    const doctor = commandDoctor(fixture.directory);
+    const knowledge = doctor.reports.find(
+      (report) => report.name === "knowledge-provider",
+    );
+    assert.equal(knowledge.ok, true, JSON.stringify(knowledge, null, 2));
+
+    const start = commandStart(fixture.directory, "Use local memory");
+    const checkpoint = commandCheckpoint(fixture.directory, {
+      objective: "Prove GBrain continuity",
+      summary: "The verified handoff is ready to mirror",
+      status: "complete",
+      completed: ["Ran the live provider checks"],
+      decisions: ["Use project-scoped local memory"],
+      nextSteps: [],
+      blockers: [],
+      evidence: ["package.json"],
+      token: start.coordinator.coordinator_token,
+    });
+    assert.equal(checkpoint.memory_capture.status, "mirrored");
+    commandCoordinator(fixture.directory, "release", {
+      token: start.coordinator.coordinator_token,
+    });
+    const resumed = commandStart(fixture.directory, "Resume from memory");
+    assert.equal(resumed.memory.checkpoint_test, "passed");
+
+    const databasePath = join(
+      fixture.directory,
+      ".agent-stack",
+      "gbrain-home",
+      "brain.pglite",
+    );
+    rmSync(databasePath, { recursive: true, force: true });
+    symlinkSync(outside.directory, databasePath);
+    const escaped = commandMemoryHealth(fixture.directory);
+    assert.equal(escaped.ok, false);
+    assert.match(escaped.error, /not contained/);
+  } finally {
+    process.env.PATH = originalPath;
+    fixture.cleanup();
+    outside.cleanup();
   }
 });
 
@@ -876,6 +1164,10 @@ test("guided configuration enforces safe provider combinations", () => {
       reason: "Approved organization-scoped GBrain knowledge",
     });
     assert.equal(gbrain.capabilities.knowledge.scope, "organization");
+    const organizationHealth = commandMemoryHealth(fixture.directory);
+    assert.equal(organizationHealth.ok, false);
+    assert.equal(organizationHealth.scope_verified, false);
+    assert.match(organizationHealth.error, /remote identity/);
   } finally {
     fixture.cleanup();
   }

@@ -4,6 +4,35 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ## Unreleased
 
+### Added
+
+- Deterministic repository checkpoints capture bounded handoff facts, Git
+  state, evidence paths, and an integrity hash so a fresh conversation can
+  resume without relying on chat history.
+- An expiring checkout coordinator lease prevents two independent Project
+  Steward conversations from writing the same checkout. Explicit takeover
+  requires confirmation that the previous coordinator stopped.
+- Guided project-scoped local GBrain setup uses checkout-local PGLite, a
+  restricted MCP launcher, repository fallback, and separate approval for any
+  global installation or external embedding provider.
+
+### Changed
+
+- Guided onboarding asks the repository-only versus optional local searchable
+  memory question in plain language and recommends an answer based on project
+  duration and complexity.
+- `start` now loads the checkpoint, acquires or resumes coordinator ownership,
+  runs the configured memory checks, and retrieves the mirrored GBrain
+  checkpoint when available.
+- `doctor` now verifies GBrain database containment, provider health, and brain
+  identity instead of treating executable presence as health.
+
+### Security
+
+- Checkpoint writes require the active coordinator token, reject common secret
+  assignments and token shapes, validate evidence containment, and mirror only
+  the verified handoff rather than raw conversations.
+
 ## 0.6.0 - 2026-07-27
 
 ### Added

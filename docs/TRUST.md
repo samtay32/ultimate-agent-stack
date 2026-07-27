@@ -20,6 +20,9 @@ sandbox and the Markdown skills are not executable security controls.
 | Hash locked intent files and report drift | Use subagents only when they provide a clear benefit |
 | Reject stale, change-requested, or unresolved required review evidence | Treat worker output and optional memory as untrusted advice |
 | Preserve differing local files and create update proposals | Repair valid review findings and explain rejected ones |
+| Reject a second active Project Steward in the same checkout | Have the primary agent manage every subagent |
+| Integrity-check bounded repository checkpoints and reject common secret shapes | Write checkpoints after verified milestones |
+| Verify project-local GBrain path containment, health, and identity | Treat optional memory as advisory |
 | Keep package publishing behind the protected release workflow | Stop after bounded non-improving repair loops and report the blocker |
 
 The left column is code. A conversation cannot persuade those checks to pass.
@@ -101,6 +104,26 @@ the instructed workflow falls back to serial work.
 
 The CLI validates the policy. The coding harness remains responsible for
 actually providing isolated workers or worktrees.
+
+### Continuity and optional memory
+
+The CLI stores an expiring coordinator lease inside the checkout and requires
+its bearer token for checkpoint writes and release. It rejects a second
+Ultimate Agent Stack conversation while that lease is active. An explicit
+takeover requires a reason and confirmation that the prior coordinator stopped.
+This is cooperative protection; it cannot stop unrelated tools that ignore the
+lease.
+
+Checkpoints accept bounded one-line fields, reject common secret assignments and
+token shapes, record Git counts without copying filenames, and include an
+integrity hash. This reduces accidental leakage and tampering; it cannot detect
+every possible secret or prove that the supplied summary is true.
+
+For project-scoped local GBrain, the CLI uses a checkout-local home, a
+restricted `serve` launcher, a scrubbed environment, and live path, doctor, and
+identity checks. Checkpoint mirroring fails open to the repository. A local
+check does not prove a remote organization's authorization boundary, and MCP
+client configuration still relies on the coding harness.
 
 ### Package release
 

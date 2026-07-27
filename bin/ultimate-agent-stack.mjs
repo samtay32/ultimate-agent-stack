@@ -3,19 +3,22 @@
 import {
   accessSync,
   chmodSync,
+  closeSync,
   constants as fsConstants,
   existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   readdirSync,
   realpathSync,
   renameSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { homedir, platform, tmpdir } from "node:os";
+import { homedir, hostname, platform, tmpdir } from "node:os";
 import {
   basename,
   delimiter,
@@ -28,7 +31,7 @@ import {
   sep,
 } from "node:path";
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const CLI_FILE = fileURLToPath(import.meta.url);
@@ -46,6 +49,13 @@ const CHECK_OUTPUT_LIMIT_BYTES = 4 * 1024 * 1024;
 const CONFIG_PATH = ".agent-stack/config.json";
 const INSTALLATION_PATH = ".agent-stack/installation.json";
 const STATE_PATH = ".agent-stack/state.json";
+const CHECKPOINT_PATH = ".agent-stack/checkpoint.json";
+const CHECKPOINT_MARKDOWN_PATH = ".agent-stack/CHECKPOINT.md";
+const COORDINATOR_PATH = ".agent-stack/coordinator.json";
+const COORDINATOR_MUTEX_PATH = ".agent-stack/coordinator.mutex";
+const GBRAIN_HOME_PATH = ".agent-stack/gbrain-home";
+const GBRAIN_LAUNCHER_PATH = ".agent-stack/bin/gbrain-project.mjs";
+const GBRAIN_CHECKPOINT_SLUG = "projects/ultimate-agent-stack/checkpoint";
 const RUNS_PATH = ".agent-stack/runs";
 const PROJECT_CLI_PATH = ".agent-stack/bin/agent-stack.mjs";
 const CORE_POLICY_PATH = ".agent-stack/core-policy.json";
@@ -59,6 +69,10 @@ const DEFAULT_ARTIFACTS = [
 const PLACEHOLDER = /\[\[[A-Z0-9_ -]+\]\]/g;
 const SECRET_ASSIGNMENT =
   /\b(api[_-]?key|access[_-]?token|auth[_-]?token|password|secret)(\s*[=:]\s*)([^\s,;]+)/gi;
+const SECRET_LIKE_TEXT =
+  /(-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(?:gh[pousr]|npm|sk)-?[A-Za-z0-9_]{20,}\b|\beyJ[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,})/i;
+const COORDINATOR_TTL_SECONDS = 2 * 60 * 60;
+const COORDINATOR_MUTEX_STALE_MS = 30_000;
 const FORBIDDEN_EXECUTABLES = new Set([
   "bash",
   "cmd",
@@ -249,12 +263,29 @@ function atomicJson(file, value) {
   renameSync(temporary, file);
 }
 
+function atomicText(file, value, mode = 0o600) {
+  mkdirSync(dirname(file), { recursive: true });
+  const temporary = join(
+    dirname(file),
+    `.${basename(file)}.${process.pid}.${Date.now()}.tmp`,
+  );
+  writeFileSync(temporary, value, {
+    encoding: "utf8",
+    mode,
+  });
+  renameSync(temporary, file);
+}
+
 function projectFile(target, raw, label = "project path") {
   return pathInside(target, raw, label);
 }
 
 function atomicProjectJson(target, raw, value, label = raw) {
   atomicJson(projectFile(target, raw, label), value);
+}
+
+function atomicProjectText(target, raw, value, label = raw, mode = 0o600) {
+  atomicText(projectFile(target, raw, label), value, mode);
 }
 
 function projectExists(target, raw, label = raw) {
@@ -1581,6 +1612,11 @@ function sourceEntries({ claude = false } = {}) {
     protected: true,
   });
   entries.push({
+    destination: GBRAIN_LAUNCHER_PATH,
+    source: join(PACKAGE_ROOT, "scripts/gbrain-project.mjs"),
+    protected: true,
+  });
+  entries.push({
     destination: PROJECT_CLI_PATH,
     source: CLI_FILE,
     protected: true,
@@ -1698,7 +1734,10 @@ function installOrUpgrade(
       }
       mkdirSync(dirname(destinationFile), { recursive: true });
       writeFileSync(destinationFile, sourceBytes, { mode: 0o600 });
-      if (destination === PROJECT_CLI_PATH) {
+      if (
+        destination === PROJECT_CLI_PATH ||
+        destination === GBRAIN_LAUNCHER_PATH
+      ) {
         chmodSync(destinationFile, 0o755);
       }
       manifest.managed_files[destination] = {
@@ -1893,6 +1932,355 @@ function commandCapabilities(target) {
         },
       },
     },
+  };
+}
+
+function gbrainEnvironment(target) {
+  const environment = {};
+  for (const name of SAFE_ENVIRONMENT_NAMES) {
+    if (typeof process.env[name] === "string") {
+      environment[name] = process.env[name];
+    }
+  }
+  for (const name of TOOLCHAIN_ENVIRONMENT_NAMES) {
+    if (typeof process.env[name] === "string") {
+      environment[name] = process.env[name];
+    }
+  }
+  return {
+    ...environment,
+    GBRAIN_HOME: projectFile(
+      target,
+      GBRAIN_HOME_PATH,
+      "project GBrain home",
+    ),
+    NO_COLOR: "1",
+  };
+}
+
+function runGbrain(target, args, timeout = 30_000) {
+  const result = spawnSync("gbrain", args, {
+    cwd: target,
+    encoding: "utf8",
+    env: gbrainEnvironment(target),
+    maxBuffer: 1024 * 1024,
+    shell: false,
+    timeout,
+  });
+  const timedOut = result.error?.code === "ETIMEDOUT";
+  return {
+    ok: result.status === 0 && !timedOut,
+    status: timedOut ? 124 : (result.status ?? 1),
+    ...(timedOut ? { reason: "timeout" } : {}),
+    stdout: redact(result.stdout ?? "", 24_000),
+    stderr: redact(result.stderr ?? "", 4_000),
+  };
+}
+
+function parseProviderJson(result, label) {
+  if (!result.ok) {
+    return {
+      ok: false,
+      error: `${label} failed`,
+      status: result.status,
+      detail: result.stderr || result.stdout || result.reason,
+    };
+  }
+  try {
+    return { ok: true, value: JSON.parse(result.stdout.trim()) };
+  } catch {
+    return {
+      ok: false,
+      error: `${label} returned invalid JSON`,
+      detail: result.stdout,
+    };
+  }
+}
+
+function pathContainedBy(root, candidate) {
+  const relation = relative(resolve(root), resolve(candidate));
+  return (
+    relation !== ".." &&
+    !relation.startsWith(`..${sep}`) &&
+    !isAbsolute(relation)
+  );
+}
+
+function commandMemoryHealth(target, suppliedConfig = undefined) {
+  const config = suppliedConfig ?? loadConfig(target);
+  const knowledge = config.capabilities.knowledge;
+  if (knowledge.provider === "repository") {
+    const checkpointPresent = projectExists(
+      target,
+      CHECKPOINT_PATH,
+      "project checkpoint",
+    );
+    return {
+      ok: true,
+      provider: "repository",
+      live_check: "repository",
+      scope: "project",
+      scope_verified: true,
+      checkpoint: checkpointPresent ? CHECKPOINT_PATH : null,
+      fallback: true,
+    };
+  }
+  if (knowledge.scope !== "project") {
+    return {
+      ok: false,
+      provider: "gbrain",
+      live_check: "not-run",
+      scope: knowledge.scope,
+      scope_verified: false,
+      fallback: "repository",
+      error:
+        "Organization-scoped GBrain must be verified through its remote identity and authorization boundary; local project setup cannot attest that scope.",
+    };
+  }
+
+  const home = projectFile(target, GBRAIN_HOME_PATH, "project GBrain home");
+  if (!executableExists(target, "gbrain")) {
+    return {
+      ok: false,
+      provider: "gbrain",
+      live_check: "failed",
+      scope: "project",
+      scope_verified: false,
+      expected_home: home,
+      fallback: "repository",
+      error: "gbrain CLI is not installed",
+    };
+  }
+  if (!existsSync(home)) {
+    return {
+      ok: false,
+      provider: "gbrain",
+      live_check: "failed",
+      scope: "project",
+      scope_verified: false,
+      expected_home: home,
+      fallback: "repository",
+      error: "project-local GBrain has not been initialized",
+    };
+  }
+
+  const databaseResult = runGbrain(
+    target,
+    ["config", "get", "database_path"],
+    15_000,
+  );
+  if (!databaseResult.ok) {
+    return {
+      ok: false,
+      provider: "gbrain",
+      live_check: "failed",
+      scope: "project",
+      scope_verified: false,
+      expected_home: home,
+      fallback: "repository",
+      error: "could not read the active GBrain database path",
+      detail:
+        databaseResult.stderr ||
+        databaseResult.stdout ||
+        databaseResult.reason,
+    };
+  }
+  const databasePath = databaseResult.stdout.trim();
+  if (
+    databasePath.length === 0 ||
+    !isAbsolute(databasePath) ||
+    !existsSync(databasePath) ||
+    !pathContainedBy(realpathSync(home), realpathSync(databasePath))
+  ) {
+    return {
+      ok: false,
+      provider: "gbrain",
+      live_check: "failed",
+      scope: "project",
+      scope_verified: false,
+      expected_home: home,
+      database_path: databasePath || null,
+      fallback: "repository",
+      error:
+        "the active GBrain database is missing or not contained by this project's approved memory scope",
+    };
+  }
+
+  const doctor = parseProviderJson(
+    runGbrain(target, ["doctor", "--json", "--fast", "--scope=brain"]),
+    "gbrain doctor",
+  );
+  if (!doctor.ok) {
+    return {
+      ok: false,
+      provider: "gbrain",
+      live_check: "failed",
+      scope: "project",
+      scope_verified: true,
+      expected_home: home,
+      database_path: databasePath,
+      fallback: "repository",
+      error: doctor.error,
+      detail: doctor.detail,
+    };
+  }
+  const identity = parseProviderJson(
+    runGbrain(target, ["call", "get_brain_identity", "{}"], 15_000),
+    "gbrain identity",
+  );
+  const healthy =
+    identity.ok &&
+    doctor.value?.status !== "unhealthy" &&
+    typeof identity.value?.engine === "string";
+  return {
+    ok: healthy,
+    provider: "gbrain",
+    live_check: healthy ? "passed" : "failed",
+    scope: "project",
+    scope_verified: true,
+    expected_home: home,
+    database_path: databasePath,
+    doctor: {
+      status: doctor.value?.status ?? "unknown",
+      health_score: doctor.value?.health_score ?? null,
+    },
+    identity: identity.ok
+      ? {
+          version: identity.value?.version ?? null,
+          engine: identity.value?.engine ?? null,
+          page_count: identity.value?.page_count ?? null,
+          chunk_count: identity.value?.chunk_count ?? null,
+        }
+      : { error: identity.error, detail: identity.detail },
+    fallback: "repository",
+    ...(healthy
+      ? {}
+      : { error: identity.ok ? "gbrain doctor reported unhealthy" : identity.error }),
+  };
+}
+
+function commandMemorySetup(target, harnessOption = undefined) {
+  const config = loadConfig(target);
+  const knowledge = config.capabilities.knowledge;
+  if (knowledge.provider !== "gbrain") {
+    throw new StackError(
+      "GBrain is not approved for this project. Complete the plain-language memory decision and configure gbrain first.",
+    );
+  }
+  if (knowledge.scope !== "project") {
+    throw new StackError(
+      "Guided local setup supports project scope. Organization scope requires a separately approved remote GBrain.",
+    );
+  }
+  const detectedHarnesses = detectHarnesses(target);
+  const harness =
+    harnessOption ??
+    (detectedHarnesses.includes("codex")
+      ? "codex"
+      : detectedHarnesses[0] ?? "codex");
+  if (!SUPPORTED_HARNESSES.has(harness)) {
+    throw new StackError(
+      `--harness must be one of: ${[...SUPPORTED_HARNESSES].sort().join(", ")}`,
+    );
+  }
+  const home = projectFile(target, GBRAIN_HOME_PATH, "project GBrain home");
+  const databasePath = join(home, "brain.pglite");
+  let connection;
+  if (harness === "codex") {
+    connection = {
+      method: "merge-project-config",
+      path: ".codex/config.toml",
+      note:
+        "Merge this table into the trusted project's existing config; never overwrite unrelated Codex settings.",
+      config: [
+        "[mcp_servers.gbrain]",
+        'command = "node"',
+        `args = ["${GBRAIN_LAUNCHER_PATH}", "serve"]`,
+      ].join("\n"),
+    };
+  } else if (harness === "claude") {
+    connection = {
+      method: "command",
+      argv: [
+        "claude",
+        "mcp",
+        "add",
+        "--scope",
+        "project",
+        "gbrain",
+        "--",
+        "node",
+        GBRAIN_LAUNCHER_PATH,
+        "serve",
+      ],
+    };
+  } else {
+    connection = {
+      method: "project-mcp-stdio",
+      server_name: "gbrain",
+      command: "node",
+      args: [GBRAIN_LAUNCHER_PATH, "serve"],
+      note:
+        "Merge this stdio server into the harness's project-scoped MCP configuration. Do not create a global cross-project connection.",
+    };
+  }
+  return {
+    ok: true,
+    provider: "gbrain",
+    mode: "guided-local-project",
+    harness,
+    scope: {
+      type: "project",
+      home,
+      database_path: databasePath,
+      repository_fallback: true,
+    },
+    steps: [
+      {
+        id: "install-cli",
+        status: executableExists(target, "gbrain")
+          ? "already-available"
+          : "requires-explicit-global-install-approval",
+        argv: ["bun", "install", "-g", "github:garrytan/gbrain"],
+        guardrail:
+          "Verify the current official GBrain installation instructions before running a global install.",
+      },
+      {
+        id: "initialize-local-brain",
+        status: existsSync(home) ? "inspect-existing" : "ready-after-install",
+        environment: { GBRAIN_HOME: home },
+        argv: [
+          "gbrain",
+          "init",
+          "--pglite",
+          "--path",
+          databasePath,
+          "--no-embedding",
+          "--non-interactive",
+          "--json",
+        ],
+        guardrail:
+          "Do not use --force. The no-embedding default avoids silently requesting or inheriting external API keys; add an embedding provider only after separate approval.",
+      },
+      {
+        id: "connect-project-mcp",
+        status: "merge-with-existing-project-configuration",
+        connection,
+      },
+      {
+        id: "verify",
+        status: "required",
+        argv: [
+          "node",
+          PROJECT_CLI_PATH,
+          "memory-health",
+          "--target",
+          ".",
+        ],
+        mcp_probe:
+          "Restart or reload the coding harness, call get_brain_identity, then retrieve the checkpoint page if one exists.",
+      },
+    ],
   };
 }
 
@@ -2295,15 +2683,14 @@ function commandDoctor(target) {
       config.capabilities.review.required_for_release ? "required" : "warning",
     );
     const knowledgeProvider = config.capabilities.knowledge.provider;
-    const knowledgeAvailability =
-      capabilities.available.knowledge[knowledgeProvider]?.available === true;
+    const knowledgeHealth = commandMemoryHealth(target, config);
     report(
       "knowledge-provider",
-      knowledgeAvailability,
+      knowledgeHealth.ok,
       {
         selected: knowledgeProvider,
         fallback: "repository",
-        availability: capabilities.available.knowledge[knowledgeProvider],
+        health: knowledgeHealth,
       },
       "warning",
     );
@@ -2376,6 +2763,35 @@ function commandDoctor(target) {
     "optional until pull-request phase",
     "warning",
   );
+  try {
+    const checkpoint = loadCheckpoint(target);
+    report(
+      "checkpoint",
+      true,
+      checkpoint
+        ? {
+            id: checkpoint.checkpoint_id,
+            status: checkpoint.status,
+            updated_at: checkpoint.updated_at,
+          }
+        : "not created yet",
+      "required",
+    );
+  } catch (error) {
+    report("checkpoint", false, error.message, "required", "invalid");
+  }
+  try {
+    const coordinator = publicCoordinator(readCoordinator(target));
+    report(
+      "coordinator",
+      coordinator.state !== "stale",
+      coordinator,
+      "warning",
+      coordinator.state,
+    );
+  } catch (error) {
+    report("coordinator", false, error.message, "required", "invalid");
+  }
   const failures = reports.filter(
     (item) => !item.ok && item.severity === "required",
   );
@@ -2801,6 +3217,505 @@ function loadState(target) {
   return state;
 }
 
+function gitSnapshot(target) {
+  if (!isGitRepository(target)) {
+    return null;
+  }
+  const run = (args) =>
+    spawnSync("git", ["-C", target, ...args], {
+      encoding: "utf8",
+      shell: false,
+      timeout: 10_000,
+    });
+  const headResult = run(["rev-parse", "HEAD"]);
+  const branchResult = run(["branch", "--show-current"]);
+  const statusResult = run(["status", "--porcelain=v1"]);
+  const statusLines =
+    statusResult.status === 0
+      ? statusResult.stdout.split("\n").filter(Boolean)
+      : [];
+  return {
+    head: headResult.status === 0 ? headResult.stdout.trim() : null,
+    branch:
+      branchResult.status === 0 && branchResult.stdout.trim().length > 0
+        ? branchResult.stdout.trim()
+        : null,
+    tracked_changes: statusLines.filter((line) => !line.startsWith("??"))
+      .length,
+    untracked_changes: statusLines.filter((line) => line.startsWith("??"))
+      .length,
+    clean: statusLines.length === 0,
+  };
+}
+
+function readCoordinator(target) {
+  const file = projectFile(target, COORDINATOR_PATH, "coordinator lease");
+  if (!existsSync(file)) {
+    return null;
+  }
+  const lease = readJson(file, "coordinator lease");
+  const valid =
+    lease.schema_version === 1 &&
+    typeof lease.coordinator_id === "string" &&
+    typeof lease.token_hash === "string" &&
+    /^[a-f0-9]{64}$/.test(lease.token_hash) &&
+    typeof lease.checkout_hash === "string" &&
+    typeof lease.acquired_at === "string" &&
+    typeof lease.heartbeat_at === "string" &&
+    typeof lease.expires_at === "string" &&
+    Number.isFinite(Date.parse(lease.expires_at));
+  if (!valid) {
+    throw new StackError(
+      `Invalid ${COORDINATOR_PATH}. Ask the coding agent to inspect it before recovering the lease.`,
+    );
+  }
+  return lease;
+}
+
+function coordinatorActive(lease, now = Date.now()) {
+  return Boolean(lease) && Date.parse(lease.expires_at) > now;
+}
+
+function publicCoordinator(lease, now = Date.now()) {
+  if (!lease) {
+    return { state: "available", active: false, lease: null };
+  }
+  const active = coordinatorActive(lease, now);
+  return {
+    state: active ? "active" : "stale",
+    active,
+    lease: {
+      coordinator_id: lease.coordinator_id,
+      host: lease.host,
+      checkout_hash: lease.checkout_hash,
+      acquired_at: lease.acquired_at,
+      heartbeat_at: lease.heartbeat_at,
+      expires_at: lease.expires_at,
+      git: lease.git,
+      ...(lease.takeover ? { takeover: lease.takeover } : {}),
+    },
+  };
+}
+
+function withCoordinatorMutex(target, operation) {
+  const mutex = projectFile(
+    target,
+    COORDINATOR_MUTEX_PATH,
+    "coordinator mutex",
+  );
+  mkdirSync(dirname(mutex), { recursive: true });
+  const openMutex = () => {
+    try {
+      return openSync(mutex, "wx", 0o600);
+    } catch (error) {
+      if (error.code === "EEXIST") {
+        let age;
+        try {
+          age = Date.now() - statSync(mutex).mtimeMs;
+        } catch (statError) {
+          if (statError.code === "ENOENT") {
+            return openSync(mutex, "wx", 0o600);
+          }
+          throw statError;
+        }
+        if (age > COORDINATOR_MUTEX_STALE_MS) {
+          unlinkSync(mutex);
+          return openSync(mutex, "wx", 0o600);
+        }
+      }
+      if (error.code === "EEXIST") {
+        throw new StackError(
+          "Another coordinator lease operation is in progress. Retry in a moment.",
+        );
+      }
+      throw error;
+    }
+  };
+  const descriptor = openMutex();
+  closeSync(descriptor);
+  try {
+    return operation();
+  } finally {
+    if (existsSync(mutex)) {
+      unlinkSync(mutex);
+    }
+  }
+}
+
+function coordinatorTokenValid(lease, token) {
+  return (
+    typeof token === "string" &&
+    token.length >= 32 &&
+    sha256(token) === lease.token_hash
+  );
+}
+
+function createCoordinatorLease(target, now = Date.now()) {
+  const token = randomBytes(32).toString("hex");
+  const acquiredAt = new Date(now).toISOString();
+  const lease = {
+    schema_version: 1,
+    coordinator_id: `steward-${randomBytes(6).toString("hex")}`,
+    token_hash: sha256(token),
+    checkout_hash: sha256(realpathSync(target)),
+    host: hostname(),
+    acquired_at: acquiredAt,
+    heartbeat_at: acquiredAt,
+    expires_at: new Date(
+      now + COORDINATOR_TTL_SECONDS * 1000,
+    ).toISOString(),
+    git: gitSnapshot(target),
+  };
+  return { lease, token };
+}
+
+function acquireCoordinator(target, suppliedToken = undefined) {
+  return withCoordinatorMutex(target, () => {
+    const now = Date.now();
+    const existing = readCoordinator(target);
+    if (coordinatorActive(existing, now)) {
+      if (!coordinatorTokenValid(existing, suppliedToken)) {
+        throw new StackError(
+          `Another Project Steward (${existing.coordinator_id}) is active in this checkout until ${existing.expires_at}. Continue in that conversation or wait for the lease to become stale.`,
+          3,
+          publicCoordinator(existing, now),
+        );
+      }
+      existing.heartbeat_at = new Date(now).toISOString();
+      existing.expires_at = new Date(
+        now + COORDINATOR_TTL_SECONDS * 1000,
+      ).toISOString();
+      existing.git = gitSnapshot(target);
+      atomicProjectJson(
+        target,
+        COORDINATOR_PATH,
+        existing,
+        "coordinator lease",
+      );
+      return {
+        ...publicCoordinator(existing, now),
+        resumed: true,
+        coordinator_token: suppliedToken,
+      };
+    }
+
+    const { lease, token } = createCoordinatorLease(target, now);
+    atomicProjectJson(target, COORDINATOR_PATH, lease, "coordinator lease");
+    return {
+      ...publicCoordinator(lease, now),
+      resumed: false,
+      replaced_stale_lease: Boolean(existing),
+      coordinator_token: token,
+    };
+  });
+}
+
+function commandCoordinator(target, action, options = {}) {
+  if (action === "status") {
+    return { ok: true, ...publicCoordinator(readCoordinator(target)) };
+  }
+  if (action === "heartbeat") {
+    const coordinator = acquireCoordinator(target, options.token);
+    return { ok: true, ...coordinator };
+  }
+  if (action === "release") {
+    return withCoordinatorMutex(target, () => {
+      const lease = readCoordinator(target);
+      if (!lease) {
+        return { ok: true, state: "available", released: false };
+      }
+      if (!coordinatorTokenValid(lease, options.token)) {
+        throw new StackError(
+          "Only the active Project Steward can release this checkout.",
+          3,
+        );
+      }
+      unlinkSync(projectFile(target, COORDINATOR_PATH, "coordinator lease"));
+      return {
+        ok: true,
+        state: "available",
+        released: true,
+        coordinator_id: lease.coordinator_id,
+      };
+    });
+  }
+  if (action === "takeover") {
+    if (options.confirmStopped !== true) {
+      throw new StackError(
+        "Takeover requires --confirm-stopped after the user confirms the previous Project Steward is no longer working.",
+        3,
+      );
+    }
+    if (typeof options.reason !== "string" || options.reason.trim().length < 12) {
+      throw new StackError(
+        "Takeover reason must explain why the previous coordinator is no longer active.",
+        3,
+      );
+    }
+    return withCoordinatorMutex(target, () => {
+      const previous = readCoordinator(target);
+      if (!previous || !coordinatorActive(previous)) {
+        throw new StackError(
+          "No active coordinator requires takeover. Run start to acquire the available checkout.",
+          3,
+        );
+      }
+      const now = Date.now();
+      const { lease, token } = createCoordinatorLease(target, now);
+      lease.takeover = {
+        previous_coordinator_id: previous.coordinator_id,
+        replaced_at: new Date(now).toISOString(),
+        reason: options.reason.trim(),
+      };
+      atomicProjectJson(target, COORDINATOR_PATH, lease, "coordinator lease");
+      return {
+        ok: true,
+        ...publicCoordinator(lease, now),
+        resumed: false,
+        takeover: true,
+        replaced: previous
+          ? {
+              coordinator_id: previous.coordinator_id,
+              expires_at: previous.expires_at,
+            }
+          : null,
+        reason: options.reason.trim(),
+        coordinator_token: token,
+      };
+    });
+  }
+  throw new StackError(
+    "Coordinator action must be status, heartbeat, release, or takeover.",
+  );
+}
+
+function requireCoordinator(target, token) {
+  const lease = readCoordinator(target);
+  if (!coordinatorActive(lease)) {
+    throw new StackError(
+      "No active Project Steward owns this checkout. Run start before writing a checkpoint.",
+      3,
+    );
+  }
+  if (!coordinatorTokenValid(lease, token)) {
+    throw new StackError(
+      `Another Project Steward (${lease.coordinator_id}) owns this checkout. Do not write from an independent conversation.`,
+      3,
+    );
+  }
+  return acquireCoordinator(target, token);
+}
+
+function validateCheckpointText(value, label, { required = false } = {}) {
+  if (value === undefined || value === null || value === "") {
+    if (required) {
+      throw new StackError(`${label} is required`);
+    }
+    return null;
+  }
+  const normalized = String(value).trim();
+  if (
+    normalized.length === 0 ||
+    normalized.length > 1_000 ||
+    /[\r\n\0]/.test(normalized)
+  ) {
+    throw new StackError(
+      `${label} must be a single line between 1 and 1000 characters`,
+    );
+  }
+  SECRET_ASSIGNMENT.lastIndex = 0;
+  if (SECRET_ASSIGNMENT.test(normalized) || SECRET_LIKE_TEXT.test(normalized)) {
+    throw new StackError(
+      `${label} appears to contain a secret. Store only a redacted reference.`,
+    );
+  }
+  SECRET_ASSIGNMENT.lastIndex = 0;
+  return normalized;
+}
+
+function checkpointMarkdown(checkpoint) {
+  const escape = (value) => value.replaceAll("\\", "\\\\").replaceAll("`", "\\`");
+  const section = (title, values, empty = "None.") => [
+    `## ${title}`,
+    "",
+    ...(values.length > 0
+      ? values.map((value) => `- ${escape(value)}`)
+      : [empty]),
+    "",
+  ];
+  const git = checkpoint.git
+    ? [
+        `- Branch: ${checkpoint.git.branch ?? "detached"}`,
+        `- Commit: ${checkpoint.git.head ?? "unavailable"}`,
+        `- Working tree: ${checkpoint.git.clean ? "clean" : "has changes"}`,
+        `- Tracked changes: ${checkpoint.git.tracked_changes}`,
+        `- Untracked changes: ${checkpoint.git.untracked_changes}`,
+      ]
+    : ["- Git state: unavailable"];
+  return [
+    "# Project Checkpoint",
+    "",
+    "This is the current deterministic handoff written by Ultimate Agent Stack.",
+    "Repository evidence remains authoritative; optional memory is only a searchable mirror.",
+    "",
+    `- Checkpoint: \`${checkpoint.checkpoint_id}\``,
+    `- Updated: ${checkpoint.updated_at}`,
+    `- Status: ${checkpoint.status}`,
+    `- Objective: ${escape(checkpoint.objective)}`,
+    `- Summary: ${escape(checkpoint.summary)}`,
+    "",
+    ...section("Completed", checkpoint.completed),
+    ...section("Decisions", checkpoint.decisions),
+    ...section("Next Steps", checkpoint.next_steps),
+    ...section("Blockers", checkpoint.blockers),
+    ...section("Evidence", checkpoint.evidence),
+    "## Git",
+    "",
+    ...git,
+    "",
+  ].join("\n");
+}
+
+function commandCheckpoint(target, options) {
+  const coordinator = requireCoordinator(target, options.token);
+  const status = options.status ?? "in_progress";
+  if (!["in_progress", "blocked", "complete"].includes(status)) {
+    throw new StackError(
+      "--status must be in_progress, blocked, or complete",
+    );
+  }
+  const objective = validateCheckpointText(
+    options.objective,
+    "--objective",
+    { required: true },
+  );
+  const summary = validateCheckpointText(options.summary, "--summary", {
+    required: true,
+  });
+  const normalizeList = (values, label) =>
+    values.map((value) => validateCheckpointText(value, label));
+  const completed = normalizeList(options.completed ?? [], "--completed");
+  const decisions = normalizeList(options.decisions ?? [], "--decision");
+  const nextSteps = normalizeList(options.nextSteps ?? [], "--next");
+  const blockers = normalizeList(options.blockers ?? [], "--blocker");
+  if (status !== "complete" && nextSteps.length === 0) {
+    throw new StackError(
+      "An in-progress or blocked checkpoint requires at least one --next step.",
+    );
+  }
+  if (status === "blocked" && blockers.length === 0) {
+    throw new StackError(
+      "A blocked checkpoint requires at least one --blocker.",
+    );
+  }
+  const evidence = [...new Set(options.evidence ?? [])]
+    .map((item) => {
+      const normalized = validateCheckpointText(item, "--evidence", {
+        required: true,
+      });
+      const file = projectFile(target, normalized, "checkpoint evidence");
+      if (!existsSync(file) || !statSync(file).isFile()) {
+        throw new StackError(
+          `Checkpoint evidence must be an existing project file: ${normalized}`,
+        );
+      }
+      return relative(target, file).split(sep).join("/");
+    })
+    .sort();
+  const git = gitSnapshot(target);
+  const body = {
+    schema_version: 1,
+    status,
+    objective,
+    summary,
+    completed,
+    decisions,
+    next_steps: nextSteps,
+    blockers,
+    evidence,
+    git,
+  };
+  const checkpoint = {
+    ...body,
+    checkpoint_id: sha256(stableJson(body)),
+    updated_at: utcTimestamp(),
+    coordinator_id: coordinator.lease.coordinator_id,
+  };
+  atomicProjectJson(
+    target,
+    CHECKPOINT_PATH,
+    checkpoint,
+    "project checkpoint",
+  );
+  atomicProjectText(
+    target,
+    CHECKPOINT_MARKDOWN_PATH,
+    checkpointMarkdown(checkpoint),
+    "project checkpoint handoff",
+  );
+
+  const config = loadConfig(target);
+  let memoryCapture = {
+    provider: config.capabilities.knowledge.provider,
+    status: "repository-only",
+  };
+  if (
+    config.capabilities.knowledge.provider === "gbrain" &&
+    config.capabilities.knowledge.scope === "project"
+  ) {
+    const health = commandMemoryHealth(target, config);
+    if (health.ok) {
+      const capture = parseProviderJson(
+        runGbrain(
+          target,
+          [
+            "capture",
+            "--file",
+            projectFile(
+              target,
+              CHECKPOINT_MARKDOWN_PATH,
+              "project checkpoint handoff",
+            ),
+            "--slug",
+            GBRAIN_CHECKPOINT_SLUG,
+            "--type",
+            "project",
+            "--json",
+          ],
+          30_000,
+        ),
+        "gbrain checkpoint capture",
+      );
+      memoryCapture = capture.ok
+        ? {
+            provider: "gbrain",
+            status: "mirrored",
+            slug: capture.value?.slug ?? GBRAIN_CHECKPOINT_SLUG,
+          }
+        : {
+            provider: "gbrain",
+            status: "fallback",
+            error: capture.error,
+            detail: capture.detail,
+          };
+    } else {
+      memoryCapture = {
+        provider: "gbrain",
+        status: "fallback",
+        error: health.error,
+      };
+    }
+  }
+  return {
+    ok: true,
+    checkpoint: CHECKPOINT_PATH,
+    handoff: CHECKPOINT_MARKDOWN_PATH,
+    checkpoint_id: checkpoint.checkpoint_id,
+    memory_capture: memoryCapture,
+    coordinator,
+  };
+}
+
 function commandLock(target, artifacts) {
   const config = loadConfig(target);
   const errors = validateConfig(config, target);
@@ -2881,6 +3796,126 @@ function commandUnlock(target, reason) {
   return { ok: true, reason: reason.trim() };
 }
 
+function loadCheckpoint(target) {
+  const file = projectFile(target, CHECKPOINT_PATH, "project checkpoint");
+  if (!existsSync(file)) {
+    return null;
+  }
+  const checkpoint = readJson(file, "project checkpoint");
+  const allowed = new Set([
+    "schema_version",
+    "status",
+    "objective",
+    "summary",
+    "completed",
+    "decisions",
+    "next_steps",
+    "blockers",
+    "evidence",
+    "git",
+    "checkpoint_id",
+    "updated_at",
+    "coordinator_id",
+  ]);
+  const unknown = Object.keys(checkpoint).filter((key) => !allowed.has(key));
+  if (unknown.length > 0) {
+    throw new StackError(
+      `Project checkpoint contains unsupported fields: ${unknown.join(", ")}`,
+    );
+  }
+  if (
+    checkpoint.schema_version !== 1 ||
+    !["in_progress", "blocked", "complete"].includes(checkpoint.status) ||
+    !Array.isArray(checkpoint.completed) ||
+    !Array.isArray(checkpoint.decisions) ||
+    !Array.isArray(checkpoint.next_steps) ||
+    !Array.isArray(checkpoint.blockers) ||
+    !Array.isArray(checkpoint.evidence)
+  ) {
+    throw new StackError(
+      `Invalid ${CHECKPOINT_PATH}. Create a new checkpoint with the CLI rather than editing it manually.`,
+    );
+  }
+  validateCheckpointText(checkpoint.objective, "checkpoint objective", {
+    required: true,
+  });
+  validateCheckpointText(checkpoint.summary, "checkpoint summary", {
+    required: true,
+  });
+  for (const [name, values] of [
+    ["completed", checkpoint.completed],
+    ["decisions", checkpoint.decisions],
+    ["next_steps", checkpoint.next_steps],
+    ["blockers", checkpoint.blockers],
+    ["evidence", checkpoint.evidence],
+  ]) {
+    for (const value of values) {
+      validateCheckpointText(value, `checkpoint ${name}`, { required: true });
+    }
+  }
+  const body = {
+    schema_version: checkpoint.schema_version,
+    status: checkpoint.status,
+    objective: checkpoint.objective,
+    summary: checkpoint.summary,
+    completed: checkpoint.completed,
+    decisions: checkpoint.decisions,
+    next_steps: checkpoint.next_steps,
+    blockers: checkpoint.blockers,
+    evidence: checkpoint.evidence,
+    git: checkpoint.git ?? null,
+  };
+  if (
+    typeof checkpoint.checkpoint_id !== "string" ||
+    checkpoint.checkpoint_id !== sha256(stableJson(body))
+  ) {
+    throw new StackError(
+      `Project checkpoint integrity check failed. Recreate ${CHECKPOINT_PATH} with the checkpoint command.`,
+    );
+  }
+  return checkpoint;
+}
+
+function testConfiguredMemory(target, config, health, checkpoint) {
+  if (config.capabilities.knowledge.provider === "repository") {
+    return health;
+  }
+  if (!health.ok || !checkpoint) {
+    return {
+      ...health,
+      checkpoint_test: checkpoint ? "not-run" : "not-applicable",
+    };
+  }
+  const retrieval = parseProviderJson(
+    runGbrain(
+      target,
+      [
+        "call",
+        "get_page",
+        JSON.stringify({ slug: GBRAIN_CHECKPOINT_SLUG }),
+      ],
+      15_000,
+    ),
+    "gbrain checkpoint retrieval",
+  );
+  const serialized = retrieval.ok ? stableJson(retrieval.value) : "";
+  const current =
+    retrieval.ok && serialized.includes(checkpoint.checkpoint_id);
+  return {
+    ...health,
+    ok: health.ok && current,
+    checkpoint_test: current ? "passed" : "failed",
+    checkpoint_id: checkpoint.checkpoint_id,
+    ...(current
+      ? {}
+      : {
+          checkpoint_error: retrieval.ok
+            ? "GBrain checkpoint does not match repository checkpoint"
+            : retrieval.error,
+        }),
+  };
+}
+
 function commandStatus(target) {
   const installation = loadInstallation(target);
   const config = projectExists(target, CONFIG_PATH, "project config")
@@ -2893,6 +3928,14 @@ function commandStatus(target) {
   const actualConfigurationHash = config
     ? configurationHash(config)
     : null;
+  const checkpoint = projectExists(
+    target,
+    CHECKPOINT_PATH,
+    "project checkpoint",
+  )
+    ? loadCheckpoint(target)
+    : null;
+  const coordinator = publicCoordinator(readCoordinator(target));
   return {
     ok:
       Boolean(installation && config) &&
@@ -2916,10 +3959,18 @@ function commandStatus(target) {
       Boolean(config) &&
       config.safety?.approved_configuration_hash === actualConfigurationHash,
     active_lock: state.active_lock?.locked_at ?? null,
+    checkpoint: checkpoint
+      ? {
+          id: checkpoint.checkpoint_id,
+          status: checkpoint.status,
+          updated_at: checkpoint.updated_at,
+        }
+      : null,
+    coordinator,
   };
 }
 
-function commandStart(target, idea) {
+function commandStart(target, idea, coordinatorToken = undefined) {
   const installation = loadInstallation(target);
   if (!installation) {
     throw new StackError(
@@ -2927,6 +3978,14 @@ function commandStart(target, idea) {
     );
   }
   const config = loadConfig(target);
+  const checkpoint = loadCheckpoint(target);
+  const coordinator = acquireCoordinator(target, coordinatorToken);
+  const memoryHealth = testConfiguredMemory(
+    target,
+    config,
+    commandMemoryHealth(target, config),
+    checkpoint,
+  );
   const request = idea?.trim() || "[describe what you want to build or change]";
   const configurationApproved =
     config.safety.approved_configuration_hash === configurationHash(config);
@@ -2937,13 +3996,19 @@ function commandStart(target, idea) {
     return {
       ok: true,
       phase: "onboarding",
-      prompt: `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, and .agent-stack/config.json. Inspect the repository and run the capabilities command. Complete Ultimate Agent Stack onboarding before material implementation.\n\nAsk only consequential setup decisions, one at a time. For each decision use plain language, state one recommended choice, provide at most one genuinely safe alternative, explain the practical consequence, and accept "use the recommendation" as an answer. Never invent an unsafe alternative. Prefer repository evidence and safe defaults over questions.\n\nConfigure the approved project profile, review provider, knowledge provider, external-data policy, and authority mode with the non-interactive configure command. Then run doctor and continue with this request: ${request}`,
+      prompt: `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, .agent-stack/config.json, and any valid .agent-stack/CHECKPOINT.md. Inspect the repository and run the capabilities command. Complete Ultimate Agent Stack onboarding before material implementation.\n\nAsk only consequential setup decisions, one at a time. For each decision use plain language, state one recommended choice, provide at most one genuinely safe alternative, explain the practical consequence, and accept "use the recommendation" as an answer. Never invent an unsafe alternative. Prefer repository evidence and safe defaults over questions.\n\nAsk this memory decision in plain language: "Should this project remember progress only in its repository files, or also use a private local searchable memory for easier continuation across conversations?" Recommend repository memory for a short or simple project. Recommend project-scoped local GBrain for a long-running build likely to span conversations. Explain that GBrain is optional, repository checkpoints remain the source of truth, and work still resumes when GBrain is unavailable. If GBrain is approved, configure it, run memory-setup for the detected harness, perform the approved setup, and verify it with doctor.\n\nConfigure the approved project profile, review provider, knowledge provider, external-data policy, and authority mode with the non-interactive configure command. Then run doctor and continue with this request: ${request}`,
       pending: {
         onboarding_status: config.onboarding.status,
         configuration_approved: configurationApproved,
       },
+      checkpoint,
+      memory: memoryHealth,
+      coordinator,
     };
   }
+  const continuity = checkpoint
+    ? `Resume checkpoint ${checkpoint.checkpoint_id}: ${checkpoint.summary} Next steps: ${checkpoint.next_steps.join("; ") || "none recorded"}.`
+    : "No checkpoint exists yet. Create one after the first verified delivery milestone.";
   return {
     ok: true,
     phase: "project-discovery",
@@ -2955,7 +4020,10 @@ function commandStart(target, idea) {
       execution: config.autonomy.execution,
       merge: config.autonomy.merge,
     },
-    prompt: `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, .agent-stack/config.json, and the installed skills. Use $run-autonomous-delivery for this request: ${request}\n\nInspect the project first. Apply $use-project-knowledge using the configured ${config.capabilities.knowledge.provider} provider at ${config.capabilities.knowledge.scope} scope, with repository evidence as the source of truth and fallback. Use $coordinate-parallel-delivery to manage independent subagent work when it is safe and useful; keep it serial otherwise. You remain the integration owner, and the user must not manage workers.\n\nBuild a living project brief. Research routine answers. Ask only consequential questions, one at a time. Each question must use plain language, recommend one safe choice, provide at most one genuinely useful safe alternative, explain the consequence, and allow "use the recommendation." Own all routine implementation and verification.`,
+    checkpoint,
+    memory: memoryHealth,
+    coordinator,
+    prompt: `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, .agent-stack/config.json, any valid .agent-stack/CHECKPOINT.md, and the installed skills. Use $run-autonomous-delivery for this request: ${request}\n\n${continuity}\n\nInspect the project first. Apply $use-project-knowledge using the configured ${config.capabilities.knowledge.provider} provider at ${config.capabilities.knowledge.scope} scope, with repository evidence as the source of truth and fallback. The start command already tested configured memory; if its result is unhealthy or the checkpoint mirror is stale, continue from the repository and repair the optional adapter without blocking delivery. Use $coordinate-parallel-delivery to manage independent subagent work when it is safe and useful; keep it serial otherwise. You are the one Project Steward and integration owner. Do not give the coordinator token to subagents, and do not make the user manage workers.\n\nBuild a living project brief. Research routine answers. Ask only consequential questions, one at a time. Each question must use plain language, recommend one safe choice, provide at most one genuinely useful safe alternative, explain the consequence, and allow "use the recommendation." Own all routine implementation and verification. Write a deterministic checkpoint after verified milestones and release the coordinator lease only at final handoff.`,
   };
 }
 
@@ -3039,6 +4107,7 @@ function commandUpstreamCheck(target, output) {
 
 function helpText() {
   return `Ultimate Agent Stack ${PACKAGE_VERSION}
+Your Project Steward — one conversation managing the entire build.
 
 Safe project setup:
   ultimate-agent-stack init [--target DIR] [--claude]
@@ -3046,7 +4115,10 @@ Safe project setup:
   ultimate-agent-stack status [--target DIR]
   ultimate-agent-stack doctor [--target DIR] [--human]
   ultimate-agent-stack capabilities [--target DIR]
+  ultimate-agent-stack memory-setup [--target DIR] [--harness NAME]
+  ultimate-agent-stack memory-health [--target DIR]
   ultimate-agent-stack start [--target DIR] [--idea TEXT]
+    [--coordinator-token TOKEN]
 
 Agent-operated quality controls:
   ultimate-agent-stack detect [--target DIR] [--write]
@@ -3060,6 +4132,15 @@ Agent-operated quality controls:
   ultimate-agent-stack lock [--target DIR] [--artifact PATH ...]
   ultimate-agent-stack check-lock [--target DIR]
   ultimate-agent-stack unlock --reason TEXT [--target DIR]
+  ultimate-agent-stack checkpoint --objective TEXT --summary TEXT
+    [--status STATUS] [--completed TEXT ...] [--decision TEXT ...]
+    [--next TEXT ...] [--blocker TEXT ...] [--evidence PATH ...]
+    --coordinator-token TOKEN [--target DIR]
+  ultimate-agent-stack coordinator status [--target DIR]
+  ultimate-agent-stack coordinator heartbeat|release
+    --coordinator-token TOKEN [--target DIR]
+  ultimate-agent-stack coordinator takeover --reason TEXT --confirm-stopped
+    [--target DIR]
   ultimate-agent-stack adopt-managed --path PATH --reason TEXT [--target DIR]
 
 Maintainer:
@@ -3071,7 +4152,9 @@ overwrite customized files; they create reconciliation proposals instead.
 Parallel delivery is coordinator-managed and falls back to serial work when safe
 isolation is absent. The coding agent conducts guided onboarding; configure records
 the approved choices. The simple preset selects standard, local-only, repository-
-backed defaults with built-in review and human-controlled merge authority.`;
+backed defaults with built-in review and human-controlled merge authority.
+Repository checkpoints remain authoritative. Optional GBrain memory is project-
+scoped and falls back safely. One active Project Steward owns a checkout at a time.`;
 }
 
 function execute(command, args) {
@@ -3101,6 +4184,16 @@ function execute(command, args) {
       assertNoUnknownOptions(args, ["--target"]);
       const target = resolveTarget(getOption(args, "--target", "."));
       return commandCapabilities(target);
+    }
+    case "memory-setup": {
+      assertNoUnknownOptions(args, ["--target", "--harness"]);
+      const target = resolveTarget(getOption(args, "--target", "."));
+      return commandMemorySetup(target, getOption(args, "--harness"));
+    }
+    case "memory-health": {
+      assertNoUnknownOptions(args, ["--target"]);
+      const target = resolveTarget(getOption(args, "--target", "."));
+      return commandMemoryHealth(target);
     }
     case "configure": {
       assertNoUnknownOptions(args, [
@@ -3163,15 +4256,63 @@ function execute(command, args) {
       const target = resolveTarget(getOption(args, "--target", "."));
       return commandUnlock(target, getOption(args, "--reason"));
     }
+    case "checkpoint": {
+      assertNoUnknownOptions(args, [
+        "--target",
+        "--objective",
+        "--summary",
+        "--status",
+        "--completed",
+        "--decision",
+        "--next",
+        "--blocker",
+        "--evidence",
+        "--coordinator-token",
+      ]);
+      const target = resolveTarget(getOption(args, "--target", "."));
+      return commandCheckpoint(target, {
+        objective: getOption(args, "--objective"),
+        summary: getOption(args, "--summary"),
+        status: getOption(args, "--status"),
+        completed: getRepeatedOption(args, "--completed"),
+        decisions: getRepeatedOption(args, "--decision"),
+        nextSteps: getRepeatedOption(args, "--next"),
+        blockers: getRepeatedOption(args, "--blocker"),
+        evidence: getRepeatedOption(args, "--evidence"),
+        token: getOption(args, "--coordinator-token"),
+      });
+    }
+    case "coordinator": {
+      const [action, ...options] = args;
+      assertNoUnknownOptions(options, [
+        "--target",
+        "--coordinator-token",
+        "--reason",
+      ], ["--confirm-stopped"]);
+      const target = resolveTarget(getOption(options, "--target", "."));
+      return commandCoordinator(target, action, {
+        token: getOption(options, "--coordinator-token"),
+        reason: getOption(options, "--reason"),
+        confirmStopped: hasFlag(options, "--confirm-stopped"),
+      });
+    }
     case "status": {
       assertNoUnknownOptions(args, ["--target"]);
       const target = resolveTarget(getOption(args, "--target", "."));
       return commandStatus(target);
     }
     case "start": {
-      assertNoUnknownOptions(args, ["--target", "--idea"]);
+      assertNoUnknownOptions(args, [
+        "--target",
+        "--idea",
+        "--coordinator-token",
+      ]);
       const target = resolveTarget(getOption(args, "--target", "."));
-      return commandStart(target, getOption(args, "--idea"));
+      return commandStart(
+        target,
+        getOption(args, "--idea"),
+        getOption(args, "--coordinator-token"),
+      );
     }
     case "adopt-managed": {
       assertNoUnknownOptions(args, ["--target", "--path", "--reason"]);
@@ -3247,7 +4388,10 @@ if (isEntryPoint) {
 }
 
 export {
+  CHECKPOINT_MARKDOWN_PATH,
+  CHECKPOINT_PATH,
   CONFIG_PATH,
+  COORDINATOR_PATH,
   CORE_POLICY_PATH,
   INSTALLATION_PATH,
   PACKAGE_NAME,
@@ -3258,14 +4402,18 @@ export {
   REVIEW_WORKFLOW_PATH,
   StackError,
   checksHash,
+  commandCheckpoint,
   commandCapabilities,
   commandAdoptManaged,
   commandApproveChecks,
   commandCheckLock,
   commandConfigure,
+  commandCoordinator,
   commandDetect,
   commandDoctor,
   commandLock,
+  commandMemoryHealth,
+  commandMemorySetup,
   commandStart,
   commandStatus,
   commandUnlock,
