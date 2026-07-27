@@ -190,9 +190,17 @@ function configureFixture(directory, knowledge = "repository") {
   });
 }
 
-function installFakeGbrain(directory) {
+function installFakeGbrain(directory, options = {}) {
   const toolDirectory = join(directory, "tool-bin");
   const executable = join(toolDirectory, "gbrain");
+  const identity = options.malformedIdentity
+    ? { version: "test" }
+    : {
+        version: "test",
+        engine: "pglite",
+        page_count: 1,
+        chunk_count: 1,
+      };
   mkdirSync(toolDirectory, { recursive: true });
   writeJson(join(toolDirectory, "package.json"), { type: "commonjs" });
   writeFileSync(
@@ -208,7 +216,7 @@ if (args[0] === "config" && args[1] === "get" && args[2] === "database_path") {
 } else if (args[0] === "doctor") {
   process.stdout.write(JSON.stringify({status:"healthy",health_score:100,padding:"x".repeat(25000)}) + "\\n");
 } else if (args[0] === "call" && args[1] === "get_brain_identity") {
-  process.stdout.write(JSON.stringify({version:"test",engine:"pglite",page_count:1,chunk_count:1}) + "\\n");
+  process.stdout.write(JSON.stringify(${JSON.stringify(identity)}) + "\\n");
 } else if (args[0] === "capture") {
   const file = args[args.indexOf("--file") + 1];
   fs.writeFileSync(cache, JSON.stringify({compiled_truth:fs.readFileSync(file, "utf8")}));
@@ -748,6 +756,29 @@ test("local GBrain setup is scoped and doctor performs live checks", () => {
     process.env.PATH = originalPath;
     fixture.cleanup();
     outside.cleanup();
+  }
+});
+
+test("GBrain health attributes a malformed identity response correctly", () => {
+  const fixture = temporaryProject();
+  const originalPath = process.env.PATH;
+  try {
+    configureFixture(fixture.directory, "gbrain");
+    const toolDirectory = installFakeGbrain(fixture.directory, {
+      malformedIdentity: true,
+    });
+    process.env.PATH = `${toolDirectory}${platform() === "win32" ? ";" : ":"}${originalPath}`;
+
+    const health = commandMemoryHealth(fixture.directory);
+
+    assert.equal(health.ok, false);
+    assert.equal(
+      health.error,
+      "gbrain identity response is missing an engine identifier",
+    );
+  } finally {
+    process.env.PATH = originalPath;
+    fixture.cleanup();
   }
 });
 

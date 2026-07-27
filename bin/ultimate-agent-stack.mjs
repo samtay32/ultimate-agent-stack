@@ -2132,10 +2132,13 @@ function commandMemoryHealth(target, suppliedConfig = undefined) {
     runGbrain(target, ["call", "get_brain_identity", "{}"], 15_000),
     "gbrain identity",
   );
+  const doctorUnhealthy = doctor.value?.status === "unhealthy";
+  const identityMalformed =
+    identity.ok && typeof identity.value?.engine !== "string";
   const healthy =
     identity.ok &&
-    doctor.value?.status !== "unhealthy" &&
-    typeof identity.value?.engine === "string";
+    !doctorUnhealthy &&
+    !identityMalformed;
   return {
     ok: healthy,
     provider: "gbrain",
@@ -2159,7 +2162,13 @@ function commandMemoryHealth(target, suppliedConfig = undefined) {
     fallback: "repository",
     ...(healthy
       ? {}
-      : { error: identity.ok ? "gbrain doctor reported unhealthy" : identity.error }),
+      : {
+          error: !identity.ok
+            ? identity.error
+            : doctorUnhealthy
+              ? "gbrain doctor reported unhealthy"
+              : "gbrain identity response is missing an engine identifier",
+        }),
   };
 }
 
@@ -3383,7 +3392,9 @@ function withCoordinatorMutex(target, operation) {
       }
     } catch (error) {
       if (error.code !== "ENOENT") {
-        throw error;
+        process.stderr.write(
+          `Warning: failed to release coordinator mutex: ${redact(error.message, 500)}\n`,
+        );
       }
     }
   }
