@@ -251,8 +251,10 @@ You should not be asked to interpret those commands.
 Verification deliberately removes inherited credentials and gives checks an
 isolated `HOME`. Common non-secret toolchain paths such as `JAVA_HOME` and
 `DOTNET_ROOT`, plus existing cache-only directories for npm, pip, uv, and Go,
-remain available. Maven, Gradle, and Cargo home directories are not inherited
-because they can contain credentials or executable configuration.
+remain available. User-home Maven, Gradle, and Cargo data directories
+(`~/.m2`, `GRADLE_USER_HOME`, and `CARGO_HOME`) are not inherited because they
+can contain credentials or executable configuration. Maven installation paths
+such as `M2_HOME` and `MAVEN_HOME` remain available when already configured.
 
 If a project needs another non-secret variable, the agent may add its name to
 `quality.environment.allow`, inspect the resulting check definitions, and run

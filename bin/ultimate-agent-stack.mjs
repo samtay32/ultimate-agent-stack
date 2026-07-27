@@ -106,8 +106,6 @@ const TOOLCHAIN_ENVIRONMENT_NAMES = [
   "ANDROID_SDK_ROOT",
   "BUN_INSTALL",
   "DOTNET_ROOT",
-  "GEM_HOME",
-  "GEM_PATH",
   "GOPATH",
   "GOROOT",
   "JAVA_HOME",
@@ -901,12 +899,19 @@ function migrateConfig(config, target = undefined) {
   config.quality.require_project_checks ??= true;
   config.quality.checks ??= [];
   config.quality.evidence_directory ??= RUNS_PATH;
-  config.quality.environment ??= {};
-  config.quality.environment.allow = Array.isArray(
-    config.quality.environment.allow,
-  )
-    ? [...new Set(config.quality.environment.allow)]
-    : [];
+  if (config.quality.environment == null) {
+    config.quality.environment = {};
+  }
+  if (
+    typeof config.quality.environment === "object" &&
+    !Array.isArray(config.quality.environment)
+  ) {
+    config.quality.environment.allow = Array.isArray(
+      config.quality.environment.allow,
+    )
+      ? [...new Set(config.quality.environment.allow)]
+      : [];
+  }
   config.lock_artifacts = Array.isArray(config.lock_artifacts)
     ? [...new Set([...config.lock_artifacts, ...DEFAULT_ARTIFACTS])]
     : DEFAULT_ARTIFACTS;
@@ -970,7 +975,17 @@ function validateCommand(check, index, config, target = undefined) {
     inlineEvaluationArguments &&
     check.argv
       .slice(1)
-      .some((argument) => inlineEvaluationArguments.has(argument))
+      .some((argument) =>
+        [...inlineEvaluationArguments].some(
+          (option) =>
+            argument === option ||
+            argument.startsWith(`${option}=`) ||
+            (option.startsWith("-") &&
+              !option.startsWith("--") &&
+              !argument.startsWith("--") &&
+              argument.startsWith(option)),
+        ),
+      )
   ) {
     errors.push(
       `quality.checks[${index}] uses inline code evaluation; use a reviewed project file or fingerprinted package script instead`,
@@ -1598,20 +1613,18 @@ function detectHarnesses(target) {
   if (projectExists(target, ".opencode")) {
     detected.push("opencode");
   }
+  if (projectExists(target, ".grok")) {
+    detected.push("grok");
+  }
   return detected;
 }
 
-function resolveHarnesses(target, existing, claude) {
-  const detected = detectHarnesses(target);
-  const enabled = new Set([
-    ...SUPPORTED_HARNESSES,
-    ...(existing?.harnesses ?? []),
-    ...detected,
-    ...(claude ? ["claude"] : []),
-  ]);
+// Every shipped adapter installs by default. Detection tells the agent which
+// harnesses already had project markers; --claude remains a compatible no-op.
+function resolveHarnesses(target) {
   return {
-    detected,
-    enabled: [...enabled].filter((name) => SUPPORTED_HARNESSES.has(name)),
+    detected: detectHarnesses(target),
+    enabled: [...SUPPORTED_HARNESSES],
   };
 }
 
@@ -1630,7 +1643,6 @@ function writeProposal(target, packageVersion, destination, bytes) {
 function installOrUpgrade(
   target,
   {
-    claude = false,
     mode = "init",
   } = {},
 ) {
@@ -1643,11 +1655,7 @@ function installOrUpgrade(
       next: `Run npx -y ${PACKAGE_NAME}@latest upgrade`,
     };
   }
-  const harnesses = resolveHarnesses(
-    target,
-    existing,
-    claude,
-  );
+  const harnesses = resolveHarnesses(target);
   const claudeEnabled = harnesses.enabled.includes("claude");
 
   const manifest = existing ?? {
@@ -2593,10 +2601,6 @@ function defaultCacheEnvironment() {
           };
   return Object.fromEntries(
     Object.entries(candidates)
-      .map(([name, path]) => [
-        name,
-        typeof process.env[name] === "string" ? process.env[name] : path,
-      ])
       .filter(([, path]) => existsSync(path)),
   );
 }
@@ -2626,7 +2630,7 @@ function checkEnvironment(target, config) {
     }
   }
   Object.assign(environment, defaultCacheEnvironment());
-  for (const name of config.quality.environment.allow) {
+  for (const name of config.quality?.environment?.allow ?? []) {
     if (typeof process.env[name] === "string") {
       environment[name] = process.env[name];
     }
@@ -2696,7 +2700,7 @@ function runCheck(target, check, config) {
     : outputExceeded
       ? `output exceeded ${CHECK_OUTPUT_LIMIT_BYTES}-byte capture limit`
       : "";
-  const redactionValues = config.quality.environment.allow
+  const redactionValues = (config.quality?.environment?.allow ?? [])
     .map((name) => environment[name])
     .filter((value) => typeof value === "string");
   return {

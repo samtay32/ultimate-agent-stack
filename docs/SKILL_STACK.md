@@ -84,12 +84,12 @@ Cursor uses the generated root `AGENTS.md`, `.cursor/rules/agent-stack.mdc`, and
 ### Native Subagents
 
 Codex, Gemini CLI, and OpenCode receive conservative read-only native worker
-profiles. Claude Code receives the equivalent profile and skill copies with
-`--claude`. The coordination skill translates one assignment and authority
-contract onto those surfaces. It never shells from one vendor into another.
-Grok, Cursor, and other harnesses use portable project instructions and only
-delegate when the current surface proves a safe native capability; otherwise
-they use serial delivery.
+profiles. Claude Code receives the equivalent profile and skill copies during
+the default install. The coordination skill translates one assignment and
+authority contract onto those surfaces. It never shells from one vendor into
+another. Grok, Cursor, and other harnesses use portable project instructions
+and only delegate when the current surface proves a safe native capability;
+otherwise they use serial delivery.
 
 ## Upgrade Rule
 

@@ -232,6 +232,11 @@ test("package has no install hooks and guards publication with prepublishOnly", 
     false,
     "package files must not rely on inconsistent negation patterns",
   );
+  assert.equal(
+    packageData.files.includes("STARTER_PROMPT.md"),
+    true,
+    "package files must include STARTER_PROMPT.md",
+  );
   assert.match(packedSmoke, /packed\[0\]\.files/);
   assert.match(packedSmoke, /duplicate-copy paths/);
   assert.deepEqual(packageData.dependencies ?? {}, {});

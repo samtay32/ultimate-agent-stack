@@ -10,7 +10,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { platform, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
@@ -1100,9 +1100,10 @@ test("init auto-detects Claude markers and upgrades remember the adapter", () =>
   try {
     initializeGit(fixture.directory);
     writeFileSync(join(fixture.directory, "CLAUDE.md"), "# Claude\n");
+    mkdirSync(join(fixture.directory, ".grok"));
 
     const initialized = installOrUpgrade(fixture.directory, { mode: "init" });
-    assert.deepEqual(initialized.harnesses.detected, ["claude"]);
+    assert.deepEqual(initialized.harnesses.detected, ["claude", "grok"]);
     assert.ok(initialized.harnesses.enabled.includes("claude"));
     assert.ok(
       existsSync(
@@ -1284,8 +1285,12 @@ test("shell and destructive quality checks are rejected", () => {
 test("inline evaluation checks are rejected in favor of reviewed files", () => {
   for (const argv of [
     ["node", "-e", "process.exit(0)"],
+    ["node", "--eval=process.exit(0)"],
+    ["node", "--print=1"],
     ["python3", "-c", "print('ok')"],
+    ["python3", "-cprint('ok')"],
     ["ruby", "-e", "puts 'ok'"],
+    ["perl", "-Esay 1"],
   ]) {
     const config = safeConfig();
     config.quality.checks = [
@@ -1330,6 +1335,32 @@ test("environment allowlist accepts names and rejects credential-bearing names",
       validateConfig(invalid).join("\n"),
       /valid non-sensitive, non-execution-control environment names/,
     );
+  }
+});
+
+test("malformed environment policy reports validation instead of crashing migration", () => {
+  const fixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    createJavaScriptFixture(fixture.directory);
+    installOrUpgrade(fixture.directory, { mode: "init" });
+    const configFile = join(fixture.directory, CONFIG_PATH);
+    const config = readJson(configFile);
+    config.quality.environment = "none";
+    writeJson(configFile, config);
+
+    const doctor = commandDoctor(fixture.directory);
+    const configReport = doctor.reports.find(
+      (report) => report.name === "config",
+    );
+    assert.equal(doctor.ok, false);
+    assert.equal(configReport.ok, false);
+    assert.match(
+      JSON.stringify(configReport.detail),
+      /quality\.environment must be an object/,
+    );
+  } finally {
+    fixture.cleanup();
   }
 });
 
@@ -1541,6 +1572,9 @@ test("verification does not expose inherited secret environment values", () => {
 
 test("approved non-secret environment is inherited, redacted, and fingerprinted", () => {
   const fixture = temporaryProject();
+  const previousBuildMode = process.env.UAS_BUILD_MODE;
+  const previousJavaHome = process.env.JAVA_HOME;
+  const previousNpmCache = process.env.npm_config_cache;
   try {
     initializeGit(fixture.directory);
     writeJson(join(fixture.directory, "package.json"), {
@@ -1553,6 +1587,7 @@ test("approved non-secret environment is inherited, redacted, and fingerprinted"
       [
         "if (process.env.UAS_BUILD_MODE !== 'approved-mode-sentinel') process.exit(2);",
         "if (process.env.JAVA_HOME !== '/opt/fixture-jdk') process.exit(3);",
+        `if (process.env.npm_config_cache === ${JSON.stringify(fixture.directory)}) process.exit(4);`,
         "process.stdout.write(`${process.env.UAS_BUILD_MODE}\\n${process.env.JAVA_HOME}`);",
         "",
       ].join("\n"),
@@ -1571,6 +1606,7 @@ test("approved non-secret environment is inherited, redacted, and fingerprinted"
     writeJson(configFile, config);
     process.env.UAS_BUILD_MODE = "approved-mode-sentinel";
     process.env.JAVA_HOME = "/opt/fixture-jdk";
+    process.env.npm_config_cache = fixture.directory;
     commandApproveChecks(
       fixture.directory,
       "Inspected the check and approved one non-secret build-mode variable",
@@ -1602,53 +1638,66 @@ test("approved non-secret environment is inherited, redacted, and fingerprinted"
       /quality checks changed or were not reviewed/,
     );
   } finally {
-    delete process.env.UAS_BUILD_MODE;
-    delete process.env.JAVA_HOME;
+    for (const [name, value] of [
+      ["UAS_BUILD_MODE", previousBuildMode],
+      ["JAVA_HOME", previousJavaHome],
+      ["npm_config_cache", previousNpmCache],
+    ]) {
+      if (value === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
+    }
     fixture.cleanup();
   }
 });
 
-test("doctor requires direct project commands to be executable", () => {
-  const fixture = temporaryProject();
-  try {
-    initializeGit(fixture.directory);
-    createJavaScriptFixture(fixture.directory);
-    installOrUpgrade(fixture.directory, { mode: "init" });
-    const commandFile = join(fixture.directory, "project-check");
-    writeFileSync(commandFile, "#!/bin/sh\nexit 0\n");
-    chmodSync(commandFile, 0o600);
-    const configFile = join(fixture.directory, CONFIG_PATH);
-    const config = readJson(configFile);
-    config.quality.checks = [
-      {
-        id: "direct",
-        argv: ["./project-check"],
-        required: true,
-        timeout_seconds: 30,
-      },
-    ];
-    writeJson(configFile, config);
+test(
+  "doctor requires direct project commands to be executable",
+  { skip: platform() === "win32" },
+  () => {
+    const fixture = temporaryProject();
+    try {
+      initializeGit(fixture.directory);
+      createJavaScriptFixture(fixture.directory);
+      installOrUpgrade(fixture.directory, { mode: "init" });
+      const commandFile = join(fixture.directory, "project-check");
+      writeFileSync(commandFile, "#!/bin/sh\nexit 0\n");
+      chmodSync(commandFile, 0o600);
+      const configFile = join(fixture.directory, CONFIG_PATH);
+      const config = readJson(configFile);
+      config.quality.checks = [
+        {
+          id: "direct",
+          argv: ["./project-check"],
+          required: true,
+          timeout_seconds: 30,
+        },
+      ];
+      writeJson(configFile, config);
 
-    const unavailable = commandDoctor(fixture.directory);
-    assert.equal(
-      unavailable.reports.find(
-        (report) => report.name === "command:direct",
-      ).ok,
-      false,
-    );
+      const unavailable = commandDoctor(fixture.directory);
+      assert.equal(
+        unavailable.reports.find(
+          (report) => report.name === "command:direct",
+        ).ok,
+        false,
+      );
 
-    chmodSync(commandFile, 0o700);
-    const available = commandDoctor(fixture.directory);
-    assert.equal(
-      available.reports.find(
-        (report) => report.name === "command:direct",
-      ).ok,
-      true,
-    );
-  } finally {
-    fixture.cleanup();
-  }
-});
+      chmodSync(commandFile, 0o700);
+      const available = commandDoctor(fixture.directory);
+      assert.equal(
+        available.reports.find(
+          (report) => report.name === "command:direct",
+        ).ok,
+        true,
+      );
+    } finally {
+      fixture.cleanup();
+    }
+  },
+);
 
 test("verification distinguishes output capture overflow from test failure", () => {
   const fixture = temporaryProject();
