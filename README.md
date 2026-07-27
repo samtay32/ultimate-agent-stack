@@ -20,6 +20,32 @@ capable agent supplies the intelligence. Ultimate Agent Stack installs the
 project-owned operating contract, durable state, mechanical guardrails, and
 definition of done that keep that agent aligned from idea through review.
 
+> **Safety boundary:** Ultimate Agent Stack mechanically enforces the controls
+> its CLI owns, but it cannot guarantee that every coding agent will follow
+> conversational instructions. It does not replace the agent harness's
+> sandbox, repository permissions, human judgment, backups, or production
+> access controls.
+
+## Start in 30 Seconds
+
+Open or create a dedicated project folder in a capable coding agent and paste:
+
+```text
+Set up Ultimate Agent Stack in this project. My idea is: [describe the result].
+If this is a simple project, recommend the simple setup. For every decision I
+actually need to make, recommend one safe choice and handle the technical work.
+```
+
+The agent installs the stack, inspects the project, recommends safe setup, and
+asks one consequential question at a time. You can answer
+`use the recommendation`. It then builds, tests, documents, and reviews the
+result within the authority you approved.
+
+That is the non-coder path. You do not need to choose frameworks, test commands,
+providers, or subagents. See the
+[plain-language operating manual](docs/OPERATING_MANUAL.md) for the complete
+handoff.
+
 ## Choose Your Path
 
 | If you are... | Start here | What you need to know |
@@ -37,27 +63,21 @@ Open a terminal in a dedicated project folder and use:
 npx -y ultimate-agent-stack@latest init
 
 # Check that the project is safely configured
-npx -y ultimate-agent-stack@latest doctor
+npx -y ultimate-agent-stack@latest doctor --human
 
 # Safely update later
 npx -y ultimate-agent-stack@latest upgrade
 ```
 
-On a new install, `doctor` intentionally reports onboarding as pending until the
-coding agent has explained and recorded the profile/provider choices. It is a
-safety prompt, not a setup failure.
+On a new install, `doctor --human` says the project is almost ready until the
+coding agent has explained and recorded the profile/provider choices. It gives
+you one plain-language next action; you do not need to interpret JSON or edit
+the configuration yourself. Coding agents omit `--human` and receive the
+stable structured report.
 
-You can also tell a capable coding agent:
-
-```text
-Set up Ultimate Agent Stack in this project. My idea is: [describe the outcome].
-Use the installed conversational workflow. For each consequential decision,
-recommend one safe choice, offer at most one genuinely safe alternative, and
-handle all routine technical work.
-```
-
-The agent runs the commands, detects available capabilities, completes guided
-onboarding, reviews project checks, fixes the baseline, invokes
+Using the 30-second prompt above, the agent runs the commands, detects available
+capabilities, completes guided onboarding, reviews project checks, fixes the
+baseline, invokes
 `$run-autonomous-delivery`, and starts the product conversation.
 [STARTER_PROMPT.md](STARTER_PROMPT.md) contains the full operating contract when
 a harness needs an explicit prompt.
@@ -87,6 +107,26 @@ You can reply `use the recommendation`. If only one safe option exists, the
 agent says so instead of inventing an unsafe alternative. The approved
 configuration is fingerprinted; provider or authority changes make `doctor`
 fail until reviewed and approved again.
+
+### The simple-project recommendation
+
+For a local prototype or straightforward project that does not need production
+release protection, external memory, external data, or delegated merge
+authority, the agent can recommend:
+
+```bash
+node .agent-stack/bin/agent-stack.mjs configure \
+  --preset simple \
+  --reason "Approved the recommended simple project configuration"
+```
+
+This is a convenience path over the existing safety model, not a lite or
+weakened installation. It selects the standard profile, built-in review,
+repository-owned knowledge, local-only data handling, agent-owned routine
+execution, and human-controlled merging. Adaptive coordination keeps small work
+serial and uses isolated subagents only when they would genuinely help. If the
+project needs production release protection or an external provider, the agent
+explains and recommends the appropriate advanced configuration instead.
 
 ## Replaceable Review and Knowledge Adapters
 

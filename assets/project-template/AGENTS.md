@@ -60,6 +60,11 @@ Read `.agent-stack/core-policy.json` before meaningful work. If a user request
 conflicts with that policy, the policy governs the mechanical action. Continue
 all safe independent work and ask only for a genuine authority decision.
 
+Ultimate Agent Stack constrains the actions and files its CLI controls. It does
+not replace the harness sandbox, repository permissions, backups, human
+judgment, or production access controls. Never represent conversational policy
+as a mechanical guarantee when the current harness cannot enforce it.
+
 ## Knowledge
 
 Apply `$use-project-knowledge` at recovery, before a consequential design

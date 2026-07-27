@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   CONFIG_PATH,
@@ -39,12 +40,17 @@ import {
   configurationHash,
   defaultConfig,
   detectProject,
+  execute,
   installOrUpgrade,
   loadInstallation,
   pathInside,
   resolveTarget,
   validateConfig,
 } from "../bin/ultimate-agent-stack.mjs";
+
+const PACKAGE_CLI = fileURLToPath(
+  new URL("../bin/ultimate-agent-stack.mjs", import.meta.url),
+);
 
 function temporaryProject() {
   const directory = mkdtempSync(join(tmpdir(), "ultimate-agent-stack-test-"));
@@ -414,6 +420,172 @@ test("init preserves a pre-existing policy and requires reconciliation", () => {
     const adopted = loadInstallation(fixture.directory);
     assert.equal(adopted.pending_files["AGENTS.md"], undefined);
     assert.equal(adopted.managed_files["AGENTS.md"].customized, true);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("simple preset expands to the safe local project configuration", () => {
+  const fixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    createJavaScriptFixture(fixture.directory);
+    installOrUpgrade(fixture.directory, { mode: "init" });
+
+    assert.throws(
+      () =>
+        execute("configure", [
+          "--target",
+          fixture.directory,
+          "--preset",
+          "unknown",
+          "--reason",
+          "Approved a deliberately unknown configuration preset",
+        ]),
+      /--preset must be one of: simple/,
+    );
+    for (const inheritedPreset of [
+      "constructor",
+      "toString",
+      "hasOwnProperty",
+      "valueOf",
+      "__proto__",
+    ]) {
+      assert.throws(
+        () =>
+          execute("configure", [
+            "--target",
+            fixture.directory,
+            "--preset",
+            inheritedPreset,
+            "--reason",
+            "Rejected an inherited object property as a preset name",
+          ]),
+        /--preset must be one of: simple/,
+      );
+    }
+    assert.throws(
+      () =>
+        execute("configure", [
+          "--target",
+          fixture.directory,
+          "--preset",
+          "simple",
+          "--profile",
+          "standard",
+          "--reason",
+          "Attempted to mix a preset with manual configuration",
+        ]),
+      /--preset cannot be combined with manual configuration options: --profile/,
+    );
+
+    const configured = execute("configure", [
+      "--target",
+      fixture.directory,
+      "--preset",
+      "simple",
+      "--reason",
+      "Approved the recommended simple project configuration",
+    ]);
+    assert.equal(configured.preset, "simple");
+    const config = readJson(join(fixture.directory, CONFIG_PATH));
+    assert.deepEqual(config.onboarding, {
+      status: "complete",
+      project_profile: "standard",
+      external_data_policy: "local_only",
+      configured_at: config.onboarding.configured_at,
+    });
+    assert.deepEqual(config.capabilities.review, {
+      provider: "builtin",
+      required_for_release: false,
+      current_revision_required: true,
+      allowed_logins: [],
+    });
+    assert.deepEqual(config.capabilities.knowledge, {
+      provider: "repository",
+      scope: "project",
+      required: false,
+      capture: "verified_proposals_only",
+      repository_fallback: true,
+    });
+    assert.equal(config.autonomy.execution, "agent_owned");
+    assert.equal(config.autonomy.merge, "human_approval_required");
+    assert.equal(config.parallel_delivery.mode, "adaptive");
+    assert.equal(config.parallel_delivery.serial_fallback, true);
+    assert.equal(
+      config.safety.approved_configuration_hash,
+      configurationHash(config),
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("doctor keeps JSON by default and offers an explicit human summary", () => {
+  const fixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    createJavaScriptFixture(fixture.directory);
+    installOrUpgrade(fixture.directory, { mode: "init" });
+
+    const jsonDoctor = spawnSync(
+      process.execPath,
+      [PACKAGE_CLI, "doctor", "--target", fixture.directory],
+      { encoding: "utf8", shell: false },
+    );
+    assert.equal(jsonDoctor.status, 1, jsonDoctor.stderr);
+    assert.equal(JSON.parse(jsonDoctor.stdout).ok, false);
+
+    const pendingDoctor = spawnSync(
+      process.execPath,
+      [PACKAGE_CLI, "doctor", "--target", fixture.directory, "--human"],
+      { encoding: "utf8", shell: false },
+    );
+    assert.equal(pendingDoctor.status, 1, pendingDoctor.stderr);
+    assert.match(pendingDoctor.stdout, /Almost ready\./);
+    assert.match(pendingDoctor.stdout, /Tell your coding agent/);
+    assert.match(
+      pendingDoctor.stdout,
+      /You do not need to edit configuration files yourself/,
+    );
+    assert.doesNotMatch(pendingDoctor.stdout, /^\s*\{/);
+
+    execute("configure", [
+      "--target",
+      fixture.directory,
+      "--preset",
+      "simple",
+      "--reason",
+      "Approved the recommended simple project configuration",
+    ]);
+    commandApproveChecks(
+      fixture.directory,
+      "Inspected package scripts and direct project commands",
+    );
+    const readyDoctor = spawnSync(
+      process.execPath,
+      [PACKAGE_CLI, "doctor", "--target", fixture.directory, "--human"],
+      { encoding: "utf8", shell: false },
+    );
+    assert.equal(readyDoctor.status, 0, readyDoctor.stderr);
+    assert.match(readyDoctor.stdout, /Ready\./);
+    assert.match(
+      readyDoctor.stdout,
+      /Tell your coding agent what you want to build or change/,
+    );
+
+    const policy = join(fixture.directory, CORE_POLICY_PATH);
+    chmodSync(policy, 0o600);
+    writeFileSync(policy, "{}\n", "utf8");
+    const unsafeDoctor = spawnSync(
+      process.execPath,
+      [PACKAGE_CLI, "doctor", "--target", fixture.directory, "--human"],
+      { encoding: "utf8", shell: false },
+    );
+    assert.equal(unsafeDoctor.status, 1, unsafeDoctor.stderr);
+    assert.match(unsafeDoctor.stdout, /Needs attention\./);
+    assert.match(unsafeDoctor.stdout, /protected safety files/);
+    assert.match(unsafeDoctor.stdout, /Do not edit the protected files yourself/);
   } finally {
     fixture.cleanup();
   }
