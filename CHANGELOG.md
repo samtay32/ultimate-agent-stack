@@ -4,6 +4,8 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ## Unreleased
 
+## 0.5.0 - 2026-07-26
+
 ### Added
 
 - `doctor --human` provides non-coders with a plain-language readiness summary
@@ -30,6 +32,14 @@ All notable changes to Ultimate Agent Stack are documented here.
   fail-closed behavior for unrelated API errors.
 - npm package contents exclude macOS-style " 2" duplicate-copy paths, and the
   packed-install smoke test rejects them if they ever reappear.
+
+### Upgrade impact
+
+This is a compatible minor release. Existing projects receive versioned
+proposals for the updated protected CLI and installed guidance; customized
+files are never overwritten. The JSON command contract and configuration schema
+remain compatible. The simple preset and human-readable doctor output are
+optional, and existing advanced provider configurations remain unchanged.
 
 ## 0.4.0 - 2026-07-26
 
