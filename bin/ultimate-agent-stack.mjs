@@ -117,6 +117,7 @@ const MERGE_MODES = new Set([
   "human_approval_required",
   "policy_authorized",
 ]);
+const NO_PROJECT_CHECKS_ERROR = "no project quality checks configured";
 const CONFIGURATION_PRESETS = Object.freeze({
   simple: Object.freeze({
     profile: "standard",
@@ -1217,7 +1218,7 @@ function validateConfig(config, target = undefined) {
     }
   });
   if (config.quality.require_project_checks !== false && checks.length === 0) {
-    errors.push("no project quality checks configured");
+    errors.push(NO_PROJECT_CHECKS_ERROR);
   }
   if (
     !Array.isArray(config.lock_artifacts) ||
@@ -2118,6 +2119,22 @@ function formatDoctorHuman(result) {
   const setupOnly =
     failures.length > 0 &&
     failures.every((report) => setupFailureNames.has(report.name));
+  const configFailure = failures.find((report) => report.name === "config");
+  const onboardingFailure = failures.find(
+    (report) => report.name === "onboarding",
+  );
+  const greenfieldFailureNames = new Set([
+    ...setupFailureNames,
+    "config",
+    "git",
+  ]);
+  const firstBaselinePending =
+    Array.isArray(configFailure?.detail) &&
+    configFailure.detail.length === 1 &&
+    configFailure.detail[0] === NO_PROJECT_CHECKS_ERROR &&
+    typeof onboardingFailure?.detail === "string" &&
+    onboardingFailure.detail.startsWith("pending;") &&
+    failures.every((report) => greenfieldFailureNames.has(report.name));
 
   const outcomes = [
     {
@@ -2151,6 +2168,14 @@ function formatDoctorHuman(result) {
         "A safe update proposal is waiting to be reconciled; your customized files were not overwritten.",
       nextAction:
         "Ask your coding agent to review the update proposal, adopt the reconciled files, and run doctor again.",
+    },
+    {
+      matches: firstBaselinePending,
+      status: "Almost ready.",
+      explanation:
+        "Ultimate Agent Stack is installed, but this project does not have its first quality-check baseline yet.",
+      nextAction:
+        'Tell your coding agent: "Create the first project checks, finish Ultimate Agent Stack setup, and run doctor again." You do not need to edit configuration files yourself.',
     },
     {
       matches: setupOnly,

@@ -591,6 +591,63 @@ test("doctor keeps JSON by default and offers an explicit human summary", () => 
   }
 });
 
+test("doctor describes an empty post-init project as almost ready", () => {
+  const fixture = temporaryProject();
+  try {
+    installOrUpgrade(fixture.directory, { mode: "init" });
+
+    const jsonDoctor = spawnSync(
+      process.execPath,
+      [PACKAGE_CLI, "doctor", "--target", fixture.directory],
+      { encoding: "utf8", shell: false },
+    );
+    assert.equal(jsonDoctor.status, 1, jsonDoctor.stderr);
+    const result = JSON.parse(jsonDoctor.stdout);
+    assert.equal(result.ok, false);
+    assert.deepEqual(
+      result.reports.find((report) => report.name === "config")?.detail,
+      ["no project quality checks configured"],
+    );
+    assert.ok(
+      result.reports.some(
+        (report) => report.name === "git" && !report.ok,
+      ),
+    );
+
+    const humanDoctor = spawnSync(
+      process.execPath,
+      [PACKAGE_CLI, "doctor", "--target", fixture.directory, "--human"],
+      { encoding: "utf8", shell: false },
+    );
+    assert.equal(humanDoctor.status, 1, humanDoctor.stderr);
+    assert.match(humanDoctor.stdout, /Almost ready\./);
+    assert.match(humanDoctor.stdout, /first quality-check baseline/);
+    assert.match(humanDoctor.stdout, /Create the first project checks/);
+    assert.doesNotMatch(
+      humanDoctor.stdout,
+      /project configuration is missing or invalid/,
+    );
+
+    const configFile = join(fixture.directory, CONFIG_PATH);
+    const malformedConfig = readJson(configFile);
+    malformedConfig.schema_version = 999;
+    writeJson(configFile, malformedConfig);
+    const malformedDoctor = spawnSync(
+      process.execPath,
+      [PACKAGE_CLI, "doctor", "--target", fixture.directory, "--human"],
+      { encoding: "utf8", shell: false },
+    );
+    assert.equal(malformedDoctor.status, 1, malformedDoctor.stderr);
+    assert.match(malformedDoctor.stdout, /Needs attention\./);
+    assert.match(
+      malformedDoctor.stdout,
+      /project configuration is missing or invalid/,
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("guided configuration enforces safe provider combinations", () => {
   const fixture = temporaryProject();
   try {

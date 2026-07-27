@@ -225,7 +225,10 @@ status. Treat unavailable or skipped required checks as failure.
 For a new project, the agent creates standard checks after choosing the stack.
 For an existing project, it proposes the smallest production-grade test,
 lint/type, and build baseline. A project with no meaningful check is not fully
-configured.
+configured. In a newly initialized empty folder, `doctor --human` calls this
+**Almost ready** and asks the coding agent to create the first checks and finish
+setup. The JSON report and exit status remain fail-closed until that baseline is
+configured and approved.
 
 ### The safety check says commands need approval
 

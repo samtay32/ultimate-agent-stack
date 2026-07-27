@@ -69,11 +69,12 @@ npx -y ultimate-agent-stack@latest doctor --human
 npx -y ultimate-agent-stack@latest upgrade
 ```
 
-On a new install, `doctor --human` says the project is almost ready until the
-coding agent has explained and recorded the profile/provider choices. It gives
-you one plain-language next action; you do not need to interpret JSON or edit
-the configuration yourself. Coding agents omit `--human` and receive the
-stable structured report.
+On a new install, `doctor --human` says the project is almost ready while the
+coding agent creates the first project-check baseline and records the guided
+setup choices. It gives you one plain-language next action; you do not need to
+interpret JSON or edit the configuration yourself. The underlying checks still
+fail closed until setup is complete. Coding agents omit `--human` and receive
+the stable structured report.
 
 Using the 30-second prompt above, the agent runs the commands, detects available
 capabilities, completes guided onboarding, reviews project checks, fixes the
