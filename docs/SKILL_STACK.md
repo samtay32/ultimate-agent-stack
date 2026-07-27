@@ -66,9 +66,12 @@ Plugins work in supported desktop/CLI surfaces. Repository skills are the portab
 
 ### Claude Code
 
-Run `npx -y ultimate-agent-stack@latest init --claude` to copy the same skills
-under `.claude/skills/`. Keep `.agents/skills/` canonical and use `upgrade
---claude` later; customizations are preserved for reconciliation.
+The default install copies the canonical skills from `.agents/skills/` into
+`.claude/skills/` and installs the read-only Claude worker profile, including
+in a brand-new folder with no harness markers. Existing `.claude/` or
+`CLAUDE.md` markers are also reported to the agent. Upgrades remember installed
+harnesses, the legacy `--claude` flag remains accepted, and customizations are
+preserved for reconciliation.
 
 ### Grok
 
@@ -81,12 +84,12 @@ Cursor uses the generated root `AGENTS.md`, `.cursor/rules/agent-stack.mdc`, and
 ### Native Subagents
 
 Codex, Gemini CLI, and OpenCode receive conservative read-only native worker
-profiles. Claude Code receives the equivalent profile and skill copies with
-`--claude`. The coordination skill translates one assignment and authority
-contract onto those surfaces. It never shells from one vendor into another.
-Grok, Cursor, and other harnesses use portable project instructions and only
-delegate when the current surface proves a safe native capability; otherwise
-they use serial delivery.
+profiles. Claude Code receives the equivalent profile and skill copies during
+the default install. The coordination skill translates one assignment and
+authority contract onto those surfaces. It never shells from one vendor into
+another. Grok, Cursor, and other harnesses use portable project instructions
+and only delegate when the current surface proves a safe native capability;
+otherwise they use serial delivery.
 
 ## Upgrade Rule
 

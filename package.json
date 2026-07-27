@@ -19,8 +19,7 @@
     "scripts/upstream-issue.mjs",
     "skills/",
     "sources/",
-    "STARTER_PROMPT.md",
-    "!**/* 2.*"
+    "STARTER_PROMPT.md"
   ],
   "scripts": {
     "test": "node --test test/*.test.mjs",

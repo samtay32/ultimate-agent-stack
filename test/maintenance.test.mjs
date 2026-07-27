@@ -28,6 +28,10 @@ const pluginData = JSON.parse(
 const packageLockData = JSON.parse(
   readFileSync(join(PACKAGE_ROOT, "package-lock.json"), "utf8"),
 );
+const packedSmoke = readFileSync(
+  join(PACKAGE_ROOT, "scripts/packed-smoke.mjs"),
+  "utf8",
+);
 const repositoryCodeRabbit = readFileSync(
   join(PACKAGE_ROOT, ".coderabbit.yaml"),
   "utf8",
@@ -223,10 +227,18 @@ test("package has no install hooks and guards publication with prepublishOnly", 
       "scripts/upstream-issue.mjs",
     ],
   );
-  assert.ok(
-    packageData.files.includes("!**/* 2.*"),
-    "npm package must exclude duplicate-copy paths",
+  assert.equal(
+    packageData.files.some((entry) => entry.includes("* 2.*")),
+    false,
+    "package files must not rely on inconsistent negation patterns",
   );
+  assert.equal(
+    packageData.files.includes("STARTER_PROMPT.md"),
+    true,
+    "package files must include STARTER_PROMPT.md",
+  );
+  assert.match(packedSmoke, /packed\[0\]\.files/);
+  assert.match(packedSmoke, /duplicate-copy paths/);
   assert.deepEqual(packageData.dependencies ?? {}, {});
 });
 

@@ -10,7 +10,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { platform, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
@@ -187,6 +187,28 @@ test("detectProject discovers project-native JavaScript checks", () => {
   }
 });
 
+test("detectProject explains isolated ecosystem environment requirements", () => {
+  const fixture = temporaryProject();
+  try {
+    writeFileSync(join(fixture.directory, "pom.xml"), "<project />\n");
+
+    const detected = detectProject(fixture.directory);
+
+    assert.deepEqual(detected.stacks, ["java-maven"]);
+    assert.equal(detected.checks[0].argv[0], "mvn");
+    assert.deepEqual(
+      detected.environment_warnings[0].inherited_if_present,
+      ["JAVA_HOME", "M2_HOME", "MAVEN_HOME"],
+    );
+    assert.match(
+      detected.environment_warnings[0].detail,
+      /user-home Maven settings are isolated/,
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("project path guard rejects traversal and symlink escapes", () => {
   const fixture = temporaryProject();
   const outside = temporaryProject();
@@ -274,7 +296,7 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
         ),
       ),
     );
-    assert.equal(
+    assert.ok(
       existsSync(
         join(
           fixture.directory,
@@ -283,7 +305,17 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
           "uas-researcher.md",
         ),
       ),
-      false,
+    );
+    assert.ok(
+      existsSync(
+        join(
+          fixture.directory,
+          ".claude",
+          "skills",
+          "run-autonomous-delivery",
+          "SKILL.md",
+        ),
+      ),
     );
     const initializedConfig = readJson(
       join(fixture.directory, CONFIG_PATH),
@@ -295,6 +327,7 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
     assert.equal(initializedConfig.schema_version, 2);
     assert.equal(initializedConfig.onboarding.status, "pending");
     assert.equal(initializedConfig.capabilities.knowledge.scope, "project");
+    assert.deepEqual(initializedConfig.quality.environment, { allow: [] });
 
     const copiedCli = spawnSync(
       "node",
@@ -643,7 +676,8 @@ test("doctor describes an empty post-init project as almost ready", () => {
     assert.equal(humanDoctor.status, 1, humanDoctor.stderr);
     assert.match(humanDoctor.stdout, /Almost ready\./);
     assert.match(humanDoctor.stdout, /first quality-check baseline/);
-    assert.match(humanDoctor.stdout, /Create the first project checks/);
+    assert.match(humanDoctor.stdout, /Initialize Git in this project/);
+    assert.match(humanDoctor.stdout, /create the first project checks/i);
     assert.doesNotMatch(
       humanDoctor.stdout,
       /project configuration is missing or invalid/,
@@ -1061,6 +1095,66 @@ test("Claude mode installs the native read-only worker and skill copy", () => {
   }
 });
 
+test("init auto-detects Claude markers and upgrades remember the adapter", () => {
+  const fixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    writeFileSync(join(fixture.directory, "CLAUDE.md"), "# Claude\n");
+    mkdirSync(join(fixture.directory, ".grok"));
+
+    const initialized = installOrUpgrade(fixture.directory, { mode: "init" });
+    assert.deepEqual(initialized.harnesses.detected, ["claude", "grok"]);
+    assert.ok(initialized.harnesses.enabled.includes("claude"));
+    assert.ok(
+      existsSync(
+        join(
+          fixture.directory,
+          ".claude",
+          "skills",
+          "run-autonomous-delivery",
+          "SKILL.md",
+        ),
+      ),
+    );
+
+    const upgraded = installOrUpgrade(fixture.directory, { mode: "upgrade" });
+    assert.ok(upgraded.harnesses.enabled.includes("claude"));
+    assert.equal(
+      upgraded.outcomes.some(
+        (outcome) =>
+          outcome.path.startsWith(".claude/") &&
+          outcome.status === "upstream-removed-preserved",
+      ),
+      false,
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("default init installs the Claude entry skill without project markers", () => {
+  const fixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    const initialized = execute("init", ["--target", fixture.directory]);
+    assert.ok(initialized.harnesses.enabled.includes("claude"));
+    assert.deepEqual(initialized.harnesses.detected, []);
+    assert.ok(
+      existsSync(
+        join(
+          fixture.directory,
+          ".claude",
+          "skills",
+          "run-autonomous-delivery",
+          "SKILL.md",
+        ),
+      ),
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("legacy serial policy migrates to safe adaptive coordination", () => {
   const fixture = temporaryProject();
   try {
@@ -1106,6 +1200,7 @@ test("legacy serial policy migrates to safe adaptive coordination", () => {
       migrated.capabilities.review.required_for_release,
       true,
     );
+    assert.deepEqual(migrated.quality.environment, { allow: [] });
   } finally {
     fixture.cleanup();
   }
@@ -1185,6 +1280,88 @@ test("shell and destructive quality checks are rejected", () => {
   ];
 
   assert.match(validateConfig(config).join("\n"), /forbidden shell/);
+});
+
+test("inline evaluation checks are rejected in favor of reviewed files", () => {
+  for (const argv of [
+    ["node", "-e", "process.exit(0)"],
+    ["node", "--eval=process.exit(0)"],
+    ["node", "--print=1"],
+    ["python3", "-c", "print('ok')"],
+    ["python3", "-cprint('ok')"],
+    ["ruby", "-e", "puts 'ok'"],
+    ["perl", "-Esay 1"],
+  ]) {
+    const config = safeConfig();
+    config.quality.checks = [
+      {
+        id: "inline",
+        argv,
+        required: true,
+        timeout_seconds: 30,
+      },
+    ];
+
+    assert.match(
+      validateConfig(config).join("\n"),
+      /uses inline code evaluation/,
+    );
+  }
+});
+
+test("environment allowlist accepts names and rejects credential-bearing names", () => {
+  const valid = safeConfig();
+  valid.quality.environment.allow = ["FEATURE_MODE", "LC_MESSAGES"];
+  assert.equal(
+    validateConfig(valid).some((error) =>
+      error.includes("quality.environment.allow"),
+    ),
+    false,
+  );
+
+  for (const name of [
+    "DATABASE_URL",
+    "SERVICE_DSN",
+    "API_TOKEN",
+    "CONNECTION_STRING",
+    "bad-name",
+    "NODE_OPTIONS",
+    "PYTHONPATH",
+    "JAVA_TOOL_OPTIONS",
+  ]) {
+    const invalid = safeConfig();
+    invalid.quality.environment.allow = [name];
+    assert.match(
+      validateConfig(invalid).join("\n"),
+      /valid non-sensitive, non-execution-control environment names/,
+    );
+  }
+});
+
+test("malformed environment policy reports validation instead of crashing migration", () => {
+  const fixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    createJavaScriptFixture(fixture.directory);
+    installOrUpgrade(fixture.directory, { mode: "init" });
+    const configFile = join(fixture.directory, CONFIG_PATH);
+    const config = readJson(configFile);
+    config.quality.environment = "none";
+    writeJson(configFile, config);
+
+    const doctor = commandDoctor(fixture.directory);
+    const configReport = doctor.reports.find(
+      (report) => report.name === "config",
+    );
+    assert.equal(doctor.ok, false);
+    assert.equal(configReport.ok, false);
+    assert.match(
+      JSON.stringify(configReport.detail),
+      /quality\.environment must be an object/,
+    );
+  } finally {
+    fixture.cleanup();
+  }
 });
 
 test("quality guardrails cannot be disabled in project config", () => {
@@ -1389,6 +1566,184 @@ test("verification does not expose inherited secret environment values", () => {
     assert.match(evidence, /not-inherited/);
   } finally {
     delete process.env.UAS_AUDIT_SECRET;
+    fixture.cleanup();
+  }
+});
+
+test("approved non-secret environment is inherited, redacted, and fingerprinted", () => {
+  const fixture = temporaryProject();
+  const previousBuildMode = process.env.UAS_BUILD_MODE;
+  const previousJavaHome = process.env.JAVA_HOME;
+  const previousNpmCache = process.env.npm_config_cache;
+  try {
+    initializeGit(fixture.directory);
+    writeJson(join(fixture.directory, "package.json"), {
+      name: "fixture",
+      private: true,
+      scripts: { test: "node check-approved-env.mjs" },
+    });
+    writeFileSync(
+      join(fixture.directory, "check-approved-env.mjs"),
+      [
+        "if (process.env.UAS_BUILD_MODE !== 'approved-mode-sentinel') process.exit(2);",
+        "if (process.env.JAVA_HOME !== '/opt/fixture-jdk') process.exit(3);",
+        `if (process.env.npm_config_cache === ${JSON.stringify(fixture.directory)}) process.exit(4);`,
+        "process.stdout.write(`${process.env.UAS_BUILD_MODE}\\n${process.env.JAVA_HOME}`);",
+        "",
+      ].join("\n"),
+    );
+    installOrUpgrade(fixture.directory, { mode: "init" });
+    commandConfigure(fixture.directory, {
+      profile: "standard",
+      review: "builtin",
+      knowledge: "repository",
+      externalData: "local_only",
+      reason: "Approved safe local defaults for explicit environment testing",
+    });
+    const configFile = join(fixture.directory, CONFIG_PATH);
+    const config = readJson(configFile);
+    config.quality.environment.allow = ["UAS_BUILD_MODE"];
+    writeJson(configFile, config);
+    process.env.UAS_BUILD_MODE = "approved-mode-sentinel";
+    process.env.JAVA_HOME = "/opt/fixture-jdk";
+    process.env.npm_config_cache = fixture.directory;
+    commandApproveChecks(
+      fixture.directory,
+      "Inspected the check and approved one non-secret build-mode variable",
+    );
+
+    const verification = commandVerify(fixture.directory);
+    const evidence = readFileSync(
+      join(fixture.directory, ".agent-stack", "runs", "latest.json"),
+      "utf8",
+    );
+    assert.equal(verification.ok, true, evidence);
+    assert.doesNotMatch(evidence, /approved-mode-sentinel/);
+    assert.match(evidence, /\[REDACTED\]/);
+    assert.match(evidence, /\/opt\/fixture-jdk/);
+
+    process.env.UAS_BUILD_MODE = "changed-mode-sentinel";
+    assert.equal(commandStatus(fixture.directory).checks_approved, false);
+    process.env.UAS_BUILD_MODE = "approved-mode-sentinel";
+    assert.equal(commandStatus(fixture.directory).checks_approved, true);
+
+    const changed = readJson(configFile);
+    changed.quality.environment.allow = [];
+    writeJson(configFile, changed);
+    assert.equal(commandStatus(fixture.directory).checks_approved, false);
+    const blocked = commandVerify(fixture.directory);
+    assert.equal(blocked.ok, false);
+    assert.match(
+      blocked.configuration_errors.join("\n"),
+      /quality checks changed or were not reviewed/,
+    );
+  } finally {
+    for (const [name, value] of [
+      ["UAS_BUILD_MODE", previousBuildMode],
+      ["JAVA_HOME", previousJavaHome],
+      ["npm_config_cache", previousNpmCache],
+    ]) {
+      if (value === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
+    }
+    fixture.cleanup();
+  }
+});
+
+test(
+  "doctor requires direct project commands to be executable",
+  { skip: platform() === "win32" },
+  () => {
+    const fixture = temporaryProject();
+    try {
+      initializeGit(fixture.directory);
+      createJavaScriptFixture(fixture.directory);
+      installOrUpgrade(fixture.directory, { mode: "init" });
+      const commandFile = join(fixture.directory, "project-check");
+      writeFileSync(commandFile, "#!/bin/sh\nexit 0\n");
+      chmodSync(commandFile, 0o600);
+      const configFile = join(fixture.directory, CONFIG_PATH);
+      const config = readJson(configFile);
+      config.quality.checks = [
+        {
+          id: "direct",
+          argv: ["./project-check"],
+          required: true,
+          timeout_seconds: 30,
+        },
+      ];
+      writeJson(configFile, config);
+
+      const unavailable = commandDoctor(fixture.directory);
+      assert.equal(
+        unavailable.reports.find(
+          (report) => report.name === "command:direct",
+        ).ok,
+        false,
+      );
+
+      chmodSync(commandFile, 0o700);
+      const available = commandDoctor(fixture.directory);
+      assert.equal(
+        available.reports.find(
+          (report) => report.name === "command:direct",
+        ).ok,
+        true,
+      );
+    } finally {
+      fixture.cleanup();
+    }
+  },
+);
+
+test("verification distinguishes output capture overflow from test failure", () => {
+  const fixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    writeJson(join(fixture.directory, "package.json"), {
+      name: "fixture",
+      private: true,
+      scripts: { test: "node noisy.mjs" },
+    });
+    writeFileSync(
+      join(fixture.directory, "noisy.mjs"),
+      'process.stdout.write("x".repeat(5 * 1024 * 1024));\n',
+    );
+    installOrUpgrade(fixture.directory, { mode: "init" });
+    commandConfigure(fixture.directory, {
+      profile: "standard",
+      review: "builtin",
+      knowledge: "repository",
+      externalData: "local_only",
+      reason: "Approved safe defaults for output overflow classification",
+    });
+    commandApproveChecks(
+      fixture.directory,
+      "Inspected the intentionally verbose package test definition",
+    );
+
+    const verification = commandVerify(fixture.directory);
+    const evidence = readJson(
+      join(fixture.directory, ".agent-stack", "runs", "latest.json"),
+    );
+    assert.equal(verification.ok, false);
+    assert.deepEqual(verification.checks, [
+      {
+        id: "test",
+        status: "failed",
+        returncode: 125,
+        reason: "output-exceeded-capture-limit",
+      },
+    ]);
+    assert.equal(
+      evidence.checks[0].reason,
+      "output-exceeded-capture-limit",
+    );
+    assert.match(evidence.checks[0].output, /output exceeded/);
+  } finally {
     fixture.cleanup();
   }
 });

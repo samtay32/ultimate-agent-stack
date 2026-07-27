@@ -97,58 +97,48 @@ function main() {
       project,
     );
     const localCli = join(project, ".agent-stack", "bin", "agent-stack.mjs");
-    if (!existsSync(localCli)) {
-      throw new Error("packed install did not create the project CLI");
-    }
-    if (!existsSync(join(project, ".agent-stack", ".gitignore"))) {
-      throw new Error("packed install did not create the project evidence ignore");
-    }
-    if (
-      !existsSync(
-        join(
-          project,
+    const expectedFiles = [
+      [[".agent-stack", "bin", "agent-stack.mjs"], "project CLI"],
+      [[".agent-stack", ".gitignore"], "project evidence ignore"],
+      [
+        [
           ".agents",
           "skills",
           "coordinate-parallel-delivery",
           "SKILL.md",
-        ),
-      )
-    ) {
-      throw new Error("packed install did not create the coordination skill");
-    }
-    if (
-      !existsSync(
-        join(
-          project,
-          ".agents",
+        ],
+        "coordination skill",
+      ],
+      [
+        [".agents", "skills", "use-project-knowledge", "SKILL.md"],
+        "knowledge skill",
+      ],
+      [
+        [".codex", "agents", "uas_researcher.toml"],
+        "Codex worker adapter",
+      ],
+      [
+        [
+          ".claude",
           "skills",
-          "use-project-knowledge",
+          "run-autonomous-delivery",
           "SKILL.md",
-        ),
-      )
-    ) {
-      throw new Error("packed install did not create the knowledge skill");
-    }
-    if (
-      !existsSync(
-        join(project, ".codex", "agents", "uas_researcher.toml"),
-      )
-    ) {
-      throw new Error("packed install did not create the Codex worker adapter");
-    }
-    if (
-      !existsSync(
-        join(project, ".gemini", "agents", "uas-researcher.md"),
-      )
-    ) {
-      throw new Error("packed install did not create the Gemini worker adapter");
-    }
-    if (
-      !existsSync(
-        join(project, ".opencode", "agents", "uas-researcher.md"),
-      )
-    ) {
-      throw new Error("packed install did not create the OpenCode worker adapter");
+        ],
+        "Claude entry skill",
+      ],
+      [
+        [".gemini", "agents", "uas-researcher.md"],
+        "Gemini worker adapter",
+      ],
+      [
+        [".opencode", "agents", "uas-researcher.md"],
+        "OpenCode worker adapter",
+      ],
+    ];
+    for (const [segments, description] of expectedFiles) {
+      if (!existsSync(join(project, ...segments))) {
+        throw new Error(`packed install did not create the ${description}`);
+      }
     }
     const version = JSON.parse(
       run(process.execPath, [localCli, "--version"], project),
@@ -170,7 +160,9 @@ function main() {
       config.onboarding?.status !== "pending" ||
       config.capabilities?.review?.provider !== "builtin" ||
       config.capabilities?.knowledge?.provider !== "repository" ||
-      config.capabilities?.knowledge?.scope !== "project"
+      config.capabilities?.knowledge?.scope !== "project" ||
+      !Array.isArray(config.quality?.environment?.allow) ||
+      config.quality.environment.allow.length !== 0
     ) {
       throw new Error("packed install did not preserve safe guided defaults");
     }
