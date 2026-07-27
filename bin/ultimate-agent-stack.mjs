@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
 import {
+  accessSync,
   chmodSync,
+  constants as fsConstants,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -40,6 +42,7 @@ const PACKAGE_JSON = existsSync(join(PACKAGE_ROOT, "package.json"))
 const PACKAGE_NAME = PACKAGE_JSON.name;
 const PACKAGE_VERSION = PACKAGE_JSON.version;
 const CONFIG_SCHEMA_VERSION = 2;
+const CHECK_OUTPUT_LIMIT_BYTES = 4 * 1024 * 1024;
 const CONFIG_PATH = ".agent-stack/config.json";
 const INSTALLATION_PATH = ".agent-stack/installation.json";
 const STATE_PATH = ".agent-stack/state.json";
@@ -98,8 +101,69 @@ const SAFE_ENVIRONMENT_NAMES = [
   "TZ",
   "WINDIR",
 ];
+const TOOLCHAIN_ENVIRONMENT_NAMES = [
+  "ANDROID_HOME",
+  "ANDROID_SDK_ROOT",
+  "BUN_INSTALL",
+  "DOTNET_ROOT",
+  "GEM_HOME",
+  "GEM_PATH",
+  "GOPATH",
+  "GOROOT",
+  "JAVA_HOME",
+  "M2_HOME",
+  "MAVEN_HOME",
+  "NVM_BIN",
+  "NVM_INC",
+  "NVM_DIR",
+  "PNPM_HOME",
+  "PYENV_ROOT",
+  "RBENV_ROOT",
+  "RUSTUP_HOME",
+  "SDKMAN_DIR",
+  "VOLTA_HOME",
+];
 const SENSITIVE_ENVIRONMENT_NAME =
-  /(api|auth|access|private|secret|token|password|passwd|credential|cookie|session|key)/i;
+  /(api|auth|access|private|secret|token|password|passwd|credential|cookie|session|key|database[_-]?url|db[_-]?url|dsn|connection[_-]?string)/i;
+const ENVIRONMENT_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const EXECUTION_CONTROL_ENVIRONMENT_NAMES = new Set([
+  "BASH_ENV",
+  "DYLD_INSERT_LIBRARIES",
+  "DYLD_LIBRARY_PATH",
+  "ENV",
+  "GIT_CONFIG_COUNT",
+  "GIT_CONFIG_GLOBAL",
+  "JAVA_TOOL_OPTIONS",
+  "JDK_JAVA_OPTIONS",
+  "LD_LIBRARY_PATH",
+  "LD_PRELOAD",
+  "NODE_OPTIONS",
+  "NODE_PATH",
+  "NPM_CONFIG_USERCONFIG",
+  "PERL5OPT",
+  "PYTHONPATH",
+  "PYTHONSTARTUP",
+  "RUBYOPT",
+]);
+const INLINE_EVALUATION_ARGUMENTS = new Map([
+  ["deno", new Set(["eval"])],
+  ["node", new Set(["-e", "--eval", "-p", "--print"])],
+  ["node.exe", new Set(["-e", "--eval", "-p", "--print"])],
+  ["perl", new Set(["-e", "-E"])],
+  ["php", new Set(["-r"])],
+  ["py", new Set(["-c"])],
+  ["python", new Set(["-c"])],
+  ["python3", new Set(["-c"])],
+  ["ruby", new Set(["-e"])],
+]);
+const SUPPORTED_HARNESSES = new Set([
+  "claude",
+  "codex",
+  "cursor",
+  "gemini",
+  "grok",
+  "opencode",
+]);
 const PROJECT_PROFILES = new Set(["experimental", "standard", "production"]);
 const REVIEW_PROVIDERS = new Set([
   "builtin",
@@ -278,7 +342,7 @@ function pathInside(target, raw, label = "path") {
   return candidate;
 }
 
-function redact(text, limit = 12_000) {
+function redact(text, limit = 12_000, additionalValues = []) {
   let clean = String(text ?? "").replace(
     SECRET_ASSIGNMENT,
     "$1$2[REDACTED]",
@@ -289,6 +353,11 @@ function redact(text, limit = 12_000) {
       typeof value === "string" &&
       value.length >= 8
     ) {
+      clean = clean.replaceAll(value, "[REDACTED]");
+    }
+  }
+  for (const value of additionalValues) {
+    if (typeof value === "string" && value.length >= 8) {
       clean = clean.replaceAll(value, "[REDACTED]");
     }
   }
@@ -377,7 +446,11 @@ function executableExists(target, executable) {
     executable.includes("\\")
   ) {
     try {
-      return existsSync(projectFile(target, executable, "quality executable"));
+      accessSync(
+        projectFile(target, executable, "quality executable"),
+        fsConstants.X_OK,
+      );
+      return true;
     } catch {
       return false;
     }
@@ -392,8 +465,11 @@ function executableExists(target, executable) {
     }
     for (const extension of extensions) {
       const candidate = join(directory, `${executable}${extension}`);
-      if (existsSync(candidate)) {
+      try {
+        accessSync(candidate, fsConstants.X_OK);
         return true;
+      } catch {
+        // Continue searching PATH for an executable candidate.
       }
     }
   }
@@ -425,6 +501,7 @@ function detectProject(target) {
   const stacks = [];
   const checks = [];
   const notes = [];
+  const environmentWarnings = [];
   const packageFile = projectFile(target, "package.json", "package.json");
 
   if (existsSync(packageFile)) {
@@ -527,6 +604,12 @@ function detectProject(target) {
 
   if (projectExists(target, "Cargo.toml")) {
     stacks.push("rust");
+    environmentWarnings.push({
+      stack: "rust",
+      isolated: ["CARGO_HOME"],
+      detail:
+        "CARGO_HOME remains isolated because it can contain registry credentials. Configure an approved non-secret cache path if offline checks require one.",
+    });
     addCheck(checks, "format", ["cargo", "fmt", "--check"]);
     addCheck(
       checks,
@@ -553,6 +636,13 @@ function detectProject(target) {
 
   if (projectExists(target, "pom.xml")) {
     stacks.push("java-maven");
+    environmentWarnings.push({
+      stack: "java-maven",
+      inherited_if_present: ["JAVA_HOME", "M2_HOME", "MAVEN_HOME"],
+      isolated: ["HOME"],
+      detail:
+        "Java toolchain paths are preserved, but user-home Maven settings are isolated. Explicitly approve any additional non-secret environment names before check approval.",
+    });
     const executable = projectExists(target, "mvnw") ? "./mvnw" : "mvn";
     addCheck(checks, "verify", [executable, "verify"], 1800);
   } else if (
@@ -560,6 +650,13 @@ function detectProject(target) {
     projectExists(target, "build.gradle.kts")
   ) {
     stacks.push("java-gradle");
+    environmentWarnings.push({
+      stack: "java-gradle",
+      inherited_if_present: ["JAVA_HOME"],
+      isolated: ["GRADLE_USER_HOME", "HOME"],
+      detail:
+        "JAVA_HOME is preserved when present, but Gradle user-home data stays isolated because it may contain credentials. Explicitly approve only non-secret environment names.",
+    });
     const executable = projectExists(target, "gradlew")
       ? "./gradlew"
       : "gradle";
@@ -572,6 +669,13 @@ function detectProject(target) {
     rootNames.find((name) => name.endsWith(".csproj"));
   if (dotnet) {
     stacks.push("dotnet");
+    environmentWarnings.push({
+      stack: "dotnet",
+      inherited_if_present: ["DOTNET_ROOT"],
+      isolated: ["HOME"],
+      detail:
+        "DOTNET_ROOT is preserved when present; other environment names require explicit approval.",
+    });
     addCheck(checks, "build", ["dotnet", "build", dotnet], 1200);
     addCheck(checks, "test", ["dotnet", "test", dotnet], 1200);
   }
@@ -616,6 +720,7 @@ function detectProject(target) {
     stacks: stacks.length > 0 ? stacks : ["unknown"],
     checks,
     notes,
+    environment_warnings: environmentWarnings,
   };
 }
 
@@ -692,6 +797,9 @@ function defaultConfig(target, detected) {
       require_project_checks: true,
       checks: detected.checks,
       evidence_directory: RUNS_PATH,
+      environment: {
+        allow: [],
+      },
     },
     lock_artifacts: DEFAULT_ARTIFACTS,
   };
@@ -793,6 +901,12 @@ function migrateConfig(config, target = undefined) {
   config.quality.require_project_checks ??= true;
   config.quality.checks ??= [];
   config.quality.evidence_directory ??= RUNS_PATH;
+  config.quality.environment ??= {};
+  config.quality.environment.allow = Array.isArray(
+    config.quality.environment.allow,
+  )
+    ? [...new Set(config.quality.environment.allow)]
+    : [];
   config.lock_artifacts = Array.isArray(config.lock_artifacts)
     ? [...new Set([...config.lock_artifacts, ...DEFAULT_ARTIFACTS])]
     : DEFAULT_ARTIFACTS;
@@ -849,6 +963,17 @@ function validateCommand(check, index, config, target = undefined) {
   if (FORBIDDEN_EXECUTABLES.has(executable)) {
     errors.push(
       `quality.checks[${index}] uses forbidden shell or destructive executable: ${executable}`,
+    );
+  }
+  const inlineEvaluationArguments = INLINE_EVALUATION_ARGUMENTS.get(executable);
+  if (
+    inlineEvaluationArguments &&
+    check.argv
+      .slice(1)
+      .some((argument) => inlineEvaluationArguments.has(argument))
+  ) {
+    errors.push(
+      `quality.checks[${index}] uses inline code evaluation; use a reviewed project file or fingerprinted package script instead`,
     );
   }
   if (
@@ -1203,6 +1328,37 @@ function validateConfig(config, target = undefined) {
   if (config.quality.require_project_checks !== true) {
     errors.push("quality.require_project_checks must remain true");
   }
+  const environment = config.quality.environment;
+  if (
+    !environment ||
+    typeof environment !== "object" ||
+    Array.isArray(environment)
+  ) {
+    errors.push("quality.environment must be an object");
+  } else {
+    rejectUnknownKeys(
+      errors,
+      environment,
+      new Set(["allow"]),
+      "quality.environment",
+    );
+    if (
+      !Array.isArray(environment.allow) ||
+      !environment.allow.every(
+        (name) =>
+          typeof name === "string" &&
+          ENVIRONMENT_NAME.test(name) &&
+          !SENSITIVE_ENVIRONMENT_NAME.test(name) &&
+          !EXECUTION_CONTROL_ENVIRONMENT_NAMES.has(name.toUpperCase()),
+      )
+    ) {
+      errors.push(
+        "quality.environment.allow must contain valid non-sensitive, non-execution-control environment names",
+      );
+    } else if (new Set(environment.allow).size !== environment.allow.length) {
+      errors.push("quality.environment.allow must not contain duplicates");
+    }
+  }
   const checks = config.quality.checks;
   if (!Array.isArray(checks)) {
     return [...errors, "quality.checks must be an array"];
@@ -1288,16 +1444,38 @@ function delegatedCheckDefinition(target, check) {
   return null;
 }
 
-function checksHash(checks, target = undefined) {
+function checksHash(checks, target = undefined, environmentAllow = []) {
+  const normalizedEnvironmentAllow = Array.isArray(environmentAllow)
+    ? [...new Set(environmentAllow)].sort()
+    : [];
+  const environmentDefinitions = normalizedEnvironmentAllow.map((name) => {
+    const value = process.env[name];
+    return {
+      name,
+      present: typeof value === "string",
+      ...(typeof value === "string" ? { value_hash: sha256(value) } : {}),
+    };
+  });
   const payload = target
     ? {
         checks,
         delegated_definitions: checks.map((check) =>
           delegatedCheckDefinition(target, check),
         ),
+        ...(environmentDefinitions.length > 0
+          ? { environment: environmentDefinitions }
+          : {}),
       }
     : checks;
   return sha256(stableJson(payload));
+}
+
+function currentChecksHash(config, target) {
+  return checksHash(
+    config.quality?.checks ?? [],
+    target,
+    config.quality?.environment?.allow ?? [],
+  );
 }
 
 function configurationHash(config) {
@@ -1397,6 +1575,46 @@ function sourceEntries({ claude = false } = {}) {
   );
 }
 
+function detectHarnesses(target) {
+  const detected = [];
+  if (
+    projectExists(target, ".claude") ||
+    projectExists(target, "CLAUDE.md")
+  ) {
+    detected.push("claude");
+  }
+  if (
+    projectExists(target, ".codex") ||
+    projectExists(target, "AGENTS.md")
+  ) {
+    detected.push("codex");
+  }
+  if (projectExists(target, ".cursor")) {
+    detected.push("cursor");
+  }
+  if (projectExists(target, ".gemini") || projectExists(target, "GEMINI.md")) {
+    detected.push("gemini");
+  }
+  if (projectExists(target, ".opencode")) {
+    detected.push("opencode");
+  }
+  return detected;
+}
+
+function resolveHarnesses(target, existing, claude) {
+  const detected = detectHarnesses(target);
+  const enabled = new Set([
+    ...SUPPORTED_HARNESSES,
+    ...(existing?.harnesses ?? []),
+    ...detected,
+    ...(claude ? ["claude"] : []),
+  ]);
+  return {
+    detected,
+    enabled: [...enabled].filter((name) => SUPPORTED_HARNESSES.has(name)),
+  };
+}
+
 function writeProposal(target, packageVersion, destination, bytes) {
   const proposalRelative = join(
     ".agent-stack/update-proposals",
@@ -1409,7 +1627,13 @@ function writeProposal(target, packageVersion, destination, bytes) {
   return proposalRelative;
 }
 
-function installOrUpgrade(target, { claude = false, mode = "init" } = {}) {
+function installOrUpgrade(
+  target,
+  {
+    claude = false,
+    mode = "init",
+  } = {},
+) {
   const existing = loadInstallation(target);
   if (mode === "init" && existing) {
     return {
@@ -1419,6 +1643,12 @@ function installOrUpgrade(target, { claude = false, mode = "init" } = {}) {
       next: `Run npx -y ${PACKAGE_NAME}@latest upgrade`,
     };
   }
+  const harnesses = resolveHarnesses(
+    target,
+    existing,
+    claude,
+  );
+  const claudeEnabled = harnesses.enabled.includes("claude");
 
   const manifest = existing ?? {
     schema_version: 1,
@@ -1431,7 +1661,7 @@ function installOrUpgrade(target, { claude = false, mode = "init" } = {}) {
   const previousManaged = { ...manifest.managed_files };
   const currentSources = new Set();
   const outcomes = [];
-  const entries = sourceEntries({ claude });
+  const entries = sourceEntries({ claude: claudeEnabled });
 
   for (const entry of entries) {
     const destination = entry.destination.split(sep).join("/");
@@ -1573,14 +1803,7 @@ function installOrUpgrade(target, { claude = false, mode = "init" } = {}) {
   manifest.schema_version = 1;
   manifest.package = { name: PACKAGE_NAME, version: PACKAGE_VERSION };
   manifest.updated_at = utcTimestamp();
-  manifest.harnesses = [
-    "codex",
-    "cursor",
-    "gemini",
-    "grok",
-    "opencode",
-    ...(claude || manifest.harnesses.includes("claude") ? ["claude"] : []),
-  ];
+  manifest.harnesses = harnesses.enabled;
   atomicProjectJson(
     target,
     INSTALLATION_PATH,
@@ -1595,6 +1818,7 @@ function installOrUpgrade(target, { claude = false, mode = "init" } = {}) {
     package: manifest.package,
     target,
     detected,
+    harnesses,
     outcomes,
     pending_reconciliation: pending,
     next_prompt:
@@ -1872,7 +2096,11 @@ function commandDetect(target, write) {
     ...detected.checks.filter((check) => !manualIds.has(check.id)),
   ];
   if (
-    checksHash(updatedChecks, target) !== config.safety.approved_checks_hash
+    checksHash(
+      updatedChecks,
+      target,
+      config.quality.environment?.allow ?? [],
+    ) !== config.safety.approved_checks_hash
   ) {
     config.safety.approved_checks_hash = null;
     config.safety.approved_at = null;
@@ -1894,10 +2122,7 @@ function commandApproveChecks(target, reason) {
   if (errors.length > 0) {
     throw new StackError("Cannot approve invalid checks", 2, errors);
   }
-  config.safety.approved_checks_hash = checksHash(
-    config.quality.checks,
-    target,
-  );
+  config.safety.approved_checks_hash = currentChecksHash(config, target);
   config.safety.approved_at = utcTimestamp();
   config.safety.approval_reason = reason.trim();
   atomicProjectJson(target, CONFIG_PATH, config, "project config");
@@ -2096,7 +2321,7 @@ function commandDoctor(target) {
           }
         : parallelErrors,
     );
-    const actualHash = checksHash(config.quality.checks, target);
+    const actualHash = currentChecksHash(config, target);
     const checksApproved = config.safety.approved_checks_hash === actualHash;
     report(
       "check-approval",
@@ -2190,6 +2415,9 @@ function formatDoctorHuman(result) {
       (report) =>
         firstBaselineFailureCodes.get(report.name) === report.code,
     );
+  const gitNeedsInitialization = failures.some(
+    (report) => report.name === "git" && report.code === "not-initialized",
+  );
 
   const outcomes = [
     {
@@ -2229,8 +2457,9 @@ function formatDoctorHuman(result) {
       status: "Almost ready.",
       explanation:
         "Ultimate Agent Stack is installed, but this project does not have its first quality-check baseline yet.",
-      nextAction:
-        'Tell your coding agent: "Create the first project checks, finish Ultimate Agent Stack setup, and run doctor again." You do not need to edit configuration files yourself.',
+      nextAction: gitNeedsInitialization
+        ? 'Tell your coding agent: "Initialize Git in this project, create the first project checks, finish Ultimate Agent Stack setup, and run doctor again." You do not need to edit configuration files yourself.'
+        : 'Tell your coding agent: "Create the first project checks, finish Ultimate Agent Stack setup, and run doctor again." You do not need to edit configuration files yourself.',
     },
     {
       matches: setupOnly,
@@ -2338,7 +2567,41 @@ function commandAdoptManaged(target, destination, reason) {
   return { ok: true, path: normalized, customized };
 }
 
-function checkEnvironment(target) {
+function defaultCacheEnvironment() {
+  const userHome = homedir();
+  const candidates =
+    platform() === "win32"
+      ? {
+          npm_config_cache: join(userHome, "AppData", "Local", "npm-cache"),
+          PIP_CACHE_DIR: join(userHome, "AppData", "Local", "pip", "Cache"),
+          UV_CACHE_DIR: join(userHome, "AppData", "Local", "uv", "cache"),
+        }
+      : platform() === "darwin"
+        ? {
+            GOCACHE: join(userHome, "Library", "Caches", "go-build"),
+            GOMODCACHE: join(userHome, "go", "pkg", "mod"),
+            npm_config_cache: join(userHome, ".npm"),
+            PIP_CACHE_DIR: join(userHome, "Library", "Caches", "pip"),
+            UV_CACHE_DIR: join(userHome, "Library", "Caches", "uv"),
+          }
+        : {
+            GOCACHE: join(userHome, ".cache", "go-build"),
+            GOMODCACHE: join(userHome, "go", "pkg", "mod"),
+            npm_config_cache: join(userHome, ".npm"),
+            PIP_CACHE_DIR: join(userHome, ".cache", "pip"),
+            UV_CACHE_DIR: join(userHome, ".cache", "uv"),
+          };
+  return Object.fromEntries(
+    Object.entries(candidates)
+      .map(([name, path]) => [
+        name,
+        typeof process.env[name] === "string" ? process.env[name] : path,
+      ])
+      .filter(([, path]) => existsSync(path)),
+  );
+}
+
+function checkEnvironment(target, config) {
   const runtimeHome = projectFile(
     target,
     ".agent-stack/runtime-home",
@@ -2353,6 +2616,17 @@ function checkEnvironment(target) {
   mkdirSync(runtimeTemp, { recursive: true });
   const environment = {};
   for (const name of SAFE_ENVIRONMENT_NAMES) {
+    if (typeof process.env[name] === "string") {
+      environment[name] = process.env[name];
+    }
+  }
+  for (const name of TOOLCHAIN_ENVIRONMENT_NAMES) {
+    if (typeof process.env[name] === "string") {
+      environment[name] = process.env[name];
+    }
+  }
+  Object.assign(environment, defaultCacheEnvironment());
+  for (const name of config.quality.environment.allow) {
     if (typeof process.env[name] === "string") {
       environment[name] = process.env[name];
     }
@@ -2372,7 +2646,7 @@ function checkEnvironment(target) {
   };
 }
 
-function runCheck(target, check) {
+function runCheck(target, check, config) {
   const startedAt = utcTimestamp();
   const started = Date.now();
   const result = {
@@ -2390,11 +2664,12 @@ function runCheck(target, check) {
       output: `command not found: ${check.argv[0]}`,
     };
   }
+  const environment = checkEnvironment(target, config);
   const processResult = spawnSync(check.argv[0], check.argv.slice(1), {
     cwd: target,
     encoding: "utf8",
-    env: checkEnvironment(target),
-    maxBuffer: 4 * 1024 * 1024,
+    env: environment,
+    maxBuffer: CHECK_OUTPUT_LIMIT_BYTES,
     shell: false,
     timeout: (check.timeout_seconds ?? 900) * 1000,
   });
@@ -2403,15 +2678,37 @@ function runCheck(target, check) {
     .join("\n")
     .trim();
   const timedOut = processResult.error?.code === "ETIMEDOUT";
+  const outputExceeded = processResult.error?.code === "ENOBUFS";
   const returncode = timedOut
     ? 124
+    : outputExceeded
+      ? 125
     : (processResult.status ?? (processResult.error ? 1 : 0));
+  const failureReason = timedOut
+    ? "timeout"
+    : outputExceeded
+      ? "output-exceeded-capture-limit"
+      : processResult.error
+        ? "spawn-error"
+        : undefined;
+  const outputPrefix = timedOut
+    ? "timed out"
+    : outputExceeded
+      ? `output exceeded ${CHECK_OUTPUT_LIMIT_BYTES}-byte capture limit`
+      : "";
+  const redactionValues = config.quality.environment.allow
+    .map((name) => environment[name])
+    .filter((value) => typeof value === "string");
   return {
     ...result,
     status: returncode === 0 ? "passed" : "failed",
     returncode,
+    ...(failureReason ? { reason: failureReason } : {}),
     duration_seconds: Math.round((Date.now() - started) / 10) / 100,
-    output: redact(timedOut ? `timed out\n${output}` : output),
+    output: [
+      outputPrefix,
+      redact(output, 12_000, redactionValues),
+    ].filter(Boolean).join("\n"),
   };
 }
 
@@ -2424,7 +2721,7 @@ function commandVerify(target, failFast = false) {
     target,
     checks: [],
   };
-  const actualChecksHash = checksHash(config.quality.checks, target);
+  const actualChecksHash = currentChecksHash(config, target);
   if (config.onboarding.status !== "complete") {
     errors.push(
       "guided onboarding is incomplete; configure the approved project profile and providers",
@@ -2450,7 +2747,7 @@ function commandVerify(target, failFast = false) {
     evidence.configuration_errors = errors;
   } else {
     for (const check of config.quality.checks) {
-      const record = runCheck(target, check);
+      const record = runCheck(target, check, config);
       evidence.checks.push(record);
       if (record.status === "failed" && failFast) {
         break;
@@ -2482,6 +2779,7 @@ function commandVerify(target, failFast = false) {
       id: record.id,
       status: record.status,
       returncode: record.returncode,
+      ...(record.reason ? { reason: record.reason } : {}),
     })),
     configuration_errors: evidence.configuration_errors,
   };
@@ -2587,9 +2885,7 @@ function commandStatus(target) {
   const state = loadState(target);
   const pending = Object.keys(installation?.pending_files ?? {});
   const drift = protectedDrift(target, installation);
-  const actualChecksHash = config
-    ? checksHash(config.quality?.checks ?? [], target)
-    : null;
+  const actualChecksHash = config ? currentChecksHash(config, target) : null;
   const actualConfigurationHash = config
     ? configurationHash(config)
     : null;

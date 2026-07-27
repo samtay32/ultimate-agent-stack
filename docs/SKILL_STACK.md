@@ -66,9 +66,12 @@ Plugins work in supported desktop/CLI surfaces. Repository skills are the portab
 
 ### Claude Code
 
-Run `npx -y ultimate-agent-stack@latest init --claude` to copy the same skills
-under `.claude/skills/`. Keep `.agents/skills/` canonical and use `upgrade
---claude` later; customizations are preserved for reconciliation.
+The default install copies the canonical skills from `.agents/skills/` into
+`.claude/skills/` and installs the read-only Claude worker profile, including
+in a brand-new folder with no harness markers. Existing `.claude/` or
+`CLAUDE.md` markers are also reported to the agent. Upgrades remember installed
+harnesses, the legacy `--claude` flag remains accepted, and customizations are
+preserved for reconciliation.
 
 ### Grok
 

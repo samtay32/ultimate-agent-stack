@@ -38,7 +38,11 @@ The agent runs:
 npx -y ultimate-agent-stack@latest init
 ```
 
-For Claude Code support it adds `--claude`. The agent then:
+The default install includes the portable skill path and each shipped native
+harness adapter, including Claude Code, so a brand-new folder does not need
+detection hints. Existing harness markers such as `.claude/` or `CLAUDE.md`
+are still reported for the agent. The older `--claude` spelling remains
+accepted for compatibility. The agent then:
 
 1. reads existing project instructions and preserves them;
 2. reconciles any proposals instead of overwriting files;
@@ -241,6 +245,29 @@ node .agent-stack/bin/agent-stack.mjs approve-checks \
 ```
 
 You should not be asked to interpret those commands.
+
+### Checks work in the terminal but fail under `verify`
+
+Verification deliberately removes inherited credentials and gives checks an
+isolated `HOME`. Common non-secret toolchain paths such as `JAVA_HOME` and
+`DOTNET_ROOT`, plus existing cache-only directories for npm, pip, uv, and Go,
+remain available. Maven, Gradle, and Cargo home directories are not inherited
+because they can contain credentials or executable configuration.
+
+If a project needs another non-secret variable, the agent may add its name to
+`quality.environment.allow`, inspect the resulting check definitions, and run
+`approve-checks` again. Sensitive-looking names—including tokens, passwords,
+keys, database URLs, DSNs, and connection strings—are rejected. Approved
+inherited values are hashed into check approval and redacted from captured
+evidence, so changing a value requires review again. Variables that can inject
+runtime code, such as `NODE_OPTIONS`, `PYTHONPATH`, or `JAVA_TOOL_OPTIONS`, are
+also rejected. Do not use this escape hatch for secrets; configure integration
+tests through an approved sandbox or test-secret mechanism instead.
+
+`detect` reports ecosystem-specific environment warnings. A failure whose
+reason is `output-exceeded-capture-limit` means the check produced more output
+than the evidence recorder can safely retain; it does not mean the underlying
+test assertion failed.
 
 ### Setup says onboarding is pending
 

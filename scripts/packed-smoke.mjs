@@ -138,6 +138,19 @@ function main() {
     }
     if (
       !existsSync(
+        join(
+          project,
+          ".claude",
+          "skills",
+          "run-autonomous-delivery",
+          "SKILL.md",
+        ),
+      )
+    ) {
+      throw new Error("packed install did not create the Claude entry skill");
+    }
+    if (
+      !existsSync(
         join(project, ".gemini", "agents", "uas-researcher.md"),
       )
     ) {
@@ -170,7 +183,9 @@ function main() {
       config.onboarding?.status !== "pending" ||
       config.capabilities?.review?.provider !== "builtin" ||
       config.capabilities?.knowledge?.provider !== "repository" ||
-      config.capabilities?.knowledge?.scope !== "project"
+      config.capabilities?.knowledge?.scope !== "project" ||
+      !Array.isArray(config.quality?.environment?.allow) ||
+      config.quality.environment.allow.length !== 0
     ) {
       throw new Error("packed install did not preserve safe guided defaults");
     }
