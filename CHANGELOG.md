@@ -4,6 +4,8 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ## Unreleased
 
+## 0.5.1 - 2026-07-26
+
 ### Fixed
 
 - `doctor --human` now treats an otherwise intact, newly initialized empty
@@ -12,6 +14,14 @@ All notable changes to Ultimate Agent Stack are documented here.
   exit status, check approval, and Git requirements remain fail-closed.
   Machine-readable doctor reasons keep stale approvals and invalid Git state
   from being mistaken for ordinary first-time setup.
+
+### Upgrade impact
+
+This is a compatible patch release. Existing projects receive a versioned
+proposal for the updated protected CLI and guidance; customized files are never
+overwritten. The doctor JSON contract gains additive diagnostic reason codes,
+while validation, nonzero failure status, approvals, and Git requirements
+remain fail-closed.
 
 ## 0.5.0 - 2026-07-26
 
