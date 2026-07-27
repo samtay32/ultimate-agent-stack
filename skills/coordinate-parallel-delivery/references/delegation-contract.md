@@ -39,6 +39,10 @@ Workers return:
 The primary agent owns every integration decision and the overall definition of
 done.
 
+The coordinator token belongs only to the primary Project Steward. It is not an
+assignment input, worker credential, or mechanism for parallel writers to
+share one checkout.
+
 ## Isolation Rules
 
 - Parallel read-only inspection can share a repository.

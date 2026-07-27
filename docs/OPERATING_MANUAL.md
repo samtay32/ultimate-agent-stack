@@ -48,8 +48,9 @@ accepted for compatibility. The agent then:
 2. reconciles any proposals instead of overwriting files;
 3. detects the project's real checks;
 4. detects review and knowledge capabilities;
-5. asks only consequential profile, provider, external-data, and authority
-   questions, then records the approved configuration;
+5. asks the plain-language repository-only versus optional local searchable
+   memory question, then asks only consequential profile, provider,
+   external-data, and authority questions;
 6. inspects and approves argument arrays and delegated package-script
    definitions;
 7. applies `$secure-launch` to classify exposure and add proportionate gates;
@@ -114,6 +115,25 @@ The agent should research and recommend the implementation. Add constraints
 only when they are real. [../STARTER_PROMPT.md](../STARTER_PROMPT.md) provides a
 longer copy-and-paste contract for harnesses that need it.
 
+## Continuing in a New Conversation
+
+Ask the current Project Steward to checkpoint and hand off before leaving. Then
+open a new conversation in the same project and say:
+
+```text
+Continue this project with Ultimate Agent Stack. Load the checkpoint, inspect
+the current repository, and resume from the first unfinished step.
+```
+
+`start` validates the checkpoint, tests configured memory, and acquires the
+checkout lease. A second conversation cannot claim the same checkout while the
+first Project Steward is active. If the old conversation ended unexpectedly,
+the new agent must ask you to confirm it stopped before using the explicit
+takeover command.
+
+The coordinator lease is an Ultimate Agent Stack guardrail, not an
+operating-system lock. Unrelated tools can ignore it.
+
 ## Review and Knowledge Providers
 
 The agent runs:
@@ -125,7 +145,15 @@ node .agent-stack/bin/agent-stack.mjs capabilities
 It then recommends a project profile and provider combination. The portable
 baseline uses built-in review plus repository knowledge. Production profiles
 require either CodeRabbit or an explicitly allowed GitHub human reviewer.
-GBrain is optional and requires approval for external data.
+GBrain is optional and requires approval for external data. The agent asks:
+
+> Should this project remember progress only in its repository files, or also
+> use a private local searchable memory for easier continuation across
+> conversations?
+
+Repository memory is the recommendation for a short or simple project.
+Project-scoped local GBrain is the recommendation for a long-running build that
+will likely cross conversations.
 
 The agent records the approved choices with `configure`; you should not have to
 construct the command. Provider, external-data, execution, or merge changes
@@ -137,10 +165,19 @@ runtime. If GBrain is unavailable, the agent continues with repository
 artifacts. Memory never overrides current code, tests, locked decisions, or
 security policy.
 
+The agent obtains the guarded local plan with `memory-setup`. The plan uses
+checkout-local PGLite, starts without embeddings or external model keys, and
+merges a project-scoped MCP connection into the detected harness. A missing
+global GBrain CLI still requires explicit installation approval. `doctor`
+verifies the active database path, GBrain health, and brain identity; `start`
+also checks retrieval of the mirrored repository checkpoint.
+
 ## What Happens With Subagents
 
-You continue speaking only with the primary coding agent. It decides whether
-parallel work is useful after the request is understood:
+You continue speaking only with the primary coding agent—the Project Steward.
+It alone owns the checkout lease, coordinator token, checkpoint, integration,
+and final answer. It decides whether parallel work is useful after the request
+is understood:
 
 - a small fix or tightly connected change stays with the primary agent;
 - independent research, review, tests, or documentation may run in parallel;
@@ -153,6 +190,8 @@ The primary agent writes the assignments, limits their authority, watches
 progress, rejects bad output, combines accepted work, runs the final checks, and
 returns one result. You should never be asked to open extra chats, copy messages
 between workers, resolve branches, or decide how many agents to use.
+Subagents never receive the coordinator token and never become another Project
+Steward.
 
 If an agent asks you to manage its workers, reply:
 
@@ -233,6 +272,13 @@ configured. In a newly initialized empty folder, `doctor --human` calls this
 **Almost ready** and asks the coding agent to create the first checks and finish
 setup. The JSON report and exit status remain fail-closed until that baseline is
 configured and approved.
+
+### The project already has code
+
+Run setup in the existing project folder. The installer preserves existing
+instructions and customized files, creates reconciliation proposals when
+package guidance differs, and detects the real project checks. It does not
+restart the project or impose a replacement architecture.
 
 ### The safety check says commands need approval
 

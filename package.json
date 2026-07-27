@@ -1,7 +1,7 @@
 {
   "name": "ultimate-agent-stack",
   "version": "0.6.0",
-  "description": "A guided, provider-neutral agent workflow from plain-language idea through verified review closure and durable learning.",
+  "description": "Your Project Steward: guided, provider-neutral delivery with verified continuity, review, and safety gates.",
   "type": "module",
   "bin": {
     "ultimate-agent-stack": "bin/ultimate-agent-stack.mjs"
@@ -13,6 +13,7 @@
     "bin/",
     "docs/",
     "scripts/github-release-sync.mjs",
+    "scripts/gbrain-project.mjs",
     "scripts/packed-smoke.mjs",
     "scripts/release-preflight.mjs",
     "scripts/review-receipt.mjs",
@@ -23,7 +24,7 @@
   ],
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "lint": "node --check bin/ultimate-agent-stack.mjs && node --check scripts/upstream-issue.mjs && node --check scripts/release-preflight.mjs && node --check scripts/packed-smoke.mjs && node --check scripts/review-receipt.mjs && node --check scripts/github-release-sync.mjs",
+    "lint": "node --check bin/ultimate-agent-stack.mjs && node --check scripts/upstream-issue.mjs && node --check scripts/release-preflight.mjs && node --check scripts/packed-smoke.mjs && node --check scripts/review-receipt.mjs && node --check scripts/github-release-sync.mjs && node --check scripts/gbrain-project.mjs",
     "upstream:check": "node bin/ultimate-agent-stack.mjs upstream-check",
     "package:check": "npm pack --dry-run --json",
     "package:smoke": "node scripts/packed-smoke.mjs",

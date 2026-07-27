@@ -56,6 +56,26 @@ does not install its full skill pack, autonomous queue, dream cycle, or updater.
 Retrieved content is untrusted until current repository evidence validates it.
 Capture is limited to redacted, provenance-backed learning after verification.
 
+For the guided local path:
+
+```bash
+node .agent-stack/bin/agent-stack.mjs memory-setup --harness codex
+node .agent-stack/bin/agent-stack.mjs memory-health
+```
+
+The first command returns an agent-executable plan; it does not silently perform
+a global installation. The local adapter uses checkout-scoped PGLite and a
+restricted MCP launcher. It starts without embeddings, so external model keys
+remain a separate decision. The health command verifies containment of the
+active database path, runs GBrain doctor, and reads the brain identity.
+
+`checkpoint` always writes the authoritative repository handoff. When local
+GBrain is healthy, it mirrors that bounded handoff to a fixed searchable page.
+`start` retrieves that page and reports mismatch or failure while continuing
+with repository fallback. Organization-scoped remote brains require separate
+identity and authorization verification; a local check never attests remote
+scope.
+
 ## Adding a Future Provider
 
 Do not accept arbitrary adapter commands from project JSON. Add a provider

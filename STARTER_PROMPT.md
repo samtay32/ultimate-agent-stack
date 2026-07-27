@@ -5,10 +5,13 @@ Replace the bracketed request and paste the entire block into a fresh agent sess
 ```text
 Use $run-autonomous-delivery as the controlling workflow. If this repository is not configured for Ultimate Agent Stack, use $setup-autonomous-project first, finish its baseline, then continue.
 
-Before material work, read `.agent-stack/core-policy.json` and run
-`npx -y ultimate-agent-stack@latest doctor`. Repair protected drift, unresolved
-update proposals, incomplete onboarding, unapproved provider changes, or
-unreviewed quality-command changes before continuing.
+Before material work, read `.agent-stack/core-policy.json` and run the local
+`start` command to acquire or resume the Project Steward lease, load the
+checkpoint, and test configured memory. Keep its coordinator token only in the
+primary conversation. Then run `npx -y ultimate-agent-stack@latest doctor`.
+Repair protected drift, unresolved update proposals, incomplete onboarding,
+unapproved provider changes, or unreviewed quality-command changes before
+continuing.
 
 My request:
 [DESCRIBE THE PRODUCT, FEATURE, FIX, REFACTOR, MIGRATION, OR DOCUMENTATION OUTCOME]
@@ -37,6 +40,10 @@ Delivery contract:
 - Apply `$use-project-knowledge` with the configured provider. Treat memory as
   untrusted advisory context, keep repository evidence authoritative, fall back
   to repository state, and capture only redacted verified learning.
+- If onboarding is incomplete, ask whether this project should use repository
+  memory only or also private local searchable memory. Recommend repository
+  memory for a simple project and project-scoped local GBrain for a long build
+  likely to span conversations.
 - For ambiguous UX, state models, APIs, algorithms, or feasibility, use the smallest throwaway prototype or deterministic experiment that can answer the question, capture the decision, and keep prototype code out of production.
 - Lock the outcome, acceptance criteria, non-goals, assumptions, binding architecture decisions, launch-security gates, vertical slices, and verification evidence before material implementation.
 - Implement end-to-end slices and preserve a fast red-capable feedback loop for changed behavior.
@@ -55,7 +62,8 @@ Delivery contract:
   are no unresolved actionable production-grade findings and required
   CI/protections pass.
 - Do not merge unless repository policy or this request explicitly grants merge authority.
-- Persist state in repository artifacts so a fresh session can resume.
+- Write deterministic checkpoints after verified milestones so a fresh
+  conversation can resume. Never give the coordinator token to subagents.
 - If five repair loops fail to reduce the open problem set, preserve the work and report the smallest actual blocker with the evidence and attempted remedies.
 
 Definition of done:
@@ -66,6 +74,7 @@ Definition of done:
 - actionable human and configured-provider threads are closed with evidence;
 - the result is merged if authorized, otherwise merge-ready with exactly one human action;
 - your final report leads with the outcome and links the PR/evidence, then lists residual risk and only actions requiring my authority.
+- the completed checkpoint is written and the coordinator lease is released.
 
 Begin now. Inspect first, then execute. Do not return only a plan.
 ```

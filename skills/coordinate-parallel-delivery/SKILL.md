@@ -7,6 +7,8 @@ description: Decide whether software-delivery work should remain serial or use b
 
 Keep one primary agent accountable to the user. Use native harness delegation
 when it produces a real advantage; never make the user supervise workers.
+The primary agent is the Project Steward and keeps the checkout's coordinator
+token. Workers never receive it and never become independent coordinators.
 
 Read `.agent-stack/config.json` and
 [references/delegation-contract.md](references/delegation-contract.md) before
@@ -23,7 +25,8 @@ dispatching work.
    cost is lower than the expected saving.
 3. **Bound authority.** Workers inherit only the primary agent's in-scope
    authority. They cannot merge, publish, deploy, disclose secrets, spend money,
-   take destructive production actions, accept risk, or delegate again.
+   take destructive production actions, accept risk, delegate again, write the
+   project checkpoint, or release the coordinator lease.
 4. **Isolate writes.** Read-only research and review may share a checkout.
    Parallel writers require separate verified worktrees or harness-isolated
    workspaces with disjoint ownership. A branch name alone is not isolation.

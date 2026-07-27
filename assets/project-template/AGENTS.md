@@ -6,7 +6,11 @@ Deliver correct, maintainable changes from intent through verified review closur
 
 ## Source of Truth
 
-Before editing, read this file, nested instruction files, `.agent-stack/config.json`, locked artifacts under `.agent-stack/artifacts/`, the current diff, and relevant tests and documentation.
+Before editing, read this file, nested instruction files,
+`.agent-stack/core-policy.json`, `.agent-stack/config.json`, any valid
+`.agent-stack/CHECKPOINT.md`, locked artifacts under
+`.agent-stack/artifacts/`, the current diff, and relevant tests and
+documentation.
 
 Project-specific instructions outrank generic stack guidance. Preserve established architecture, terminology, package managers, formatting, and deployment policy.
 
@@ -77,6 +81,19 @@ Never capture secrets, raw environments, unrestricted conversation history, or
 unverified model output. Never auto-activate a proposed skill; promotion
 requires representative evaluations and a reviewed change.
 
+## Continuity
+
+One primary Project Steward owns the current checkout. Start through the local
+CLI, retain its coordinator token in the primary conversation, and never give
+that token to a subagent. If another active lease exists, do not create an
+independent writer in the same checkout.
+
+Write a deterministic repository checkpoint after verified milestones and at
+final handoff. The checkpoint contains concise decisions, completed work, next
+steps, blockers, evidence paths, and Git state—not raw conversation history.
+When configured and healthy, GBrain receives only a searchable mirror of that
+verified checkpoint. Repository state remains authoritative.
+
 ## Parallel Delivery
 
 Use `$coordinate-parallel-delivery` when two or more independent work tracks may
@@ -86,6 +103,8 @@ integration, final verification, and cleanup.
 
 - Never require the user to create, route, monitor, or reconcile workers.
 - Never exceed the configured worker cap or allow nested delegation.
+- Never give a worker the coordinator token or let it act as a second Project
+  Steward.
 - Delegation cannot grant authority the primary agent does not have.
 - Read-only work may share a checkout. Parallel writes require separate
   verified worktrees or harness-isolated workspaces with disjoint ownership.
@@ -116,4 +135,6 @@ current repository or user policy grants merge authority.
 
 ## Completion
 
-Report the outcome, changed behavior, evidence, pull request, residual risks, and only the remaining actions requiring human authority.
+Write the completed checkpoint, release the coordinator lease, then report the
+outcome, changed behavior, evidence, pull request, residual risks, and only the
+remaining actions requiring human authority.

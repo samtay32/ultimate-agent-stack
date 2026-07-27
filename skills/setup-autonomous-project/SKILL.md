@@ -43,6 +43,17 @@ Configure the repository without erasing its conventions. Setup is complete only
    at most one genuinely safe alternative, and explain the consequence. Record
    the approved choices.
 
+   Always ask the memory choice in plain language:
+
+   > Should this project remember progress only in its repository files, or
+   > also use a private local searchable memory for easier continuation across
+   > conversations?
+
+   Recommend repository memory for a short or simple project. Recommend
+   project-scoped local GBrain for a long-running build likely to span
+   conversations. Explain that GBrain is optional, the repository checkpoint
+   remains authoritative, and work still resumes when GBrain is unavailable.
+
    For a local prototype or straightforward project that does not require
    production release protection, external data, external memory, or delegated
    merge authority, recommend the simple setup. After the user approves that
@@ -76,6 +87,20 @@ Configure the repository without erasing its conventions. Setup is complete only
    Use `organization` only with explicit external-data approval. Do not ask the
    user to name a technical provider when the repository and availability
    evidence support a recommendation.
+
+   When project-scoped GBrain is approved, obtain the guarded setup plan:
+
+   ```bash
+   node .agent-stack/bin/agent-stack.mjs memory-setup \
+     --harness DETECTED_HARNESS
+   ```
+
+   Verify the current official GBrain installation instructions, obtain
+   explicit approval before a missing global CLI is installed, then execute
+   the plan. Use its project-local home and restricted launcher. Merge MCP
+   configuration into existing project settings; never replace them. Do not
+   install GBrain's autonomous queue, complete skill pack, dream cycle, or
+   updater merely to provide memory.
 5. Detect the real command surface:
 
    ```bash
@@ -107,7 +132,9 @@ Configure the repository without erasing its conventions. Setup is complete only
 8. Adapt harnesses only after the portable core works. Read [references/setup-contract.md](references/setup-contract.md) for supported locations and trust boundaries.
 9. Finish with a concise handoff containing the detected stack, configured
    providers, commands, gates, preserved conflicts, missing credentials or
-   services, and the exact starter prompt.
+   services, and the exact starter prompt. Start the Project Steward lease,
+   write the first deterministic checkpoint, and retain its token only in the
+   primary conversation.
 
 ## Autonomy Rules
 
