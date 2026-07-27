@@ -591,6 +591,129 @@ test("doctor keeps JSON by default and offers an explicit human summary", () => 
   }
 });
 
+test("doctor describes an empty post-init project as almost ready", () => {
+  const fixture = temporaryProject();
+  try {
+    installOrUpgrade(fixture.directory, { mode: "init" });
+
+    const jsonDoctor = spawnSync(
+      process.execPath,
+      [PACKAGE_CLI, "doctor", "--target", fixture.directory],
+      { encoding: "utf8", shell: false },
+    );
+    assert.equal(jsonDoctor.status, 1, jsonDoctor.stderr);
+    const result = JSON.parse(jsonDoctor.stdout);
+    assert.equal(result.ok, false);
+    assert.deepEqual(
+      result.reports.find((report) => report.name === "config")?.detail,
+      ["no project quality checks configured"],
+    );
+    assert.equal(
+      result.reports.find((report) => report.name === "config")?.code,
+      "first-baseline-pending",
+    );
+    assert.equal(
+      result.reports.find((report) => report.name === "onboarding")?.code,
+      "pending",
+    );
+    assert.equal(
+      result.reports.find(
+        (report) => report.name === "configuration-approval",
+      )?.code,
+      "not-approved",
+    );
+    assert.equal(
+      result.reports.find((report) => report.name === "check-approval")?.code,
+      "not-approved",
+    );
+    assert.ok(
+      result.reports.some(
+        (report) =>
+          report.name === "git" &&
+          !report.ok &&
+          report.code === "not-initialized",
+      ),
+    );
+
+    const humanDoctor = spawnSync(
+      process.execPath,
+      [PACKAGE_CLI, "doctor", "--target", fixture.directory, "--human"],
+      { encoding: "utf8", shell: false },
+    );
+    assert.equal(humanDoctor.status, 1, humanDoctor.stderr);
+    assert.match(humanDoctor.stdout, /Almost ready\./);
+    assert.match(humanDoctor.stdout, /first quality-check baseline/);
+    assert.match(humanDoctor.stdout, /Create the first project checks/);
+    assert.doesNotMatch(
+      humanDoctor.stdout,
+      /project configuration is missing or invalid/,
+    );
+
+    const configFile = join(fixture.directory, CONFIG_PATH);
+    const pendingConfig = readJson(configFile);
+    pendingConfig.safety.approved_configuration_hash = "stale";
+    writeJson(configFile, pendingConfig);
+    const staleConfigurationDoctor = spawnSync(
+      process.execPath,
+      [PACKAGE_CLI, "doctor", "--target", fixture.directory, "--human"],
+      { encoding: "utf8", shell: false },
+    );
+    assert.equal(staleConfigurationDoctor.status, 1);
+    assert.match(staleConfigurationDoctor.stdout, /Needs attention\./);
+    assert.doesNotMatch(staleConfigurationDoctor.stdout, /Almost ready\./);
+
+    pendingConfig.safety.approved_configuration_hash = null;
+    pendingConfig.safety.approved_checks_hash = "stale";
+    writeJson(configFile, pendingConfig);
+    const staleChecksDoctor = spawnSync(
+      process.execPath,
+      [PACKAGE_CLI, "doctor", "--target", fixture.directory, "--human"],
+      { encoding: "utf8", shell: false },
+    );
+    assert.equal(staleChecksDoctor.status, 1);
+    assert.match(staleChecksDoctor.stdout, /Needs attention\./);
+    assert.doesNotMatch(staleChecksDoctor.stdout, /Almost ready\./);
+
+    pendingConfig.safety.approved_checks_hash = null;
+    writeJson(configFile, pendingConfig);
+    mkdirSync(join(fixture.directory, ".git"));
+    const invalidGitDoctor = spawnSync(
+      process.execPath,
+      [PACKAGE_CLI, "doctor", "--target", fixture.directory, "--human"],
+      { encoding: "utf8", shell: false },
+    );
+    assert.equal(invalidGitDoctor.status, 1);
+    assert.match(invalidGitDoctor.stdout, /Needs attention\./);
+    assert.match(
+      invalidGitDoctor.stdout,
+      /project configuration is missing or invalid/,
+    );
+    assert.doesNotMatch(invalidGitDoctor.stdout, /Almost ready\./);
+
+    rmSync(join(fixture.directory, ".git"), {
+      recursive: true,
+      force: true,
+    });
+    const malformedConfig = readJson(configFile);
+    malformedConfig.schema_version = 999;
+    malformedConfig.onboarding.status = null;
+    writeJson(configFile, malformedConfig);
+    const malformedDoctor = spawnSync(
+      process.execPath,
+      [PACKAGE_CLI, "doctor", "--target", fixture.directory, "--human"],
+      { encoding: "utf8", shell: false },
+    );
+    assert.equal(malformedDoctor.status, 1, malformedDoctor.stderr);
+    assert.match(malformedDoctor.stdout, /Needs attention\./);
+    assert.match(
+      malformedDoctor.stdout,
+      /project configuration is missing or invalid/,
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("guided configuration enforces safe provider combinations", () => {
   const fixture = temporaryProject();
   try {

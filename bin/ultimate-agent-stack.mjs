@@ -117,6 +117,7 @@ const MERGE_MODES = new Set([
   "human_approval_required",
   "policy_authorized",
 ]);
+const NO_PROJECT_CHECKS_ERROR = "no project quality checks configured";
 const CONFIGURATION_PRESETS = Object.freeze({
   simple: Object.freeze({
     profile: "standard",
@@ -1217,7 +1218,7 @@ function validateConfig(config, target = undefined) {
     }
   });
   if (config.quality.require_project_checks !== false && checks.length === 0) {
-    errors.push("no project quality checks configured");
+    errors.push(NO_PROJECT_CHECKS_ERROR);
   }
   if (
     !Array.isArray(config.lock_artifacts) ||
@@ -1960,8 +1961,20 @@ function isGitRepository(target) {
 
 function commandDoctor(target) {
   const reports = [];
-  const report = (name, ok, detail, severity = "required") => {
-    reports.push({ name, ok, detail, severity });
+  const report = (
+    name,
+    ok,
+    detail,
+    severity = "required",
+    code = undefined,
+  ) => {
+    reports.push({
+      name,
+      ok,
+      detail,
+      severity,
+      ...(code === undefined ? {} : { code }),
+    });
   };
   const installation = loadInstallation(target);
   report(
@@ -1991,7 +2004,17 @@ function commandDoctor(target) {
   } else {
     const config = loadConfig(target);
     const errors = validateConfig(config, target);
-    report("config", errors.length === 0, errors.length === 0 ? "valid" : errors);
+    report(
+      "config",
+      errors.length === 0,
+      errors.length === 0 ? "valid" : errors,
+      "required",
+      errors.length === 0
+        ? "valid"
+        : errors.length === 1 && errors[0] === NO_PROJECT_CHECKS_ERROR
+          ? "first-baseline-pending"
+          : "invalid",
+    );
     report(
       "onboarding",
       config.onboarding.status === "complete",
@@ -2002,14 +2025,26 @@ function commandDoctor(target) {
             configured_at: config.onboarding.configured_at,
           }
         : `${config.onboarding.status}; complete guided setup with the configure command`,
+      "required",
+      typeof config.onboarding.status === "string"
+        ? config.onboarding.status.replaceAll("_", "-")
+        : "invalid",
     );
     const actualConfigurationHash = configurationHash(config);
+    const configurationApproved =
+      config.safety.approved_configuration_hash === actualConfigurationHash;
     report(
       "configuration-approval",
-      config.safety.approved_configuration_hash === actualConfigurationHash,
-      config.safety.approved_configuration_hash === actualConfigurationHash
+      configurationApproved,
+      configurationApproved
         ? `approved ${config.safety.configuration_approved_at}`
         : "provider, interaction, autonomy, or profile choices changed or have not been approved",
+      "required",
+      configurationApproved
+        ? "approved"
+        : config.safety.approved_configuration_hash === null
+          ? "not-approved"
+          : "changed",
     );
     const capabilities = commandCapabilities(target);
     const reviewProvider = config.capabilities.review.provider;
@@ -2062,12 +2097,19 @@ function commandDoctor(target) {
         : parallelErrors,
     );
     const actualHash = checksHash(config.quality.checks, target);
+    const checksApproved = config.safety.approved_checks_hash === actualHash;
     report(
       "check-approval",
-      config.safety.approved_checks_hash === actualHash,
-      config.safety.approved_checks_hash === actualHash
+      checksApproved,
+      checksApproved
         ? `approved ${config.safety.approved_at}`
         : "commands changed or have not been reviewed",
+      "required",
+      checksApproved
+        ? "approved"
+        : config.safety.approved_checks_hash === null
+          ? "not-approved"
+          : "changed",
     );
     for (const check of config.quality.checks) {
       report(
@@ -2083,7 +2125,18 @@ function commandDoctor(target) {
     projectExists(target, "AGENTS.md"),
     "AGENTS.md",
   );
-  report("git", isGitRepository(target), "Git repository");
+  const gitReady = isGitRepository(target);
+  report(
+    "git",
+    gitReady,
+    "Git repository",
+    "required",
+    gitReady
+      ? "repository"
+      : projectExists(target, ".git")
+        ? "invalid"
+        : "not-initialized",
+  );
   report(
     "github-cli",
     executableExists(target, "gh"),
@@ -2118,6 +2171,25 @@ function formatDoctorHuman(result) {
   const setupOnly =
     failures.length > 0 &&
     failures.every((report) => setupFailureNames.has(report.name));
+  const firstBaselineFailureCodes = new Map([
+    ["config", "first-baseline-pending"],
+    ["onboarding", "pending"],
+    ["configuration-approval", "not-approved"],
+    ["check-approval", "not-approved"],
+    ["git", "not-initialized"],
+  ]);
+  const requiredFirstBaselineFailures = [
+    "config",
+    "onboarding",
+    "configuration-approval",
+    "check-approval",
+  ];
+  const firstBaselinePending =
+    requiredFirstBaselineFailures.every((name) => failureNames.has(name)) &&
+    failures.every(
+      (report) =>
+        firstBaselineFailureCodes.get(report.name) === report.code,
+    );
 
   const outcomes = [
     {
@@ -2151,6 +2223,14 @@ function formatDoctorHuman(result) {
         "A safe update proposal is waiting to be reconciled; your customized files were not overwritten.",
       nextAction:
         "Ask your coding agent to review the update proposal, adopt the reconciled files, and run doctor again.",
+    },
+    {
+      matches: firstBaselinePending,
+      status: "Almost ready.",
+      explanation:
+        "Ultimate Agent Stack is installed, but this project does not have its first quality-check baseline yet.",
+      nextAction:
+        'Tell your coding agent: "Create the first project checks, finish Ultimate Agent Stack setup, and run doctor again." You do not need to edit configuration files yourself.',
     },
     {
       matches: setupOnly,

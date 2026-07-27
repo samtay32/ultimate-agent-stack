@@ -4,6 +4,15 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ## Unreleased
 
+### Fixed
+
+- `doctor --human` now treats an otherwise intact, newly initialized empty
+  project with no first quality-check baseline as **Almost ready** and tells the
+  coding agent to create that baseline. Machine-readable validation, nonzero
+  exit status, check approval, and Git requirements remain fail-closed.
+  Machine-readable doctor reasons keep stale approvals and invalid Git state
+  from being mistaken for ordinary first-time setup.
+
 ## 0.5.0 - 2026-07-26
 
 ### Added
