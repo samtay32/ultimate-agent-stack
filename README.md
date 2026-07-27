@@ -88,10 +88,12 @@ flowchart LR
     B --> L["Locked intent"]
     L --> V["Small working slices"]
     V --> T["Project tests and checks"]
-    T --> R["Independent review"]
+    T --> Q{"Independent review required?"}
+    Q -- "Yes" --> R["Independent review"]
     R --> F{"Valid finding?"}
     F -- "Yes" --> V
     F -- "No" --> D["Merge-ready result + evidence"]
+    Q -- "No" --> D
 ```
 
 The workflow scales with risk. A small local tool gets a short brief. A public,
