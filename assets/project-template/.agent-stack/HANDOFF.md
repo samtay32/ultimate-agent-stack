@@ -6,7 +6,8 @@ This repository uses Ultimate Agent Stack.
 
 1. Read `AGENTS.md`, `.agent-stack/core-policy.json`,
    `.agent-stack/config.json`, any valid `.agent-stack/CHECKPOINT.md`, and
-   relevant existing project documentation.
+   locked artifacts under `.agent-stack/artifacts/`, the current diff, and
+   relevant tests and project documentation.
 2. Acquire or resume the one Project Steward lease and load continuity:
 
    ```bash
@@ -31,11 +32,14 @@ This repository uses Ultimate Agent Stack.
    production release protection, external data, external memory, or delegated
    merge authority, recommend the `simple` preset. Use advanced configuration
    when repository evidence requires stronger or external capabilities.
-4. Ask the memory decision in plain language. Recommend repository-only memory
-   for a short or simple project. Recommend optional project-scoped local
-   GBrain for a long-running build likely to cross conversations. Explain that
-   repository checkpoints remain authoritative and work still resumes when
-   GBrain is unavailable. If approved, run:
+4. If onboarding is pending, the approved memory/provider profile is missing,
+   or that profile changed, ask the memory decision in plain language.
+   Otherwise reuse the stored choice without asking again. Recommend
+   repository-only memory for a short or simple project. Recommend optional
+   project-scoped local GBrain for a long-running build likely to cross
+   conversations. Explain that repository checkpoints remain authoritative and
+   work still resumes when GBrain is unavailable. If a new decision is required
+   and GBrain is approved, run:
 
    ```bash
    node .agent-stack/bin/agent-stack.mjs memory-setup --harness HARNESS
@@ -44,7 +48,9 @@ This repository uses Ultimate Agent Stack.
    Follow its guarded plan, merge rather than overwrite harness configuration,
    then confirm the live result with `doctor`.
 5. If checks were newly detected or changed, inspect their definitions in the
-   project manifests. Reject shell or destructive checks. Then run:
+   project manifests. Reject direct shell interpreters or destructive
+   executables in command arrays; package scripts may invoke a shell, so inspect
+   their script bodies before approval. Then run:
 
    ```bash
    node .agent-stack/bin/agent-stack.mjs approve-checks \

@@ -3,13 +3,11 @@
 import {
   accessSync,
   chmodSync,
-  closeSync,
   constants as fsConstants,
   existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
-  openSync,
   readFileSync,
   readdirSync,
   realpathSync,
@@ -102,7 +100,7 @@ const PACKAGE_MANAGERS = new Set([
   "yarn",
   "yarn.cmd",
 ]);
-const SAFE_ENVIRONMENT_NAMES = [
+const SAFE_ENVIRONMENT_NAMES = Object.freeze([
   "COLORTERM",
   "ComSpec",
   "LANG",
@@ -114,7 +112,7 @@ const SAFE_ENVIRONMENT_NAMES = [
   "TERM",
   "TZ",
   "WINDIR",
-];
+]);
 const TOOLCHAIN_ENVIRONMENT_NAMES = [
   "ANDROID_HOME",
   "ANDROID_SDK_ROOT",
@@ -1972,6 +1970,7 @@ function runGbrain(target, args, timeout = 30_000) {
     ok: result.status === 0 && !timedOut,
     status: timedOut ? 124 : (result.status ?? 1),
     ...(timedOut ? { reason: "timeout" } : {}),
+    raw_stdout: result.stdout ?? "",
     stdout: redact(result.stdout ?? "", 24_000),
     stderr: redact(result.stderr ?? "", 4_000),
   };
@@ -1987,7 +1986,10 @@ function parseProviderJson(result, label) {
     };
   }
   try {
-    return { ok: true, value: JSON.parse(result.stdout.trim()) };
+    return {
+      ok: true,
+      value: JSON.parse((result.raw_stdout ?? result.stdout).trim()),
+    };
   } catch {
     return {
       ok: false,
@@ -2085,7 +2087,9 @@ function commandMemoryHealth(target, suppliedConfig = undefined) {
         databaseResult.reason,
     };
   }
-  const databasePath = databaseResult.stdout.trim();
+  const databasePath = (
+    databaseResult.raw_stdout ?? databaseResult.stdout
+  ).trim();
   if (
     databasePath.length === 0 ||
     !isAbsolute(databasePath) ||
@@ -3304,23 +3308,61 @@ function withCoordinatorMutex(target, operation) {
     "coordinator mutex",
   );
   mkdirSync(dirname(mutex), { recursive: true });
+  const marker = `${stableJson({
+    pid: process.pid,
+    created_at: utcTimestamp(),
+    nonce: randomBytes(12).toString("hex"),
+  })}\n`;
+  const createMutex = () => {
+    writeFileSync(mutex, marker, {
+      encoding: "utf8",
+      flag: "wx",
+      mode: 0o600,
+    });
+  };
   const openMutex = () => {
     try {
-      return openSync(mutex, "wx", 0o600);
+      createMutex();
+      return;
     } catch (error) {
       if (error.code === "EEXIST") {
         let age;
+        let observedMarker;
         try {
+          observedMarker = readFileSync(mutex, "utf8");
           age = Date.now() - statSync(mutex).mtimeMs;
         } catch (statError) {
           if (statError.code === "ENOENT") {
-            return openSync(mutex, "wx", 0o600);
+            createMutex();
+            return;
           }
           throw statError;
         }
         if (age > COORDINATOR_MUTEX_STALE_MS) {
-          unlinkSync(mutex);
-          return openSync(mutex, "wx", 0o600);
+          let currentMarker;
+          try {
+            currentMarker = readFileSync(mutex, "utf8");
+          } catch (readError) {
+            if (readError.code === "ENOENT") {
+              createMutex();
+              return;
+            }
+            throw readError;
+          }
+          if (currentMarker === observedMarker) {
+            try {
+              unlinkSync(mutex);
+              createMutex();
+              return;
+            } catch (reclaimError) {
+              if (
+                reclaimError.code !== "ENOENT" &&
+                reclaimError.code !== "EEXIST"
+              ) {
+                throw reclaimError;
+              }
+            }
+          }
         }
       }
       if (error.code === "EEXIST") {
@@ -3331,13 +3373,18 @@ function withCoordinatorMutex(target, operation) {
       throw error;
     }
   };
-  const descriptor = openMutex();
-  closeSync(descriptor);
+  openMutex();
   try {
     return operation();
   } finally {
-    if (existsSync(mutex)) {
-      unlinkSync(mutex);
+    try {
+      if (readFileSync(mutex, "utf8") === marker) {
+        unlinkSync(mutex);
+      }
+    } catch (error) {
+      if (error.code !== "ENOENT") {
+        throw error;
+      }
     }
   }
 }
@@ -3928,21 +3975,40 @@ function commandStatus(target) {
   const actualConfigurationHash = config
     ? configurationHash(config)
     : null;
-  const checkpoint = projectExists(
-    target,
-    CHECKPOINT_PATH,
-    "project checkpoint",
-  )
-    ? loadCheckpoint(target)
-    : null;
-  const coordinator = publicCoordinator(readCoordinator(target));
+  let checkpoint = null;
+  try {
+    const loadedCheckpoint = projectExists(
+      target,
+      CHECKPOINT_PATH,
+      "project checkpoint",
+    )
+      ? loadCheckpoint(target)
+      : null;
+    checkpoint = loadedCheckpoint
+      ? {
+          id: loadedCheckpoint.checkpoint_id,
+          status: loadedCheckpoint.status,
+          updated_at: loadedCheckpoint.updated_at,
+        }
+      : null;
+  } catch (error) {
+    checkpoint = { error: error.message };
+  }
+  let coordinator;
+  try {
+    coordinator = publicCoordinator(readCoordinator(target));
+  } catch (error) {
+    coordinator = { error: error.message };
+  }
   return {
     ok:
       Boolean(installation && config) &&
       pending.length === 0 &&
       drift.length === 0 &&
       config.onboarding.status === "complete" &&
-      config.safety.approved_configuration_hash === actualConfigurationHash,
+      config.safety.approved_configuration_hash === actualConfigurationHash &&
+      !checkpoint?.error &&
+      !coordinator?.error,
     package_available: { name: PACKAGE_NAME, version: PACKAGE_VERSION },
     installed: installation?.package ?? null,
     upgrade_available:
@@ -3959,13 +4025,7 @@ function commandStatus(target) {
       Boolean(config) &&
       config.safety?.approved_configuration_hash === actualConfigurationHash,
     active_lock: state.active_lock?.locked_at ?? null,
-    checkpoint: checkpoint
-      ? {
-          id: checkpoint.checkpoint_id,
-          status: checkpoint.status,
-          updated_at: checkpoint.updated_at,
-        }
-      : null,
+    checkpoint,
     coordinator,
   };
 }
@@ -3978,8 +4038,20 @@ function commandStart(target, idea, coordinatorToken = undefined) {
     );
   }
   const config = loadConfig(target);
-  const checkpoint = loadCheckpoint(target);
   const coordinator = acquireCoordinator(target, coordinatorToken);
+  let checkpoint;
+  try {
+    checkpoint = loadCheckpoint(target);
+  } catch (error) {
+    return {
+      ok: false,
+      phase: "checkpoint-recovery",
+      error: error.message,
+      recovery:
+        "Preserve the invalid checkpoint if forensic evidence is needed, then use the checkpoint command with this coordinator token to replace it atomically.",
+      coordinator,
+    };
+  }
   const memoryHealth = testConfiguredMemory(
     target,
     config,
@@ -4400,6 +4472,7 @@ export {
   PROJECT_CLI_PATH,
   REVIEW_RECEIPT_PATH,
   REVIEW_WORKFLOW_PATH,
+  SAFE_ENVIRONMENT_NAMES,
   StackError,
   checksHash,
   commandCheckpoint,

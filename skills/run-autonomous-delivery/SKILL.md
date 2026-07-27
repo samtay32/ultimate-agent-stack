@@ -71,6 +71,11 @@ Do not say "done" until all applicable conditions hold:
     lease, then state the outcome, PR, evidence, decisions, residual risks, and
     only actions requiring human authority.
 
+Before any destructive, irreversible, credential, financial, deployment,
+merge, or publication action, pause and obtain explicit human confirmation.
+The answer "use the recommendation" never authorizes one of these high-impact
+operations.
+
 ## Control Rules
 
 - Make reasonable, reversible, evidence-backed implementation choices without interrupting the user.

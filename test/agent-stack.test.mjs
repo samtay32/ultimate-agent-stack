@@ -8,6 +8,7 @@ import {
   readFileSync,
   rmSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { platform, tmpdir } from "node:os";
@@ -193,18 +194,19 @@ function installFakeGbrain(directory) {
   const toolDirectory = join(directory, "tool-bin");
   const executable = join(toolDirectory, "gbrain");
   mkdirSync(toolDirectory, { recursive: true });
+  writeJson(join(toolDirectory, "package.json"), { type: "commonjs" });
   writeFileSync(
     executable,
     `#!/usr/bin/env node
-import fs from "node:fs";
-import path from "node:path";
+const fs = require("node:fs");
+const path = require("node:path");
 const args = process.argv.slice(2);
 const home = process.env.GBRAIN_HOME;
 const cache = path.join(home, "checkpoint-cache.json");
 if (args[0] === "config" && args[1] === "get" && args[2] === "database_path") {
   process.stdout.write(path.join(home, "brain.pglite") + "\\n");
 } else if (args[0] === "doctor") {
-  process.stdout.write(JSON.stringify({status:"healthy",health_score:100}) + "\\n");
+  process.stdout.write(JSON.stringify({status:"healthy",health_score:100,padding:"x".repeat(25000)}) + "\\n");
 } else if (args[0] === "call" && args[1] === "get_brain_identity") {
   process.stdout.write(JSON.stringify({version:"test",engine:"pglite",page_count:1,chunk_count:1}) + "\\n");
 } else if (args[0] === "capture") {
@@ -427,7 +429,11 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
       ],
       { encoding: "utf8", shell: false },
     );
-    assert.equal(restrictedGbrainLauncher.status, 2);
+    assert.equal(
+      restrictedGbrainLauncher.status,
+      2,
+      restrictedGbrainLauncher.stderr,
+    );
     assert.match(restrictedGbrainLauncher.stderr, /only permits/);
 
     const initialDoctor = commandDoctor(fixture.directory);
@@ -520,8 +526,17 @@ test("one active Project Steward owns a checkout and stale leases recover", () =
   const fixture = temporaryProject();
   try {
     configureFixture(fixture.directory);
+    const mutexFile = join(
+      fixture.directory,
+      ".agent-stack",
+      "coordinator.mutex",
+    );
+    writeFileSync(mutexFile, "abandoned-holder\n", "utf8");
+    const staleTime = new Date(Date.now() - 60_000);
+    utimesSync(mutexFile, staleTime, staleTime);
 
     const first = commandStart(fixture.directory, "Continue the project");
+    assert.equal(existsSync(mutexFile), false);
     const token = first.coordinator.coordinator_token;
     assert.equal(first.coordinator.active, true);
     assert.ok(token.length >= 32);
@@ -628,9 +643,39 @@ test("checkpoint writes a validated handoff and start resumes it", () => {
     const tampered = readJson(checkpointFile);
     tampered.summary = "Manually altered";
     writeJson(checkpointFile, tampered);
-    assert.throws(
-      () => commandStart(fixture.directory, "Use tampered state", token),
+    const recovery = commandStart(
+      fixture.directory,
+      "Use tampered state",
+      token,
+    );
+    assert.equal(recovery.ok, false);
+    assert.equal(recovery.phase, "checkpoint-recovery");
+    assert.match(recovery.error, /integrity check failed/);
+    assert.equal(recovery.coordinator.coordinator_token, token);
+    assert.match(
+      commandStatus(fixture.directory).checkpoint.error,
       /integrity check failed/,
+    );
+
+    commandCheckpoint(fixture.directory, {
+      objective: "Recover the continuity record",
+      summary: "The invalid checkpoint was safely replaced",
+      status: "complete",
+      completed: ["Recreated the deterministic checkpoint"],
+      decisions: ["Preserve the repository checkpoint as authority"],
+      nextSteps: [],
+      blockers: [],
+      evidence: ["package.json"],
+      token,
+    });
+    writeJson(join(fixture.directory, COORDINATOR_PATH), {
+      schema_version: 1,
+    });
+    const corruptLeaseStatus = commandStatus(fixture.directory);
+    assert.equal(corruptLeaseStatus.ok, false);
+    assert.match(
+      corruptLeaseStatus.coordinator.error,
+      /Invalid .agent-stack\/coordinator.json/,
     );
   } finally {
     fixture.cleanup();

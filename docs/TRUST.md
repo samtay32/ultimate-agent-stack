@@ -121,9 +121,9 @@ every possible secret or prove that the supplied summary is true.
 
 For project-scoped local GBrain, the CLI uses a checkout-local home, a
 restricted `serve` launcher, a scrubbed environment, and live path, doctor, and
-identity checks. Checkpoint mirroring fails open to the repository. A local
-check does not prove a remote organization's authorization boundary, and MCP
-client configuration still relies on the coding harness.
+identity checks. Checkpoint mirroring falls back to the authoritative repository
+checkpoint. A local check does not prove a remote organization's authorization
+boundary, and MCP client configuration still relies on the coding harness.
 
 ### Package release
 

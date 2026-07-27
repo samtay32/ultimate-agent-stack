@@ -104,8 +104,8 @@ and the baseline.
 
 - `gh` or a connected GitHub app for PR work;
 - CodeRabbit or an allowed GitHub human for adversarial PR review;
-- GBrain for optional scoped cross-conversation or cross-project knowledge,
-  with repository checkpoint fallback;
+- GBrain for optional project-scoped cross-conversation knowledge, with
+  repository checkpoint fallback;
 - Treehouse for reusable isolated worktrees;
 - no-mistakes for an additional local push gate;
 - AXI wrappers for token-efficient structured tool output;

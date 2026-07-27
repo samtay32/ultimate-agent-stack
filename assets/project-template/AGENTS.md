@@ -7,9 +7,10 @@ Deliver correct, maintainable changes from intent through verified review closur
 ## Source of Truth
 
 Before editing, read this file, nested instruction files,
-`.agent-stack/config.json`, any valid `.agent-stack/CHECKPOINT.md`, locked
-artifacts under `.agent-stack/artifacts/`, the current diff, and relevant tests
-and documentation.
+`.agent-stack/core-policy.json`, `.agent-stack/config.json`, any valid
+`.agent-stack/CHECKPOINT.md`, locked artifacts under
+`.agent-stack/artifacts/`, the current diff, and relevant tests and
+documentation.
 
 Project-specific instructions outrank generic stack guidance. Preserve established architecture, terminology, package managers, formatting, and deployment policy.
 
