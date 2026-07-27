@@ -1,6 +1,6 @@
 {
   "name": "ultimate-agent-stack",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "A guided, npm-distributed operating system with replaceable review and knowledge providers.",
   "author": {
     "name": "Samson Taylor"

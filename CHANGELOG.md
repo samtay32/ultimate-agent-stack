@@ -4,6 +4,48 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ## Unreleased
 
+## 0.6.0 - 2026-07-27
+
+### Added
+
+- Quality checks can use explicitly approved non-secret environment variables
+  through `quality.environment.allow`. Names associated with credentials or
+  runtime injection remain forbidden, and approved values are fingerprinted
+  for approval drift while being redacted from evidence.
+- Fresh installs now include the primary Claude entry skill and conservative
+  native worker adapter by default while preserving marker detection and
+  legacy `--claude` compatibility.
+- `docs/TRUST.md` maps CLI-enforced controls separately from agent instructions
+  and documents containment, executable-check, parallel-work, review, release,
+  and account-security boundaries.
+
+### Changed
+
+- Verification preserves the minimum safe toolchain environment and reuses
+  existing cache-only directories without inheriting ordinary credentials.
+- Human doctor output now includes Git initialization when Git and the first
+  quality baseline are both missing, and runtime diagnostics distinguish
+  output-capture overflow from ordinary command failure.
+- The README is now a shorter plain-language front door for non-coders and
+  coders, with direct onboarding, conditional independent review, replaceable
+  adapters, honest safety boundaries, and links to the full technical record.
+- Package validation relies on packed-tarball duplicate detection instead of an
+  unreliable npm `files` negation pattern.
+
+### Security
+
+- Direct inline-evaluation commands, sensitive environment names,
+  execution-control variables, and non-executable command paths are rejected.
+  Changed approved environment values invalidate approval before checks run.
+
+### Upgrade impact
+
+This is a compatible minor release. Existing project configuration remains
+valid, and `quality.environment.allow` is optional and approval-bound. Updated
+protected CLI behavior and managed guidance are installed through the existing
+proposal and reconciliation flow; customized files are not silently
+overwritten. The configuration schema remains at version 2.
+
 ## 0.5.1 - 2026-07-26
 
 ### Fixed
