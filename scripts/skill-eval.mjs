@@ -48,20 +48,32 @@ function normalizePath(path) {
   return relative(PACKAGE_ROOT, path).split(sep).join("/");
 }
 
+function parseSkillMetadata(content, path = "SKILL.md") {
+  const frontmatter = content.match(
+    /^---\r?\n([\s\S]*?)\r?\n---\r?\n/,
+  );
+  const name = frontmatter?.[1]
+    .match(/^name:\s*(.+)\r?$/m)?.[1]
+    ?.trim();
+  const description = frontmatter?.[1]
+    .match(/^description:\s*(.+)\r?$/m)?.[1]
+    ?.trim();
+  if (!name || !description) {
+    throw new Error(`Missing skill metadata in ${path}`);
+  }
+  return { name, description };
+}
+
 function skillCatalog() {
   const catalog = new Map();
   for (const path of listFiles(SKILLS_ROOT).filter((item) =>
     item.endsWith(`${sep}SKILL.md`),
   )) {
     const content = readFileSync(path, "utf8");
-    const frontmatter = content.match(/^---\n([\s\S]*?)\n---\n/);
-    const name = frontmatter?.[1].match(/^name:\s*(.+)$/m)?.[1]?.trim();
-    const description = frontmatter?.[1]
-      .match(/^description:\s*(.+)$/m)?.[1]
-      ?.trim();
-    if (!name || !description) {
-      throw new Error(`Missing skill metadata in ${normalizePath(path)}`);
-    }
+    const { name, description } = parseSkillMetadata(
+      content,
+      normalizePath(path),
+    );
     if (catalog.has(name)) {
       throw new Error(`Duplicate skill name: ${name}`);
     }
@@ -105,10 +117,18 @@ function behaviorSurfaceEntries() {
 }
 
 function behaviorSurfaceHash() {
+  return hashBehaviorEntries(behaviorSurfaceEntries());
+}
+
+function hashBehaviorEntries(entries) {
   const hash = createHash("sha256");
-  for (const [path, content] of behaviorSurfaceEntries()) {
+  for (const [path, content] of entries) {
     hash.update(`${path}\0`);
-    hash.update(content);
+    hash.update(
+      Buffer.isBuffer(content)
+        ? content.toString("utf8").replace(/\r\n/g, "\n")
+        : String(content).replace(/\r\n/g, "\n"),
+    );
     hash.update("\0");
   }
   return `sha256:${hash.digest("hex")}`;
@@ -477,6 +497,8 @@ if (isEntryPoint) {
 export {
   behaviorSurfaceHash,
   buildScaffold,
+  hashBehaviorEntries,
+  parseSkillMetadata,
   validateRunRecord,
   validateScenarioCatalog,
 };

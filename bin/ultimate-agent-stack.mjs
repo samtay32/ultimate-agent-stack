@@ -617,9 +617,9 @@ function listFiles(root) {
   return files.sort();
 }
 
-function executableExists(target, executable) {
+function resolveExecutable(target, executable) {
   if (!executable) {
-    return false;
+    return null;
   }
   if (
     executable.startsWith(".") ||
@@ -627,19 +627,28 @@ function executableExists(target, executable) {
     executable.includes("\\")
   ) {
     try {
-      accessSync(
-        projectFile(target, executable, "quality executable"),
-        fsConstants.X_OK,
+      const candidate = projectFile(
+        target,
+        executable,
+        "quality executable",
       );
-      return true;
+      accessSync(candidate, fsConstants.X_OK);
+      return candidate;
     } catch {
-      return false;
+      return null;
     }
   }
-  const extensions =
-    platform() === "win32"
-      ? (process.env.PATHEXT ?? ".EXE;.CMD;.BAT;.COM").split(";")
-      : [""];
+  const windowsExtensions = (
+    process.env.PATHEXT ?? ".EXE;.CMD;.BAT;.COM"
+  ).split(";");
+  const hasWindowsExtension =
+    platform() === "win32" &&
+    windowsExtensions.some((extension) =>
+      executable.toLowerCase().endsWith(extension.toLowerCase()),
+    );
+  const extensions = platform() === "win32"
+    ? (hasWindowsExtension ? [""] : windowsExtensions)
+    : [""];
   for (const directory of (process.env.PATH ?? "").split(delimiter)) {
     if (!directory) {
       continue;
@@ -648,13 +657,54 @@ function executableExists(target, executable) {
       const candidate = join(directory, `${executable}${extension}`);
       try {
         accessSync(candidate, fsConstants.X_OK);
-        return true;
+        return candidate;
       } catch {
         // Continue searching PATH for an executable candidate.
       }
     }
   }
-  return false;
+  return null;
+}
+
+function executableExists(target, executable) {
+  return resolveExecutable(target, executable) !== null;
+}
+
+function spawnPortable(target, executable, args, options) {
+  const resolved = resolveExecutable(target, executable) ?? executable;
+  if (
+    platform() !== "win32" ||
+    !/\.(?:bat|cmd)$/i.test(resolved)
+  ) {
+    return spawnSync(resolved, args, options);
+  }
+  const commandParts = [resolved, ...args];
+  if (
+    commandParts.some(
+      (value) => typeof value !== "string" || /[\0\r\n"%]/.test(value),
+    )
+  ) {
+    return {
+      status: null,
+      stdout: "",
+      stderr: "",
+      error: Object.assign(
+        new Error("unsafe Windows batch command argument"),
+        { code: "EINVAL" },
+      ),
+    };
+  }
+  const commandLine = commandParts
+    .map((value) => `"${value}"`)
+    .join(" ");
+  const commandInterpreter =
+    process.env.ComSpec ??
+    join(process.env.SystemRoot ?? "C:\\Windows", "System32", "cmd.exe");
+  return spawnSync(
+    commandInterpreter,
+    ["/d", "/s", "/v:off", "/c", commandLine],
+    options,
+  );
 }
 
 function addCheck(checks, id, argv, timeoutSeconds = 900) {
@@ -2349,7 +2399,7 @@ function gbrainEnvironment(target) {
 }
 
 function runGbrain(target, args, timeout = 30_000) {
-  const result = spawnSync("gbrain", args, {
+  const result = spawnPortable(target, "gbrain", args, {
     cwd: target,
     encoding: "utf8",
     env: gbrainEnvironment(target),
@@ -3523,14 +3573,19 @@ function runCheck(target, check, config) {
     check,
     checkEnvironment(target, config),
   );
-  const processResult = spawnSync(check.argv[0], check.argv.slice(1), {
-    cwd: target,
-    encoding: "utf8",
-    env: environment,
-    maxBuffer: CHECK_OUTPUT_LIMIT_BYTES,
-    shell: false,
-    timeout: (check.timeout_seconds ?? 900) * 1000,
-  });
+  const processResult = spawnPortable(
+    target,
+    check.argv[0],
+    check.argv.slice(1),
+    {
+      cwd: target,
+      encoding: "utf8",
+      env: environment,
+      maxBuffer: CHECK_OUTPUT_LIMIT_BYTES,
+      shell: false,
+      timeout: (check.timeout_seconds ?? 900) * 1000,
+    },
+  );
   const output = [processResult.stdout, processResult.stderr]
     .filter(Boolean)
     .join("\n")

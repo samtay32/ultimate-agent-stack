@@ -16,7 +16,19 @@ import { fileURLToPath } from "node:url";
 
 const SCRIPT_FILE = fileURLToPath(import.meta.url);
 const PACKAGE_ROOT = resolve(dirname(SCRIPT_FILE), "..");
-const NPM_EXECUTABLE = process.platform === "win32" ? "npm.cmd" : "npm";
+
+function npmInvocation(args) {
+  const npmCli = [
+    process.env.npm_execpath,
+    join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
+  ].find((candidate) => candidate && existsSync(candidate));
+  return npmCli
+    ? { command: process.execPath, args: [npmCli, ...args] }
+    : {
+        command: process.platform === "win32" ? "npm.cmd" : "npm",
+        args,
+      };
+}
 
 function run(command, args, cwd) {
   const result = spawnSync(command, args, {
@@ -34,11 +46,15 @@ function run(command, args, cwd) {
   return result.stdout;
 }
 
+function runNpm(args, cwd) {
+  const invocation = npmInvocation(args);
+  return run(invocation.command, invocation.args, cwd);
+}
+
 function main() {
   const sandbox = mkdtempSync(join(tmpdir(), "ultimate-agent-stack-pack-"));
   try {
-    const packOutput = run(
-      NPM_EXECUTABLE,
+    const packOutput = runNpm(
       ["pack", "--json", "--pack-destination", sandbox],
       PACKAGE_ROOT,
     );
@@ -65,7 +81,7 @@ function main() {
           name: "packed-smoke-fixture",
           private: true,
           scripts: {
-            test: "node --test tests/*.test.mjs",
+            test: "node --test tests",
           },
         },
         null,
@@ -82,8 +98,7 @@ function main() {
         "",
       ].join("\n"),
     );
-    run(
-      NPM_EXECUTABLE,
+    runNpm(
       [
         "exec",
         "--yes",

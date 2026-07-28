@@ -58,7 +58,8 @@ This command:
 The behavioral surface includes skills and their references, entry prompts,
 installed project instructions, native harness adapters, core policy, plugin
 behavior metadata, and the scenario catalog. The package version is excluded,
-so a metadata-only release does not invalidate otherwise identical evidence.
+and text line endings are normalized, so a metadata-only release or equivalent
+Windows checkout does not invalidate otherwise identical evidence.
 
 `npm run release:check` runs this contract gate. Passing it is necessary but is
 not behavioral proof.
