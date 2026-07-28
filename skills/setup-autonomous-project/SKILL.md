@@ -105,7 +105,7 @@ Configure the repository without erasing its conventions. Setup is complete only
 
    ```bash
    node .agent-stack/bin/agent-stack.mjs detect --write
-   npx -y ultimate-agent-stack@latest doctor
+   node .agent-stack/bin/agent-stack.mjs doctor
    ```
 
    Inspect every configured argument array and any delegated package-script

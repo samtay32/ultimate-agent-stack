@@ -54,7 +54,7 @@ Coders and maintainers can run the CLI directly:
 npx -y ultimate-agent-stack@latest init
 
 # See whether setup and safety checks are ready
-npx -y ultimate-agent-stack@latest doctor --human
+node .agent-stack/bin/agent-stack.mjs doctor --human
 
 # Update safely later
 npx -y ultimate-agent-stack@latest upgrade
@@ -267,6 +267,7 @@ videos, platform references, and tradeoffs:
 |---|---|
 | [Operating Manual](docs/OPERATING_MANUAL.md) | Plain-language setup, daily use, recovery, and updates |
 | [Trust and Safety Boundaries](docs/TRUST.md) | Exact enforcement, limitations, and threat model |
+| [Security Policy](SECURITY.md) | Private vulnerability reporting and supported-version policy |
 | [Architecture](docs/ARCHITECTURE.md) | Control flow, state, planes, and component design |
 | [Skill Stack](docs/SKILL_STACK.md) | Skill roles and harness-specific behavior |
 | [Adapters](docs/ADAPTERS.md) | Review and knowledge provider configuration |

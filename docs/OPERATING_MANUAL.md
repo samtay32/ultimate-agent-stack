@@ -376,7 +376,7 @@ Updates never replace an existing differing managed file or delete removed
 package files. The agent resolves proposals, then runs:
 
 ```bash
-npx -y ultimate-agent-stack@latest doctor --human
+node .agent-stack/bin/agent-stack.mjs doctor --human
 node .agent-stack/bin/agent-stack.mjs verify
 ```
 

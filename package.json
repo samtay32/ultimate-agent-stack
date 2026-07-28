@@ -9,6 +9,7 @@
   "files": [
     ".codex-plugin/",
     "CHANGELOG.md",
+    "SECURITY.md",
     "assets/",
     "bin/",
     "docs/",

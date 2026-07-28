@@ -78,8 +78,20 @@ const closeReviewSkill = readFileSync(
   join(PACKAGE_ROOT, "skills/close-review-loop/SKILL.md"),
   "utf8",
 );
+const runDeliverySkill = readFileSync(
+  join(PACKAGE_ROOT, "skills/run-autonomous-delivery/SKILL.md"),
+  "utf8",
+);
+const setupProjectSkill = readFileSync(
+  join(PACKAGE_ROOT, "skills/setup-autonomous-project/SKILL.md"),
+  "utf8",
+);
 const githubLoop = readFileSync(
   join(PACKAGE_ROOT, "docs/GITHUB_LOOP.md"),
+  "utf8",
+);
+const operatingManual = readFileSync(
+  join(PACKAGE_ROOT, "docs/OPERATING_MANUAL.md"),
   "utf8",
 );
 const starterPrompt = readFileSync(
@@ -174,6 +186,31 @@ test("repository and installed-project CodeRabbit policies stay synchronized", (
   assert.equal(repositoryCodeRabbit, templateCodeRabbit);
   assert.match(repositoryCodeRabbit, /profile: "assertive"/);
   assert.match(repositoryCodeRabbit, /auto_incremental_review: false/);
+});
+
+test("installed doctor guidance is version-bound and directory metadata fits", () => {
+  assert.ok(
+    [...pluginData.interface.shortDescription].length <= 30,
+    "public plugin short description must be 30 characters or fewer",
+  );
+  for (const source of [
+    projectAgents,
+    readme,
+    starterPrompt,
+    operatingManual,
+    runDeliverySkill,
+    setupProjectSkill,
+  ]) {
+    assert.doesNotMatch(
+      source,
+      /ultimate-agent-stack@latest doctor/,
+      "installed projects must not execute mutable latest-tag doctor code",
+    );
+    assert.match(
+      source,
+      /node \.agent-stack\/bin\/agent-stack\.mjs doctor/,
+    );
+  }
 });
 
 test("review closure validates claims and has one disposition vocabulary", () => {
@@ -311,6 +348,11 @@ test("package has no install hooks and guards publication with prepublishOnly", 
     packageData.files.includes("STARTER_PROMPT.md"),
     true,
     "package files must include STARTER_PROMPT.md",
+  );
+  assert.equal(
+    packageData.files.includes("SECURITY.md"),
+    true,
+    "package files must include the private vulnerability reporting policy",
   );
   assert.match(packedSmoke, /packed\[0\]\.files/);
   assert.match(packedSmoke, /duplicate-copy paths/);

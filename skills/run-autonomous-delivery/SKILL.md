@@ -31,8 +31,7 @@ Do not say "done" until all applicable conditions hold:
    task/issue, and latest evidence. Apply
    `$use-project-knowledge` with the configured provider. Continue valid work;
    do not restart finished phases.
-   Run `npx -y ultimate-agent-stack@latest doctor` before material
-   work. If
+   Run `node .agent-stack/bin/agent-stack.mjs doctor` before material work. If
    protected files drifted, proposals remain unresolved, or quality commands
    changed without review, repair setup before proceeding.
 2. **Route by scale.** Use [references/delivery-policy.md](references/delivery-policy.md). Small clear work gets a micro-brief. New systems, migrations, ambiguous UX, and high-risk changes get proportionate shaping.

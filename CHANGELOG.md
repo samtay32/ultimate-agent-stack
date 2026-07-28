@@ -4,6 +4,33 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ## Unreleased
 
+### Added
+
+- A standard private vulnerability reporting policy is included in the
+  repository and published package.
+
+### Changed
+
+- Installed project guidance runs the protected checkout-local CLI for doctor
+  checks instead of executing the mutable npm `latest` tag.
+- Public plugin metadata now fits the final-directory short-description limit.
+
+### Security
+
+- Git quality checks now use subcommand-specific argument allowlists, require
+  external diff and text-conversion isolation, reject output and no-index
+  paths, contain pathspecs, and disable configured pagers and file-system
+  monitors.
+- Terraform formatting is check-only, and Terraform validation accepts only
+  bounded output options.
+
+### Upgrade impact
+
+- Existing custom Git checks may need `--no-ext-diff --no-textconv` and an
+  allowlisted inspection form. Existing Terraform format checks must include
+  `-check`. Inspect the updated command arrays and approve them again; do not
+  weaken the new policy to preserve an unsafe command.
+
 ## 0.7.1 - 2026-07-27
 
 ### Fixed

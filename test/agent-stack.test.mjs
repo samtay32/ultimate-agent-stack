@@ -1677,6 +1677,322 @@ test("inline evaluation checks are rejected in favor of reviewed files", () => {
   }
 });
 
+test("Git inspection checks use subcommand-specific argument allowlists", () => {
+  const accepted = [
+    [
+      "git",
+      "diff",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--check",
+    ],
+    [
+      "git",
+      "diff",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--cached",
+      "--name-only",
+      "HEAD",
+      "--",
+      "src",
+    ],
+    [
+      "git",
+      "log",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--no-patch",
+      "--format=%H",
+      "--max-count=1",
+      "HEAD",
+    ],
+    ["git", "rev-parse", "--verify", "HEAD"],
+    [
+      "git",
+      "show",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--no-patch",
+      "--format=%H",
+      "HEAD",
+    ],
+    [
+      "git",
+      "status",
+      "--porcelain=v1",
+      "--untracked-files=all",
+      "--",
+      ".",
+    ],
+  ];
+  for (const argv of accepted) {
+    const config = safeConfig();
+    config.quality.checks = [
+      {
+        id: "git-inspection",
+        argv,
+        required: true,
+        timeout_seconds: 30,
+      },
+    ];
+    assert.deepEqual(
+      validateConfig(config),
+      [],
+      `expected ${argv.join(" ")} to be accepted`,
+    );
+  }
+
+  const rejected = [
+    ["git", "diff", "--no-ext-diff", "--no-textconv", "--no-index", "a", "b"],
+    [
+      "git",
+      "diff",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--output=/tmp/proof",
+    ],
+    ["git", "diff", "--no-ext-diff", "--textconv", "--check"],
+    ["git", "diff", "--ext-diff", "--no-textconv", "--check"],
+    ["git", "diff", "--check"],
+    [
+      "git",
+      "log",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--output",
+      "/tmp/proof",
+    ],
+    [
+      "git",
+      "log",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--exec=touch /tmp/proof",
+    ],
+    [
+      "git",
+      "log",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--format=%G?",
+    ],
+    ["git", "rev-parse", "--git-path=../../outside"],
+    ["git", "show", "--no-ext-diff", "--no-textconv", "HEAD", "HEAD~1"],
+    ["git", "status", "--porcelain", "../outside"],
+    ["git", "status", "--porcelain", "--", "../outside"],
+  ];
+  for (const argv of rejected) {
+    const config = safeConfig();
+    config.quality.checks = [
+      {
+        id: "git-inspection",
+        argv,
+        required: true,
+        timeout_seconds: 30,
+      },
+    ];
+    assert.notDeepEqual(
+      validateConfig(config),
+      [],
+      `expected ${argv.join(" ")} to be rejected`,
+    );
+  }
+});
+
+test("Terraform checks cannot format files or read arbitrary targets", () => {
+  for (const argv of [
+    ["terraform", "fmt", "-check", "-recursive"],
+    [
+      "terraform",
+      "fmt",
+      "-check",
+      "-diff",
+      "-list=false",
+      "-no-color",
+      "-write=false",
+      ".",
+    ],
+    ["terraform", "validate"],
+    ["terraform", "validate", "-json", "-no-color"],
+  ]) {
+    const config = safeConfig();
+    config.quality.checks = [
+      {
+        id: "terraform",
+        argv,
+        required: true,
+        timeout_seconds: 30,
+      },
+    ];
+    assert.deepEqual(
+      validateConfig(config),
+      [],
+      `expected ${argv.join(" ")} to be accepted`,
+    );
+  }
+
+  for (const argv of [
+    ["terraform", "fmt"],
+    ["terraform", "fmt", "-write=true"],
+    ["terraform", "fmt", "-check", "../outside"],
+    ["terraform", "validate", "-var-file=../../outside.tfvars"],
+    ["terraform", "validate", "../outside"],
+  ]) {
+    const config = safeConfig();
+    config.quality.checks = [
+      {
+        id: "terraform",
+        argv,
+        required: true,
+        timeout_seconds: 30,
+      },
+    ];
+    assert.notDeepEqual(
+      validateConfig(config),
+      [],
+      `expected ${argv.join(" ")} to be rejected`,
+    );
+  }
+});
+
+test("verification rejects Git output attacks before outside files change", () => {
+  const fixture = temporaryProject();
+  const outside = temporaryProject();
+  try {
+    configureFixture(fixture.directory);
+    writeFileSync(join(fixture.directory, "left"), "same\n", "utf8");
+    writeFileSync(join(fixture.directory, "right"), "same\n", "utf8");
+    const existingOutside = join(outside.directory, "existing-proof");
+    const newOutside = join(outside.directory, "new-proof");
+    writeFileSync(existingOutside, "do not truncate\n", "utf8");
+
+    const configFile = join(fixture.directory, CONFIG_PATH);
+    const config = readJson(configFile);
+    config.quality.checks = [
+      {
+        id: "create-outside",
+        argv: [
+          "git",
+          "diff",
+          "--no-index",
+          `--output=${newOutside}`,
+          "left",
+          "right",
+        ],
+        required: true,
+        timeout_seconds: 30,
+      },
+      {
+        id: "truncate-outside",
+        argv: [
+          "git",
+          "diff",
+          "--no-index",
+          `--output=${existingOutside}`,
+          "left",
+          "right",
+        ],
+        required: true,
+        timeout_seconds: 30,
+      },
+    ];
+    config.safety.approved_checks_hash = checksHash(
+      config.quality.checks,
+      fixture.directory,
+      config.quality.environment.allow,
+    );
+    writeJson(configFile, config);
+
+    const verification = commandVerify(fixture.directory);
+    assert.equal(verification.ok, false);
+    assert.match(
+      verification.configuration_errors.join("\n"),
+      /forbids write or execution argument/,
+    );
+    assert.equal(existsSync(newOutside), false);
+    assert.equal(
+      readFileSync(existingOutside, "utf8"),
+      "do not truncate\n",
+    );
+  } finally {
+    fixture.cleanup();
+    outside.cleanup();
+  }
+});
+
+test(
+  "approved Git inspection checks disable configured filesystem monitors",
+  { skip: platform() === "win32" },
+  () => {
+    const fixture = temporaryProject();
+    const outside = temporaryProject();
+    try {
+      configureFixture(fixture.directory);
+      const marker = join(outside.directory, "fsmonitor-ran");
+      const monitor = join(outside.directory, "fsmonitor");
+      writeFileSync(
+        monitor,
+        [
+          "#!/usr/bin/env node",
+          "const fs = require('node:fs');",
+          `fs.writeFileSync(${JSON.stringify(marker)}, 'ran\\n');`,
+          "process.stdout.write('0\\n');",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+      chmodSync(monitor, 0o700);
+      const configured = spawnSync(
+        "git",
+        ["-C", fixture.directory, "config", "core.fsmonitor", monitor],
+        { encoding: "utf8", shell: false },
+      );
+      assert.equal(configured.status, 0, configured.stderr);
+
+      const baseline = spawnSync(
+        "git",
+        ["-C", fixture.directory, "status", "--porcelain=v1"],
+        { encoding: "utf8", shell: false },
+      );
+      assert.equal(baseline.status, 0, baseline.stderr);
+      assert.equal(
+        existsSync(marker),
+        true,
+        "fixture must prove the configured monitor is executable",
+      );
+      rmSync(marker);
+
+      const configFile = join(fixture.directory, CONFIG_PATH);
+      const config = readJson(configFile);
+      config.quality.checks = [
+        {
+          id: "git-status",
+          argv: ["git", "status", "--porcelain=v1"],
+          required: true,
+          timeout_seconds: 30,
+        },
+      ];
+      writeJson(configFile, config);
+      commandApproveChecks(
+        fixture.directory,
+        "Inspected the bounded Git status quality command",
+      );
+
+      const verification = commandVerify(fixture.directory);
+      assert.equal(
+        verification.ok,
+        true,
+        JSON.stringify(verification, null, 2),
+      );
+      assert.equal(existsSync(marker), false);
+    } finally {
+      fixture.cleanup();
+      outside.cleanup();
+    }
+  },
+);
+
 test("environment allowlist accepts names and rejects credential-bearing names", () => {
   const valid = safeConfig();
   valid.quality.environment.allow = ["FEATURE_MODE", "LC_MESSAGES"];
@@ -1692,10 +2008,14 @@ test("environment allowlist accepts names and rejects credential-bearing names",
     "SERVICE_DSN",
     "API_TOKEN",
     "CONNECTION_STRING",
+    "GIT_TRACE",
+    "GIT_WORK_TREE",
     "bad-name",
     "NODE_OPTIONS",
     "PYTHONPATH",
     "JAVA_TOOL_OPTIONS",
+    "TF_CLI_ARGS_fmt",
+    "TF_LOG_PATH",
   ]) {
     const invalid = safeConfig();
     invalid.quality.environment.allow = [name];

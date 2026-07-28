@@ -62,6 +62,18 @@ interpreters, known destructive programs, unsafe package-manager operations,
 write-capable Git commands, and unsafe Docker or Terraform commands are
 rejected.
 
+Git inspection commands use subcommand-specific argument allowlists. Diff,
+show, and log checks must disable external diff helpers and text-conversion
+filters. Output files, no-index comparisons, execution options, unknown flags,
+unbounded revisions, and project-escaping pathspecs are rejected. Git checks
+also run with optional locks, system attributes, pagers, and configured file
+system monitors disabled. Project-approved environment variables cannot inject
+Git or Terraform command configuration.
+
+Terraform formatting must use `-check`; only non-writing formatting flags and
+project-contained targets are accepted. Terraform validation accepts only its
+machine-readable and no-color output flags.
+
 Package scripts are allowed because real projects use them. Their exact bodies
 are included in check approval. Keeping `npm run test` while changing what the
 `test` script does invalidates approval before the changed script can run.
