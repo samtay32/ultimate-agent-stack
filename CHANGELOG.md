@@ -4,6 +4,8 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ## Unreleased
 
+## 0.7.1 - 2026-07-27
+
 ### Fixed
 
 - Review findings now require claim validation against repository evidence
