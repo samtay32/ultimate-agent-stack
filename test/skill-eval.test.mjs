@@ -286,6 +286,17 @@ test("malformed run arrays fail closed with structured findings", () => {
   );
 });
 
+test("malformed scenario expectations fail closed without throwing", () => {
+  const malformedCatalog = structuredClone(catalog);
+  malformedCatalog.scenarios[0].expected = null;
+  const result = validateRunRecord(passingRecord(), malformedCatalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    result.errors.join("\n"),
+    /scenarios\[0\]\.expected must be an object/,
+  );
+});
+
 test("the generated scaffold is not accepted as live evidence", () => {
   const result = validateRunRecord(buildScaffold(catalog), catalog);
   assert.equal(result.ok, false);

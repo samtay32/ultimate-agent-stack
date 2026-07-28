@@ -368,13 +368,13 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
           }
         }
         if (
-          scenario.expected.question === "required" &&
+          scenario?.expected?.question === "required" &&
           observed.asked_clarifying_question !== true
         ) {
           findings.push("required clarifying question was not asked");
         }
         if (
-          scenario.expected.question === "forbidden" &&
+          scenario?.expected?.question === "forbidden" &&
           observed.asked_clarifying_question !== false
         ) {
           findings.push("a clarifying question was forbidden");
