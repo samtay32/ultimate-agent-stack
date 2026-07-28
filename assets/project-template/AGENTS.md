@@ -83,10 +83,11 @@ requires representative evaluations and a reviewed change.
 
 ## Telemetry
 
-Apply `$use-project-telemetry` only when the project has a configured provider
-or the user asks to evaluate an existing telemetry setup. Treat product,
-error, service, and AI telemetry as advisory sensor data. Validate every
-material observation against current repository and deployment evidence.
+Apply `$use-project-telemetry` only when the project has a configured scoped
+provider and the request needs relevant production or operational evidence.
+Treat product, error, service, and AI telemetry as advisory sensor data.
+Validate every material observation against current repository and deployment
+evidence.
 
 Use read-only, project-scoped access. Retrieve bounded aggregates, saved
 queries, issue references, or trace references instead of raw events, sessions,

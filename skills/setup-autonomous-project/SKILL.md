@@ -54,17 +54,9 @@ Configure the repository without erasing its conventions. Setup is complete only
    conversations. Explain that GBrain is optional, the repository checkpoint
    remains authoritative, and work still resumes when GBrain is unavailable.
 
-   For an existing or deployed project, also ask:
-
-   > Does this project already collect product usage, production errors,
-   > service health, or AI traces that the Project Steward should use as
-   > read-only evidence?
-
-   Recommend no telemetry provider for an undeployed project or when none is
-   already in use. Recommend connecting an existing provider only when it will
-   answer a concrete delivery or verification question. Explain that telemetry
-   is optional, may include sensitive external data, never replaces repository
-   evidence, and never gives the agent production mutation authority.
+   Telemetry remains repository-only until a reviewed provider adapter is
+   installed. Do not ask the user to select or connect an unavailable provider,
+   and never add instrumentation merely because the neutral contract exists.
 
    For a local prototype or straightforward project that does not require
    production release protection, external data, external memory, or delegated

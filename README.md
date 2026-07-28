@@ -113,8 +113,6 @@ It may ask:
 - Does a production release need independent review?
 - Should progress live only in repository files, or also in private local
   searchable memory?
-- Does an existing or deployed project already have product, error, service, or
-  AI telemetry that should be used as read-only evidence?
 - May it merge after every required check passes?
 
 It should not ask you to choose routine frameworks, write test commands, manage

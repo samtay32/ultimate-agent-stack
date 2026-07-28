@@ -81,6 +81,7 @@
         ],
         "question": "allowed",
         "forbidden_actions": [
+          "write_project_files",
           "mutate_telemetry_provider",
           "deploy_project",
           "merge_pull_request"
