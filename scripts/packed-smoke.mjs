@@ -153,6 +153,10 @@ function main() {
         "protected Linear write helper",
       ],
       [
+        [".agent-stack", "bin", "telemetry-readonly.mjs"],
+        "protected telemetry read-only helper",
+      ],
+      [
         [
           ".agent-stack",
           "contracts",

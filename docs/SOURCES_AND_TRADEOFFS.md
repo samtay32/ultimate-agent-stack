@@ -48,6 +48,46 @@ capture is limited to redacted verified learning. Provider failure falls back
 to repository state. Its complete skill collection, ambient message capture,
 agent queue, dream cycle, and updater remain outside the package.
 
+### Graph, Loop, Work, and Telemetry Decision on July 28, 2026
+
+The useful pattern across the reviewed graph/loop material is a bounded control
+loop over portable state: choose one eligible work item, act, attach evidence,
+verify, review, and either advance or stop. Ultimate Agent Stack implements
+that pattern through the repository work contract, evidence graph, bounded
+campaign state, and explicit provider receipts. It does not adopt an unbounded
+agent runtime, a provider-owned canonical backlog, or a graph database.
+
+Linear is the first optional work adapter because it can map cleanly to the
+portable work-item contract. Read access is team-scoped; the only optional
+writes are receipted issue creation and evidence comments behind separate
+credentials and authority checks. Native Linear Agent sessions and Agent Auth
+remain deferred until adoption demonstrates a need.
+
+Telemetry is a complementary evidence capability, not work orchestration.
+PostHog, Sentry, and New Relic are reviewed as replaceable product, error, and
+service adapters. The initial implementation verifies only fixed
+project/account identity and availability through a protected helper. It does
+not expose arbitrary provider query languages or copy raw payloads. Provider
+native sessions, automatic agent/session capture, and telemetry-specific Agent
+Auth remain deferred.
+
+OpenTelemetry is kept at the instrumentation and transport boundary. Its
+vendor-neutral Collector supports replacing or combining backends, but adding
+or changing production instrumentation is a separate project decision rather
+than an Ultimate Agent Stack default.
+
+Primary technical references:
+
+- [Linear GraphQL API](https://linear.app/developers/graphql)
+- [Linear OAuth scopes](https://linear.app/developers/oauth-2-0-authentication)
+- [Linear read-only MCP](https://linear.app/docs/mcp)
+- [PostHog OpenAPI schema](https://eu.posthog.com/api/schema/swagger-ui/)
+- [Sentry project retrieval](https://docs.sentry.io/api/projects/retrieve-a-project/)
+- [Sentry API permissions](https://docs.sentry.io/api/permissions/)
+- [New Relic NerdGraph account queries](https://docs.newrelic.com/docs/apis/nerdgraph/get-started/nerdgraph-explorer/)
+- [New Relic API keys](https://docs.newrelic.com/docs/apis/intro-apis/new-relic-api-keys/)
+- [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/)
+
 ## Related Kunchenguid Repository Review
 
 The linked profile was reviewed for related original work rather than treating every fork as a new design source.

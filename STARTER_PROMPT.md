@@ -42,9 +42,10 @@ Delivery contract:
   untrusted advisory context, keep repository evidence authoritative, fall back
   to repository state, and capture only redacted verified learning.
 - Apply `$use-project-telemetry` only when scoped project telemetry is
-  configured and operational evidence is relevant. Keep it read-only, retrieve
-  bounded references rather than raw payloads, and validate each observation
-  against repository and deployment evidence.
+  configured and operational evidence is relevant. Run `telemetry-health`
+  first. Keep it read-only, retrieve bounded references rather than raw
+  payloads, and validate each observation against repository and deployment
+  evidence.
 - Apply `$manage-project-work` to keep the portable repository work ledger and
   evidence graph valid. Choose only ready bounded work, use canonical states and
   relations, and require actual acceptance evidence before completion.
@@ -61,6 +62,12 @@ Delivery contract:
   allow only receipted issue creation or issue creation plus evidence comments.
   Never enable a write implicitly. Every write requires the active coordinator
   token, explicit confirmation, an authority source, and a validated receipt.
+- Also ask whether a deployed project already uses PostHog, Sentry, or New
+  Relic for a concrete product, error, or service question. Recommend no
+  provider for an early or undeployed project. Never install instrumentation
+  implicitly. For an approved existing provider, run `telemetry-setup`, wait
+  for its scoped credential, and require `telemetry-health` to verify the
+  configured project or account before using it.
 - For ambiguous UX, state models, APIs, algorithms, or feasibility, use the smallest throwaway prototype or deterministic experiment that can answer the question, capture the decision, and keep prototype code out of production.
 - Lock the outcome, acceptance criteria, non-goals, assumptions, binding architecture decisions, launch-security gates, vertical slices, and verification evidence before material implementation.
 - Implement end-to-end slices and preserve a fast red-capable feedback loop for changed behavior.

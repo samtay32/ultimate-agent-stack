@@ -32,6 +32,7 @@ import {
   REVIEW_RECEIPT_PATH,
   REVIEW_WORKFLOW_PATH,
   StackError,
+  TELEMETRY_READONLY_PATH,
   WORK_LEDGER_PATH,
   checksHash,
   commandCheckpoint,
@@ -59,6 +60,8 @@ import {
   commandReceiptsValidate,
   commandStart,
   commandStatus,
+  commandTelemetryHealth,
+  commandTelemetrySetup,
   commandUnlock,
   commandVerify,
   commandWorkValidate,
@@ -565,13 +568,19 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
     assert.match(onboardingStart.prompt, /also read approved work from Linear/);
     assert.match(
       onboardingStart.prompt,
-      /Do not ask the user to select or connect an unavailable provider/,
+      /already use PostHog, Sentry, or New Relic/,
     );
 
     const capabilities = commandCapabilities(fixture.directory);
     assert.equal(capabilities.available.review.builtin.available, true);
     assert.equal(capabilities.available.knowledge.repository.available, true);
     assert.equal(capabilities.available.telemetry.none.available, true);
+    assert.equal(capabilities.available.telemetry.posthog.access, "read_only");
+    assert.equal(capabilities.available.telemetry.sentry.role, "errors");
+    assert.equal(
+      capabilities.available.telemetry["new-relic"].role,
+      "service",
+    );
     assert.equal(capabilities.available.work.repository.available, true);
     assert.equal(capabilities.available.work.linear.access, "read_only");
     assert.equal(commandWorkValidate(fixture.directory).ok, true);
@@ -1416,6 +1425,203 @@ test("telemetry defaults to no provider and rejects unreviewed or weakened adapt
   assert.match(errors.join("\n"), /default_access must be read_only/);
   assert.match(errors.join("\n"), /raw_payload_storage must remain false/);
   assert.match(errors.join("\n"), /repository_fallback must remain true/);
+});
+
+test("configure registers reviewed telemetry adapters with fixed roles and scopes", () => {
+  const fixture = temporaryProject();
+  const priorEnvironment = Object.fromEntries(
+    [
+      "POSTHOG_PERSONAL_API_KEY",
+      "SENTRY_AUTH_TOKEN",
+      "NEW_RELIC_USER_KEY",
+    ].map((name) => [name, process.env[name]]),
+  );
+  try {
+    initializeGit(fixture.directory);
+    createJavaScriptFixture(fixture.directory);
+    installOrUpgrade(fixture.directory, { mode: "init" });
+    const configured = commandConfigure(fixture.directory, {
+      profile: "standard",
+      review: "builtin",
+      knowledge: "repository",
+      work: "repository",
+      telemetrySpecs: [
+        "posthog@us:12345",
+        "sentry@de:acme/web-app",
+        "new-relic@eu:98765",
+      ],
+      externalData: "approved_providers",
+      reason:
+        "Approved existing read-only project telemetry connections with repository fallback",
+    });
+
+    assert.deepEqual(configured.capabilities.telemetry.providers, [
+      {
+        provider: "new-relic",
+        role: "service",
+        region: "eu",
+        credential_env: "NEW_RELIC_USER_KEY",
+        scope: { account_id: "98765" },
+      },
+      {
+        provider: "posthog",
+        role: "product",
+        region: "us",
+        credential_env: "POSTHOG_PERSONAL_API_KEY",
+        scope: { project_id: "12345" },
+      },
+      {
+        provider: "sentry",
+        role: "errors",
+        region: "de",
+        credential_env: "SENTRY_AUTH_TOKEN",
+        scope: { organization: "acme", project: "web-app" },
+      },
+    ]);
+    const stored = readJson(join(fixture.directory, CONFIG_PATH));
+    assert.doesNotMatch(JSON.stringify(stored), /phx_[a-z0-9]{8,}/i);
+    assert.equal(
+      stored.capabilities.telemetry.providers[0].credential_env,
+      "NEW_RELIC_USER_KEY",
+    );
+
+    const setup = commandTelemetrySetup(fixture.directory);
+    assert.equal(setup.mode, "guided-read-only");
+    assert.equal(setup.providers.length, 3);
+    assert.equal(setup.guardrails.arbitrary_queries, false);
+    assert.equal(setup.guardrails.mutations, false);
+    assert.equal(setup.guardrails.raw_payload_storage, false);
+    assert.match(
+      setup.providers.find((entry) => entry.provider === "new-relic").steps[0]
+        .instruction,
+      /not intrinsically read-only/,
+    );
+
+    for (const name of Object.keys(priorEnvironment)) {
+      delete process.env[name];
+    }
+    const health = commandTelemetryHealth(fixture.directory);
+    assert.equal(health.ok, false);
+    assert.equal(health.providers.length, 3);
+    assert.ok(
+      health.providers.every(
+        (provider) =>
+          provider.live_check === "not-run" &&
+          /is not available/.test(provider.error),
+      ),
+    );
+    const doctor = commandDoctor(fixture.directory);
+    const report = doctor.reports.find(
+      (candidate) => candidate.name === "telemetry-providers",
+    );
+    assert.equal(report.ok, false);
+    assert.equal(report.severity, "warning");
+    assert.equal(report.code, "repository-fallback");
+  } finally {
+    for (const [name, value] of Object.entries(priorEnvironment)) {
+      if (value === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
+    }
+    fixture.cleanup();
+  }
+});
+
+test("telemetry configuration rejects duplicate, custom-host, and local-only specs", () => {
+  const fixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    createJavaScriptFixture(fixture.directory);
+    installOrUpgrade(fixture.directory, { mode: "init" });
+    assert.throws(
+      () =>
+        commandConfigure(fixture.directory, {
+          profile: "standard",
+          review: "builtin",
+          knowledge: "repository",
+          telemetrySpecs: ["posthog@us:1", "posthog@eu:2"],
+          externalData: "approved_providers",
+          reason: "Duplicate telemetry providers are not an approved configuration",
+        }),
+      /only once/,
+    );
+    assert.throws(
+      () =>
+        commandConfigure(fixture.directory, {
+          profile: "standard",
+          review: "builtin",
+          knowledge: "repository",
+          telemetrySpecs: ["posthog@http:localhost"],
+          externalData: "approved_providers",
+          reason: "Custom telemetry endpoints are not an approved configuration",
+        }),
+      /region is not approved/,
+    );
+    assert.throws(
+      () =>
+        commandConfigure(fixture.directory, {
+          profile: "standard",
+          review: "builtin",
+          knowledge: "repository",
+          telemetrySpecs: ["sentry@us:acme/app"],
+          externalData: "local_only",
+          reason: "External telemetry cannot use the local-only data policy",
+        }),
+      /Select approved_providers/,
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("telemetry health refuses a modified helper even when its manifest hash is spoofed", () => {
+  const fixture = temporaryProject();
+  const outside = `${fixture.directory}-telemetry-helper-proof`;
+  const previousCredential = process.env.POSTHOG_PERSONAL_API_KEY;
+  try {
+    initializeGit(fixture.directory);
+    createJavaScriptFixture(fixture.directory);
+    installOrUpgrade(fixture.directory, { mode: "init" });
+    commandConfigure(fixture.directory, {
+      profile: "standard",
+      review: "builtin",
+      knowledge: "repository",
+      telemetrySpecs: ["posthog@us:12345"],
+      externalData: "approved_providers",
+      reason: "Approved scoped PostHog metadata health for this project",
+    });
+    process.env.POSTHOG_PERSONAL_API_KEY =
+      "phx_test_value_that_must_never_execute";
+
+    const helperPath = join(fixture.directory, TELEMETRY_READONLY_PATH);
+    const tamperedSource = [
+      'import { writeFileSync } from "node:fs";',
+      `writeFileSync(${JSON.stringify(outside)}, "executed");`,
+      'process.stdout.write(JSON.stringify({ ok: true, provider: "posthog" }));',
+    ].join("\n");
+    writeFileSync(helperPath, tamperedSource, "utf8");
+    const installationPath = join(fixture.directory, INSTALLATION_PATH);
+    const installation = readJson(installationPath);
+    installation.managed_files[TELEMETRY_READONLY_PATH].source_hash =
+      hashText(tamperedSource);
+    writeJson(installationPath, installation);
+
+    const health = commandTelemetryHealth(fixture.directory);
+    assert.equal(health.ok, false);
+    assert.equal(health.providers[0].live_check, "not-run");
+    assert.match(health.providers[0].error, /hash pinned in the protected CLI/);
+    assert.equal(existsSync(outside), false);
+  } finally {
+    if (previousCredential === undefined) {
+      delete process.env.POSTHOG_PERSONAL_API_KEY;
+    } else {
+      process.env.POSTHOG_PERSONAL_API_KEY = previousCredential;
+    }
+    rmSync(outside, { force: true });
+    fixture.cleanup();
+  }
 });
 
 test("doctor reports malformed telemetry configuration without crashing", () => {

@@ -9,7 +9,7 @@
   "interface": {
     "displayName": "Ultimate Agent Stack",
     "shortDescription": "Steward projects with proof.",
-    "longDescription": "Safely installs and updates a repository, guides consequential decisions with recommendations, preserves verified cross-conversation checkpoints, maintains portable work and evidence with optional scoped Linear and receipted writes, runs iteration-bounded campaigns, tests optional project memory, uses scoped read-only telemetry as advisory evidence, prevents competing checkout coordinators, manages bounded native subagents, verifies behavior, and closes review loops while preserving human authority.",
+    "longDescription": "Safely installs and updates a repository, guides consequential decisions with recommendations, preserves verified cross-conversation checkpoints, maintains portable work and evidence with optional scoped Linear and receipted writes, runs iteration-bounded campaigns, tests optional project memory, verifies scoped read-only PostHog, Sentry, and New Relic connections as advisory evidence, prevents competing checkout coordinators, manages bounded native subagents, verifies behavior, and closes review loops while preserving human authority.",
     "developerName": "Samson Taylor",
     "category": "Productivity",
     "capabilities": [
@@ -18,7 +18,7 @@
       "Guided onboarding",
       "Provider-neutral review",
       "Provider-neutral knowledge",
-      "Provider-neutral telemetry evidence",
+      "Provider-neutral telemetry with reviewed read-only adapters",
       "Provider-neutral work evidence",
       "Evidence graph reports",
       "Optional scoped Linear work",

@@ -177,11 +177,22 @@ global GBrain CLI still requires explicit installation approval. `doctor`
 verifies the active database path, GBrain health, and brain identity; `start`
 also checks retrieval of the mirrored repository checkpoint.
 
-The neutral telemetry contract does not make an unavailable provider
-selectable. Until a reviewed provider adapter is installed, onboarding remains
-repository-only and does not ask the user to connect telemetry. Ultimate Agent
-Stack sends no usage telemetry of its own. Any future provider starts with
-read-only project scope and bounded evidence references.
+For telemetry, the agent asks whether the deployed project already uses a
+reviewed provider for a concrete product, error, or service question.
+Repository-only evidence is recommended for an early or undeployed project.
+PostHog, Sentry, and New Relic may be selected only with an approved numeric
+project/account or organization/project scope. The agent records repeated
+`--telemetry provider@region:scope` choices, runs `telemetry-setup`, waits for
+the human to place the scoped credential in the named process environment, and
+runs `telemetry-health`.
+
+The protected helper makes only three fixed identity/availability checks:
+PostHog basic saved-insight metadata, Sentry project identity, and New Relic
+account identity. It rejects custom endpoints and redirects, bounds responses,
+retains no raw payload, and exposes no arbitrary query or mutation. A missing
+credential, scope mismatch, or provider failure produces a warning and
+repository fallback. Ultimate Agent Stack sends no usage telemetry of its own
+and never installs instrumentation implicitly.
 
 For work tracking, the agent asks:
 

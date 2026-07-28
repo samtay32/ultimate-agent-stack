@@ -100,6 +100,38 @@ The shared observation receipt and failure behavior live in
 Provider-specific operations belong in progressively disclosed references and
 must not enlarge the core tool surface.
 
+### Reviewed telemetry connections
+
+| Provider | Fixed role | Approved regions | Fixed live check |
+|---|---|---|---|
+| PostHog | `product` | `us`, `eu` | `GET` basic saved-insight metadata for the configured numeric project |
+| Sentry | `errors` | `global`, `us`, `de` | `GET` the configured organization/project identity |
+| New Relic | `service` | `us`, `eu` | One named NerdGraph query for configured account identity |
+
+The protected `telemetry-readonly.mjs` helper selects each endpoint from a
+reviewed constant; configuration cannot supply a URL. It rejects redirects,
+bounds the response, discards provider payloads after validating identity, and
+returns only normalized health fields. The manifest records its source hash,
+and the protected CLI pins that hash before execution.
+
+Use repeated `--telemetry PROVIDER@REGION:SCOPE` options during approved
+configuration:
+
+```text
+posthog@us:12345
+sentry@us:organization-slug/project-slug
+new-relic@eu:98765
+```
+
+Then run `telemetry-setup` for human credential guidance and
+`telemetry-health` for live checks. See the
+[provider reference](../skills/use-project-telemetry/references/telemetry-providers.md)
+for exact upstream permissions and limitations.
+
+Provider-native agent sessions, automatic agent/session capture, and
+telemetry-specific Agent Auth remain deferred until observed adoption creates a
+bounded requirement. They are not enabled as a convenience shortcut.
+
 ## Work Providers
 
 The repository provider is always available. It stores normalized work in

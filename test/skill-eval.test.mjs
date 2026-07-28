@@ -217,7 +217,10 @@ test("telemetry diagnosis requires explicit activation and rejects project write
     activated_skills: ["use-project-telemetry"],
     asked_clarifying_question: false,
     performed_actions: [],
-    outcome_tags: ["telemetry_observation_receipt"],
+    outcome_tags: [
+      "telemetry_scope_health",
+      "telemetry_observation_receipt",
+    ],
   };
   assert.equal(validateRunRecord(record, catalog).ok, true);
 

@@ -66,10 +66,10 @@ This repository uses Ultimate Agent Stack.
 8. Apply `$use-project-knowledge` with the configured provider and repository
    fallback.
 9. Apply `$use-project-telemetry` only when scoped telemetry is configured and
-   the request requires relevant production or operational evidence. Keep
-   access read-only, retain
-   bounded references instead of raw payloads, and fall back to repository
-   evidence when a provider is unavailable.
+   the request requires relevant production or operational evidence. Run
+   `telemetry-health` first. Keep access read-only, retain bounded references
+   instead of raw payloads, and fall back to repository evidence when a
+   provider is unavailable or out of scope.
 10. Apply `$manage-project-work`. Validate the repository work ledger and
     evidence graph, choose only ready bounded work, and link completion to real
     acceptance evidence. A provider status alone never proves completion.

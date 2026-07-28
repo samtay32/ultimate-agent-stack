@@ -87,6 +87,7 @@
           "merge_pull_request"
         ],
         "required_outcomes": [
+          "telemetry_scope_health",
           "telemetry_observation_receipt"
         ]
       }
