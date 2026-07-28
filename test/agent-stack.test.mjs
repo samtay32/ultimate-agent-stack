@@ -5,6 +5,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -18,6 +19,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  CAMPAIGN_PATH,
   CHECKPOINT_MARKDOWN_PATH,
   CHECKPOINT_PATH,
   CONFIG_PATH,
@@ -26,6 +28,7 @@ import {
   EVIDENCE_GRAPH_PATH,
   INSTALLATION_PATH,
   PROJECT_CLI_PATH,
+  PROVIDER_RECEIPTS_PATH,
   REVIEW_RECEIPT_PATH,
   REVIEW_WORKFLOW_PATH,
   StackError,
@@ -33,6 +36,10 @@ import {
   checksHash,
   commandCheckpoint,
   commandCapabilities,
+  commandCampaignNext,
+  commandCampaignStart,
+  commandCampaignStatus,
+  commandCampaignStop,
   commandAdoptManaged,
   commandApproveChecks,
   commandCheckLock,
@@ -42,10 +49,13 @@ import {
   commandDoctor,
   commandEvidenceValidate,
   commandLinearHealth,
+  commandLinearEvidenceComment,
+  commandLinearIssueCreate,
   commandLinearSetup,
   commandLock,
   commandMemoryHealth,
   commandMemorySetup,
+  commandReceiptsValidate,
   commandStart,
   commandStatus,
   commandUnlock,
@@ -62,7 +72,9 @@ import {
   portableTextSha256,
   resolveTarget,
   validateConfig,
+  validateCampaignState,
   validateEvidenceGraph,
+  validateProviderReceipt,
   validateWorkEvidenceLinkage,
   validateWorkLedger,
 } from "../bin/ultimate-agent-stack.mjs";
@@ -482,7 +494,7 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
       initializedConfig.parallel_delivery,
       safeParallelPolicy(),
     );
-    assert.equal(initializedConfig.schema_version, 5);
+    assert.equal(initializedConfig.schema_version, 6);
     assert.equal(initializedConfig.onboarding.status, "pending");
     assert.equal(initializedConfig.capabilities.knowledge.scope, "project");
     assert.deepEqual(initializedConfig.capabilities.telemetry.providers, []);
@@ -1667,6 +1679,7 @@ test("Linear work setup is read-only, scoped, and falls back safely", () => {
         kind: "linear_api_key",
         credential_env: "LINEAR_API_KEY",
         team_keys: ["ENG", "OPS"],
+        writes: null,
       },
     });
     const storedConfig = readJson(join(fixture.directory, CONFIG_PATH));
@@ -1698,7 +1711,7 @@ test("Linear work setup is read-only, scoped, and falls back safely", () => {
     invalid.capabilities.work.write_policy = "repository_only";
     invalid.capabilities.work.connection.credential_env = "OTHER_SECRET";
     const errors = validateConfig(invalid, fixture.directory).join("\n");
-    assert.match(errors, /must begin with read_only_mirror/);
+    assert.match(errors, /requires read_only_mirror/);
     assert.match(errors, /credential_env must be LINEAR_API_KEY/);
   } finally {
     if (previousCredential === undefined) {
@@ -1761,6 +1774,449 @@ test("Linear health refuses a modified helper even when its manifest hash is spo
   }
 });
 
+test("approved Linear issue creation is idempotent and writes bounded receipts", () => {
+  const fixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    createJavaScriptFixture(fixture.directory);
+    installOrUpgrade(fixture.directory, { mode: "init" });
+    const configured = commandConfigure(fixture.directory, {
+      profile: "standard",
+      review: "builtin",
+      knowledge: "repository",
+      work: "linear",
+      linearTeams: ["ENG"],
+      linearWrites: ["issue_create", "evidence_comment"],
+      externalData: "approved_providers",
+      reason: "Approved receipted Linear issue creation for repository work",
+    });
+    assert.equal(
+      configured.capabilities.work.write_policy,
+      "receipted_create_and_comment",
+    );
+    assert.deepEqual(
+      configured.capabilities.work.connection.writes.operations,
+      ["evidence_comment", "issue_create"],
+    );
+    assert.equal(
+      configured.capabilities.work.connection.writes.create_credential_env,
+      "LINEAR_CREATE_API_KEY",
+    );
+    assert.equal(
+      configured.capabilities.work.connection.writes.comment_credential_env,
+      "LINEAR_COMMENT_API_KEY",
+    );
+
+    const ledger = {
+      schema_version: 1,
+      updated_at: null,
+      items: [
+        {
+          id: "linear-contract",
+          title: "Create the bounded Linear adapter",
+          objective: "Synchronize one repository work item without vendor lock-in.",
+          status: "ready",
+          priority: "normal",
+          acceptance_criteria: [
+            "The provider issue uses a deterministic identifier.",
+          ],
+          scope: {
+            paths: ["scripts/linear-write.mjs"],
+            out_of_scope: ["native-agent-sessions"],
+          },
+          depends_on: [],
+          evidence_refs: [],
+          external_refs: [],
+          updated_at: null,
+        },
+      ],
+    };
+    const graph = {
+      schema_version: 1,
+      updated_at: null,
+      nodes: [
+        {
+          id: "linear-contract",
+          kind: "work_item",
+          label: "Bounded Linear adapter",
+          state: "active",
+          source: {
+            provider: "repository",
+            reference: ".agent-stack/work-items.json",
+          },
+          summary: "",
+        },
+      ],
+      edges: [],
+    };
+    writeJson(join(fixture.directory, WORK_LEDGER_PATH), ledger);
+    writeJson(join(fixture.directory, EVIDENCE_GRAPH_PATH), graph);
+
+    const started = commandStart(fixture.directory, "Continue bounded work");
+    const coordinatorToken = started.coordinator.coordinator_token;
+    const teamId = "123e4567-e89b-52d3-a456-426614174001";
+    let createdIssueId;
+    let createdCommentId;
+    const provider = {
+      lookup(_target, args, operation) {
+        if (operation === "resolve-team") {
+          return {
+            ok: true,
+            provider: "linear",
+            operation,
+            team_key: "ENG",
+            provider_id: teamId,
+          };
+        }
+        if (operation === "resolve-issue") {
+          return createdIssueId
+            ? {
+                ok: true,
+                provider: "linear",
+                operation,
+                found: true,
+                provider_id: createdIssueId,
+                provider_identifier: "ENG-42",
+                team_key: "ENG",
+              }
+            : {
+                ok: true,
+                provider: "linear",
+                operation,
+                found: false,
+                provider_id: args[2],
+              };
+        }
+        if (operation === "resolve-comment") {
+          return createdCommentId
+            ? {
+                ok: true,
+                provider: "linear",
+                operation,
+                found: true,
+                provider_id: createdCommentId,
+                issue_id: createdIssueId,
+              }
+            : {
+                ok: true,
+                provider: "linear",
+                operation,
+                found: false,
+                provider_id: args[2],
+              };
+        }
+        throw new Error(`unexpected lookup: ${operation}`);
+      },
+      mutate(_target, operation, input) {
+        if (operation === "issue-create") {
+          createdIssueId = input.issue_id;
+          assert.equal(input.team_id, teamId);
+          assert.doesNotMatch(input.description, /LINEAR_CREATE_API_KEY/);
+          return {
+            ok: true,
+            provider: "linear",
+            operation,
+            provider_id: input.issue_id,
+            provider_identifier: "ENG-42",
+          };
+        }
+        assert.equal(operation, "evidence-comment");
+        createdCommentId = input.comment_id;
+        assert.equal(input.issue_id, createdIssueId);
+        assert.match(input.body, /Repository evidence update/);
+        assert.doesNotMatch(input.body, /LINEAR_COMMENT_API_KEY/);
+        return {
+          ok: true,
+          provider: "linear",
+          operation,
+          provider_id: input.comment_id,
+        };
+      },
+    };
+    const options = {
+      workItemId: "linear-contract",
+      teamKey: "ENG",
+      authoritySource: "User approved the Linear issue synchronization",
+      coordinatorToken,
+      confirmExternalWrite: true,
+    };
+    assert.throws(
+      () =>
+        commandLinearIssueCreate(
+          fixture.directory,
+          { ...options, confirmExternalWrite: false },
+          provider,
+        ),
+      /--confirm-external-write/,
+    );
+    assert.throws(
+      () =>
+        commandLinearIssueCreate(
+          fixture.directory,
+          { ...options, coordinatorToken: "wrong-token" },
+          provider,
+        ),
+      /Project Steward|coordinator token/,
+    );
+    const first = commandLinearIssueCreate(
+      fixture.directory,
+      options,
+      provider,
+    );
+    assert.equal(first.ok, true);
+    assert.equal(first.result, "succeeded");
+    assert.equal(existsSync(join(fixture.directory, first.receipt)), true);
+    const storedLedger = readJson(join(fixture.directory, WORK_LEDGER_PATH));
+    assert.deepEqual(storedLedger.items[0].external_refs, [
+      { provider: "linear", reference: createdIssueId },
+    ]);
+
+    const second = commandLinearIssueCreate(
+      fixture.directory,
+      options,
+      provider,
+    );
+    assert.equal(second.ok, true);
+    assert.equal(second.result, "not-needed");
+
+    storedLedger.items[0].status = "in_review";
+    storedLedger.items[0].evidence_refs = ["linear-contract-test"];
+    graph.nodes.push({
+      id: "linear-contract-test",
+      kind: "test",
+      label: "Linear adapter contract test",
+      state: "verified",
+      source: {
+        provider: "repository",
+        reference: "test/agent-stack.test.mjs",
+      },
+      summary: "The fixed provider write path passed.",
+    });
+    graph.edges.push({
+      from: "linear-contract-test",
+      to: "linear-contract",
+      relation: "verifies",
+    });
+    writeJson(join(fixture.directory, WORK_LEDGER_PATH), storedLedger);
+    writeJson(join(fixture.directory, EVIDENCE_GRAPH_PATH), graph);
+    const commentOptions = {
+      workItemId: "linear-contract",
+      authoritySource: "User approved the Linear evidence synchronization",
+      coordinatorToken,
+      confirmExternalWrite: true,
+    };
+    const firstComment = commandLinearEvidenceComment(
+      fixture.directory,
+      commentOptions,
+      provider,
+    );
+    assert.equal(firstComment.ok, true);
+    assert.equal(firstComment.result, "succeeded");
+    const secondComment = commandLinearEvidenceComment(
+      fixture.directory,
+      commentOptions,
+      provider,
+    );
+    assert.equal(secondComment.ok, true);
+    assert.equal(secondComment.result, "not-needed");
+    assert.equal(
+      readdirSync(join(fixture.directory, PROVIDER_RECEIPTS_PATH)).length,
+      5,
+    );
+    for (const file of readdirSync(
+      join(fixture.directory, PROVIDER_RECEIPTS_PATH),
+    ).filter((name) => name.endsWith(".json"))) {
+      const receipt = readJson(
+        join(fixture.directory, PROVIDER_RECEIPTS_PATH, file),
+      );
+      assert.deepEqual(validateProviderReceipt(receipt), []);
+      assert.doesNotMatch(JSON.stringify(receipt), /LINEAR_CREATE_API_KEY/);
+    }
+    assert.deepEqual(commandReceiptsValidate(fixture.directory), {
+      ok: true,
+      path: PROVIDER_RECEIPTS_PATH,
+      receipt_count: 4,
+      errors: [],
+    });
+    const receiptFiles = readdirSync(
+      join(fixture.directory, PROVIDER_RECEIPTS_PATH),
+    ).filter((name) => name.endsWith(".json"));
+    const firstReceiptPath = join(
+      fixture.directory,
+      PROVIDER_RECEIPTS_PATH,
+      receiptFiles[0],
+    );
+    const invalidReceipt = readJson(firstReceiptPath);
+    invalidReceipt.result = "completed";
+    writeJson(firstReceiptPath, invalidReceipt);
+    const invalidValidation = commandReceiptsValidate(fixture.directory);
+    assert.equal(invalidValidation.ok, false);
+    assert.match(
+      invalidValidation.errors.join("\n"),
+      /provider receipt result is not canonical/,
+    );
+    symlinkSync(
+      firstReceiptPath,
+      join(
+        fixture.directory,
+        PROVIDER_RECEIPTS_PATH,
+        `${"a".repeat(64)}.json`,
+      ),
+    );
+    assert.match(
+      commandReceiptsValidate(fixture.directory).errors.join("\n"),
+      /must be a real project file/,
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("campaign mode selects one repository work item and stops at its bound", () => {
+  const fixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    createJavaScriptFixture(fixture.directory);
+    installOrUpgrade(fixture.directory, { mode: "init" });
+    commandConfigure(fixture.directory, {
+      preset: "simple",
+      reason: "Approved bounded local campaign execution",
+    });
+    const ledger = {
+      schema_version: 1,
+      updated_at: null,
+      items: [
+        {
+          id: "bounded-loop",
+          title: "Exercise one bounded campaign iteration",
+          objective: "Prove the campaign selects only repository work.",
+          status: "ready",
+          priority: "urgent",
+          acceptance_criteria: ["One item is selected and evidenced."],
+          scope: {
+            paths: ["test/agent-stack.test.mjs"],
+            out_of_scope: ["remote-provider-sync"],
+          },
+          depends_on: [],
+          evidence_refs: [],
+          external_refs: [],
+          updated_at: null,
+        },
+      ],
+    };
+    const graph = {
+      schema_version: 1,
+      updated_at: null,
+      nodes: [
+        {
+          id: "bounded-loop",
+          kind: "work_item",
+          label: "Bounded campaign iteration",
+          state: "active",
+          source: {
+            provider: "repository",
+            reference: WORK_LEDGER_PATH,
+          },
+          summary: "",
+        },
+      ],
+      edges: [],
+    };
+    writeJson(join(fixture.directory, WORK_LEDGER_PATH), ledger);
+    writeJson(join(fixture.directory, EVIDENCE_GRAPH_PATH), graph);
+    const started = commandStart(fixture.directory, "Run a bounded campaign");
+    const coordinatorToken = started.coordinator.coordinator_token;
+    const campaign = commandCampaignStart(fixture.directory, {
+      objective: "Complete one repository-defined work item",
+      maxIterations: "1",
+      coordinatorToken,
+    });
+    assert.equal(campaign.action, "started");
+    assert.deepEqual(validateCampaignState(campaign.campaign), []);
+    assert.equal(
+      commandCampaignStatus(fixture.directory).campaign.status,
+      "active",
+    );
+
+    const selected = commandCampaignNext(fixture.directory, {
+      coordinatorToken,
+    });
+    assert.equal(selected.action, "selected");
+    assert.equal(selected.work_item.id, "bounded-loop");
+    assert.equal(selected.work_item.status, "in_progress");
+    const continued = commandCampaignNext(fixture.directory, {
+      coordinatorToken,
+    });
+    assert.equal(continued.action, "continue");
+    assert.equal(continued.campaign.iterations_completed, 0);
+
+    const completedLedger = readJson(
+      join(fixture.directory, WORK_LEDGER_PATH),
+    );
+    completedLedger.items[0].status = "done";
+    completedLedger.items[0].evidence_refs = ["bounded-proof"];
+    const completedGraph = readJson(
+      join(fixture.directory, EVIDENCE_GRAPH_PATH),
+    );
+    completedGraph.nodes.push({
+      id: "bounded-proof",
+      kind: "test",
+      label: "Bounded campaign test",
+      state: "verified",
+      source: {
+        provider: "repository",
+        reference: "test/agent-stack.test.mjs",
+      },
+      summary: "The deterministic campaign contract passed.",
+    });
+    completedGraph.edges.push({
+      from: "bounded-proof",
+      to: "bounded-loop",
+      relation: "verifies",
+    });
+    writeJson(join(fixture.directory, WORK_LEDGER_PATH), completedLedger);
+    writeJson(join(fixture.directory, EVIDENCE_GRAPH_PATH), completedGraph);
+    const finished = commandCampaignNext(fixture.directory, {
+      coordinatorToken,
+    });
+    assert.equal(finished.action, "complete");
+    assert.equal(finished.campaign.iterations_completed, 1);
+    assert.equal(finished.campaign.reason, "The configured iteration bound was reached.");
+    assert.deepEqual(
+      validateCampaignState(
+        readJson(join(fixture.directory, CAMPAIGN_PATH)),
+      ),
+      [],
+    );
+    assert.throws(
+      () =>
+        commandCampaignStop(fixture.directory, {
+          reason: "Nothing remains to stop",
+          coordinatorToken,
+        }),
+      /No active campaign/,
+    );
+    completedLedger.items[0].status = "backlog";
+    writeJson(join(fixture.directory, WORK_LEDGER_PATH), completedLedger);
+    commandCampaignStart(fixture.directory, {
+      objective: "Do not misclassify backlog work as complete",
+      maxIterations: "1",
+      coordinatorToken,
+    });
+    const backlogDecision = commandCampaignNext(fixture.directory, {
+      coordinatorToken,
+    });
+    assert.equal(backlogDecision.ok, false);
+    assert.equal(backlogDecision.action, "decision-needed");
+    assert.match(
+      backlogDecision.campaign.reason,
+      /No ready work item/,
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("provider or authority changes invalidate configuration approval", () => {
   const fixture = temporaryProject();
   try {
@@ -1807,6 +2263,37 @@ test("provider or authority changes invalidate configuration approval", () => {
       verification.configuration_errors.join("\n"),
       /choices changed or were not approved/,
     );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("Linear write configuration rejects broadened operations and credentials", () => {
+  const fixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    createJavaScriptFixture(fixture.directory);
+    installOrUpgrade(fixture.directory, { mode: "init" });
+    commandConfigure(fixture.directory, {
+      profile: "standard",
+      review: "builtin",
+      knowledge: "repository",
+      work: "linear",
+      linearTeams: ["ENG"],
+      linearWrites: ["issue_create"],
+      externalData: "approved_providers",
+      reason: "Approved only receipted Linear issue creation",
+    });
+    const broadened = readJson(join(fixture.directory, CONFIG_PATH));
+    broadened.capabilities.work.connection.writes.operations.push(
+      "issue_update",
+    );
+    broadened.capabilities.work.connection.writes.create_credential_env =
+      "LINEAR_ADMIN_TOKEN";
+    const errors = validateConfig(broadened, fixture.directory).join("\n");
+    assert.match(errors, /unsupported or duplicate operations/);
+    assert.match(errors, /LINEAR_CREATE_API_KEY/);
+    assert.match(errors, /policy and approved operations must match exactly/);
   } finally {
     fixture.cleanup();
   }
@@ -2057,7 +2544,7 @@ test("legacy serial policy migrates to safe adaptive coordination", () => {
       "coordinator_managed_isolated_only",
     );
     assert.deepEqual(migrated.parallel_delivery, safeParallelPolicy());
-    assert.equal(migrated.schema_version, 5);
+    assert.equal(migrated.schema_version, 6);
     assert.equal(migrated.onboarding.status, "needs_confirmation");
     assert.equal(migrated.onboarding.project_profile, "production");
     assert.equal(migrated.capabilities.review.provider, "coderabbit");

@@ -66,15 +66,27 @@ Configure the repository without erasing its conventions. Setup is complete only
    Recommend repository work tracking for a solo, short, or early project.
    Offer Linear only when the team already uses it and can create a
    Read-permission key for explicitly approved team keys. Explain that Linear
-   is optional, read-only in this release, and never proves completion or grants
+   is optional, read-only by default, and never proves completion or grants
    delivery authority.
+
+   If Linear is selected, ask one follow-up:
+
+   > Should Linear stay read-only, or may the Project Steward create receipted
+   > issues and evidence comments after you approve each operation?
+
+   Recommend read-only. Enable `issue_create` only when the user wants a shared
+   work surface. Enable `evidence_comment` only when the user also wants bounded
+   verified evidence updates. Explain that each write uses a separate
+   least-privilege key, explicit confirmation, the active coordinator token,
+   an authority source, and a repository receipt.
 
    Always initialize and validate `.agent-stack/work-items.json` and
    `.agent-stack/evidence-graph.json`. If Linear is approved, configure
    `--work linear` with repeated `--linear-team KEY` and
    `--external-data approved_providers`, run `linear-setup`, wait for the human
-   credential step, then verify with `linear-health` and `doctor`. Never select
-   or connect it implicitly.
+   credential step, then verify with `linear-health` and `doctor`. Add repeated
+   `--linear-write` values only for the operations the user approved. Never
+   select or connect it implicitly.
 
    For a local prototype or straightforward project that does not require
    production release protection, external data, external memory, or delegated

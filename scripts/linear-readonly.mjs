@@ -8,6 +8,8 @@ const LINEAR_GRAPHQL_ENDPOINT = "https://api.linear.app/graphql";
 const MAX_RESPONSE_BYTES = 256 * 1024;
 const MAX_TEAM_PAGES = 10;
 const TEAM_KEY = /^[A-Z][A-Z0-9]{0,9}$/;
+const UUID =
+  /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 
 function uniqueTeamKeys(values) {
   if (
@@ -262,6 +264,363 @@ async function linearHealth({
   }
 }
 
+async function linearResolveTeam({
+  apiKey,
+  teamKey,
+  fetchImpl = fetch,
+  signal = AbortSignal.timeout(15_000),
+} = {}) {
+  const configuredTeamKey = uniqueTeamKeys([teamKey])[0];
+  if (typeof apiKey !== "string" || apiKey.length < 20) {
+    return {
+      ok: false,
+      provider: "linear",
+      operation: "resolve-team",
+      error: "LINEAR_API_KEY is missing or invalid",
+    };
+  }
+  let after = null;
+  let totalResponseBytes = 0;
+  try {
+    for (let page = 0; page < MAX_TEAM_PAGES; page += 1) {
+      const response = await fetchImpl(LINEAR_GRAPHQL_ENDPOINT, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          Authorization: apiKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          query: [
+            "query UltimateAgentStackLinearTeam($after: String) {",
+            "  teams(first: 50, after: $after) {",
+            "    nodes { id key }",
+            "    pageInfo { hasNextPage endCursor }",
+            "  }",
+            "}",
+          ].join("\n"),
+          variables: { after },
+        }),
+        redirect: "error",
+        signal,
+      });
+      const capture = await readBoundedResponse(
+        response,
+        MAX_RESPONSE_BYTES - totalResponseBytes,
+      );
+      if (!capture.ok) {
+        return {
+          ok: false,
+          provider: "linear",
+          operation: "resolve-team",
+          error: "Linear team lookup exceeded the bounded capture limit",
+        };
+      }
+      totalResponseBytes += capture.bytes;
+      let payload;
+      try {
+        payload = JSON.parse(capture.text);
+      } catch {
+        return {
+          ok: false,
+          provider: "linear",
+          operation: "resolve-team",
+          error: "Linear returned invalid JSON",
+        };
+      }
+      const teams = payload.data?.teams;
+      if (
+        !response.ok ||
+        (Array.isArray(payload.errors) && payload.errors.length > 0) ||
+        !Array.isArray(teams?.nodes) ||
+        typeof teams?.pageInfo?.hasNextPage !== "boolean"
+      ) {
+        return {
+          ok: false,
+          provider: "linear",
+          operation: "resolve-team",
+          error: Array.isArray(payload.errors)
+            ? "Linear GraphQL returned one or more errors"
+            : "Linear team lookup failed",
+        };
+      }
+      const match = teams.nodes.find(
+        (team) => team?.key === configuredTeamKey && UUID.test(team?.id),
+      );
+      if (match) {
+        return {
+          ok: true,
+          provider: "linear",
+          operation: "resolve-team",
+          team_key: configuredTeamKey,
+          provider_id: match.id,
+        };
+      }
+      if (!teams.pageInfo.hasNextPage) {
+        return {
+          ok: false,
+          provider: "linear",
+          operation: "resolve-team",
+          team_key: configuredTeamKey,
+          error: "Configured Linear team is not visible",
+        };
+      }
+      if (
+        typeof teams.pageInfo.endCursor !== "string" ||
+        teams.pageInfo.endCursor.length === 0 ||
+        teams.pageInfo.endCursor.length > 2_048
+      ) {
+        return {
+          ok: false,
+          provider: "linear",
+          operation: "resolve-team",
+          error: "Linear team lookup returned an invalid pagination cursor",
+        };
+      }
+      after = teams.pageInfo.endCursor;
+    }
+    return {
+      ok: false,
+      provider: "linear",
+      operation: "resolve-team",
+      error: "Linear team lookup exceeded the bounded pagination limit",
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      provider: "linear",
+      operation: "resolve-team",
+      error:
+        error?.name === "TimeoutError" || error?.name === "AbortError"
+          ? "Linear team lookup timed out"
+          : "Linear team lookup failed",
+    };
+  }
+}
+
+async function linearResolveIssue({
+  apiKey,
+  issueId,
+  fetchImpl = fetch,
+  signal = AbortSignal.timeout(15_000),
+} = {}) {
+  if (!UUID.test(issueId)) {
+    throw new Error("issue id must be a UUID");
+  }
+  if (typeof apiKey !== "string" || apiKey.length < 20) {
+    return {
+      ok: false,
+      provider: "linear",
+      operation: "resolve-issue",
+      error: "LINEAR_API_KEY is missing or invalid",
+    };
+  }
+  try {
+    const response = await fetchImpl(LINEAR_GRAPHQL_ENDPOINT, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        Authorization: apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        query: [
+          "query UltimateAgentStackLinearIssue($id: String!) {",
+          "  issue(id: $id) { id identifier team { key } }",
+          "}",
+        ].join("\n"),
+        variables: { id: issueId },
+      }),
+      redirect: "error",
+      signal,
+    });
+    const capture = await readBoundedResponse(response, MAX_RESPONSE_BYTES);
+    if (!capture.ok) {
+      return {
+        ok: false,
+        provider: "linear",
+        operation: "resolve-issue",
+        error: "Linear issue lookup exceeded the bounded capture limit",
+      };
+    }
+    let payload;
+    try {
+      payload = JSON.parse(capture.text);
+    } catch {
+      return {
+        ok: false,
+        provider: "linear",
+        operation: "resolve-issue",
+        error: "Linear returned invalid JSON",
+      };
+    }
+    if (
+      !response.ok ||
+      (Array.isArray(payload.errors) && payload.errors.length > 0)
+    ) {
+      return {
+        ok: false,
+        provider: "linear",
+        operation: "resolve-issue",
+        error: Array.isArray(payload.errors)
+          ? "Linear GraphQL returned one or more errors"
+          : "Linear issue lookup failed",
+      };
+    }
+    const issue = payload.data?.issue;
+    if (issue === null) {
+      return {
+        ok: true,
+        provider: "linear",
+        operation: "resolve-issue",
+        found: false,
+        provider_id: issueId,
+      };
+    }
+    if (
+      !UUID.test(issue?.id) ||
+      typeof issue?.identifier !== "string" ||
+      !/^[A-Z][A-Z0-9]{0,9}-\d{1,10}$/.test(issue.identifier) ||
+      typeof issue?.team?.key !== "string" ||
+      !TEAM_KEY.test(issue.team.key)
+    ) {
+      return {
+        ok: false,
+        provider: "linear",
+        operation: "resolve-issue",
+        error: "Linear issue lookup returned an invalid result",
+      };
+    }
+    return {
+      ok: true,
+      provider: "linear",
+      operation: "resolve-issue",
+      found: true,
+      provider_id: issue.id,
+      provider_identifier: issue.identifier,
+      team_key: issue.team.key,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      provider: "linear",
+      operation: "resolve-issue",
+      error:
+        error?.name === "TimeoutError" || error?.name === "AbortError"
+          ? "Linear issue lookup timed out"
+          : "Linear issue lookup failed",
+    };
+  }
+}
+
+async function linearResolveComment({
+  apiKey,
+  commentId,
+  fetchImpl = fetch,
+  signal = AbortSignal.timeout(15_000),
+} = {}) {
+  if (!UUID.test(commentId)) {
+    throw new Error("comment id must be a UUID");
+  }
+  if (typeof apiKey !== "string" || apiKey.length < 20) {
+    return {
+      ok: false,
+      provider: "linear",
+      operation: "resolve-comment",
+      error: "LINEAR_API_KEY is missing or invalid",
+    };
+  }
+  try {
+    const response = await fetchImpl(LINEAR_GRAPHQL_ENDPOINT, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        Authorization: apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        query: [
+          "query UltimateAgentStackLinearComment($id: String!) {",
+          "  comment(id: $id) { id issue { id } }",
+          "}",
+        ].join("\n"),
+        variables: { id: commentId },
+      }),
+      redirect: "error",
+      signal,
+    });
+    const capture = await readBoundedResponse(response, MAX_RESPONSE_BYTES);
+    if (!capture.ok) {
+      return {
+        ok: false,
+        provider: "linear",
+        operation: "resolve-comment",
+        error: "Linear comment lookup exceeded the bounded capture limit",
+      };
+    }
+    let payload;
+    try {
+      payload = JSON.parse(capture.text);
+    } catch {
+      return {
+        ok: false,
+        provider: "linear",
+        operation: "resolve-comment",
+        error: "Linear returned invalid JSON",
+      };
+    }
+    if (
+      !response.ok ||
+      (Array.isArray(payload.errors) && payload.errors.length > 0)
+    ) {
+      return {
+        ok: false,
+        provider: "linear",
+        operation: "resolve-comment",
+        error: Array.isArray(payload.errors)
+          ? "Linear GraphQL returned one or more errors"
+          : "Linear comment lookup failed",
+      };
+    }
+    const comment = payload.data?.comment;
+    if (comment === null) {
+      return {
+        ok: true,
+        provider: "linear",
+        operation: "resolve-comment",
+        found: false,
+        provider_id: commentId,
+      };
+    }
+    if (!UUID.test(comment?.id) || !UUID.test(comment?.issue?.id)) {
+      return {
+        ok: false,
+        provider: "linear",
+        operation: "resolve-comment",
+        error: "Linear comment lookup returned an invalid result",
+      };
+    }
+    return {
+      ok: true,
+      provider: "linear",
+      operation: "resolve-comment",
+      found: true,
+      provider_id: comment.id,
+      issue_id: comment.issue.id,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      provider: "linear",
+      operation: "resolve-comment",
+      error:
+        error?.name === "TimeoutError" || error?.name === "AbortError"
+          ? "Linear comment lookup timed out"
+          : "Linear comment lookup failed",
+    };
+  }
+}
+
 function parseArgs(argv) {
   const teamKeys = [];
   for (let index = 0; index < argv.length; index += 1) {
@@ -274,15 +633,42 @@ function parseArgs(argv) {
   return uniqueTeamKeys(teamKeys);
 }
 
+function singleOption(argv, option) {
+  if (argv.length !== 2 || argv[0] !== option) {
+    throw new Error(`only ${option} VALUE is supported`);
+  }
+  return argv[1];
+}
+
 async function main(argv = process.argv.slice(2)) {
   const [command, ...args] = argv;
-  if (command !== "health") {
-    throw new Error("linear-readonly command must be health");
+  if (command === "health") {
+    return linearHealth({
+      apiKey: process.env.LINEAR_API_KEY,
+      teamKeys: parseArgs(args),
+    });
   }
-  return linearHealth({
-    apiKey: process.env.LINEAR_API_KEY,
-    teamKeys: parseArgs(args),
-  });
+  if (command === "resolve-team") {
+    return linearResolveTeam({
+      apiKey: process.env.LINEAR_API_KEY,
+      teamKey: singleOption(args, "--team"),
+    });
+  }
+  if (command === "resolve-issue") {
+    return linearResolveIssue({
+      apiKey: process.env.LINEAR_API_KEY,
+      issueId: singleOption(args, "--id"),
+    });
+  }
+  if (command === "resolve-comment") {
+    return linearResolveComment({
+      apiKey: process.env.LINEAR_API_KEY,
+      commentId: singleOption(args, "--id"),
+    });
+  }
+  throw new Error(
+    "linear-readonly command must be health, resolve-team, resolve-issue, or resolve-comment",
+  );
 }
 
 const isEntryPoint =
@@ -307,6 +693,9 @@ if (isEntryPoint) {
 export {
   LINEAR_GRAPHQL_ENDPOINT,
   linearHealth,
+  linearResolveComment,
+  linearResolveIssue,
+  linearResolveTeam,
   main,
   uniqueTeamKeys,
 };

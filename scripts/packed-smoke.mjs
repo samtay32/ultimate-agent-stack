@@ -149,6 +149,26 @@ function main() {
         "protected Linear read-only helper",
       ],
       [
+        [".agent-stack", "bin", "linear-write.mjs"],
+        "protected Linear write helper",
+      ],
+      [
+        [
+          ".agent-stack",
+          "contracts",
+          "provider-receipt.schema.json",
+        ],
+        "provider receipt contract",
+      ],
+      [
+        [
+          ".agent-stack",
+          "contracts",
+          "campaign-state.schema.json",
+        ],
+        "bounded campaign contract",
+      ],
+      [
         [".codex", "agents", "uas_researcher.toml"],
         "Codex worker adapter",
       ],
@@ -191,7 +211,7 @@ function main() {
       readFileSync(join(project, ".agent-stack", "config.json"), "utf8"),
     );
     if (
-      config.schema_version !== 5 ||
+      config.schema_version !== 6 ||
       config.onboarding?.status !== "pending" ||
       config.capabilities?.review?.provider !== "builtin" ||
       config.capabilities?.knowledge?.provider !== "repository" ||
@@ -220,6 +240,26 @@ function main() {
     );
     if (start.phase !== "onboarding") {
       throw new Error("packed install did not enter guided onboarding");
+    }
+    const receipts = JSON.parse(
+      run(
+        process.execPath,
+        [localCli, "receipts", "validate", "--target", project],
+        project,
+      ),
+    );
+    if (!receipts.ok || receipts.receipt_count !== 0) {
+      throw new Error("packed install did not validate empty provider receipts");
+    }
+    const campaign = JSON.parse(
+      run(
+        process.execPath,
+        [localCli, "campaign", "status", "--target", project],
+        project,
+      ),
+    );
+    if (!campaign.ok || campaign.campaign !== null) {
+      throw new Error("packed install did not report an inactive campaign");
     }
     process.stdout.write(
       `${JSON.stringify(

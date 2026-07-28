@@ -200,6 +200,23 @@ response does not attest the permission chosen when the key was created. If the
 provider fails, the Project Steward continues from
 `.agent-stack/work-items.json` and records synchronization as pending.
 
+Read-only is the recommended default. If the user asks for Linear writes, ask a
+second question:
+
+> Should Linear stay read-only, or may the Project Steward create receipted
+> issues and evidence comments after you approve each operation?
+
+Enable no writes without explicit approval. `issue_create` requires a separate
+team-restricted Create issues key. `evidence_comment` additionally requires a
+separate Create comments key. Every command requires the active coordinator
+token, `--confirm-external-write`, and a recorded authority source. Run
+`receipts validate` and `doctor` after writes.
+
+For a bounded campaign, use `campaign start` with 1–25 iterations and then
+`campaign next` for one repository item at a time. Campaign mode never calls a
+provider. Stop when the bound is reached, evidence is incomplete, work is
+blocked, or a consequential decision is required.
+
 ## What Happens With Subagents
 
 You continue speaking only with the primary coding agent—the Project Steward.

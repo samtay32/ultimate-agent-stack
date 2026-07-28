@@ -150,6 +150,17 @@ const linearReadonlyHelper = readFileSync(
   join(PACKAGE_ROOT, "scripts/linear-readonly.mjs"),
   "utf8",
 );
+const linearWriteHelper = readFileSync(
+  join(PACKAGE_ROOT, "scripts/linear-write.mjs"),
+  "utf8",
+);
+const linearReceiptedWrites = readFileSync(
+  join(
+    PACKAGE_ROOT,
+    "skills/manage-project-work/references/linear-receipted-writes.md",
+  ),
+  "utf8",
+);
 const packageCliSource = readFileSync(
   join(PACKAGE_ROOT, "bin/ultimate-agent-stack.mjs"),
   "utf8",
@@ -168,6 +179,24 @@ const evidenceGraphSchema = JSON.parse(
     join(
       PACKAGE_ROOT,
       "assets/project-template/.agent-stack/contracts/evidence-graph.schema.json",
+    ),
+    "utf8",
+  ),
+);
+const providerReceiptSchema = JSON.parse(
+  readFileSync(
+    join(
+      PACKAGE_ROOT,
+      "assets/project-template/.agent-stack/contracts/provider-receipt.schema.json",
+    ),
+    "utf8",
+  ),
+);
+const campaignStateSchema = JSON.parse(
+  readFileSync(
+    join(
+      PACKAGE_ROOT,
+      "assets/project-template/.agent-stack/contracts/campaign-state.schema.json",
     ),
     "utf8",
   ),
@@ -421,10 +450,11 @@ test("package has no install hooks and guards publication with prepublishOnly", 
   assert.deepEqual(
     packageData.files.filter((entry) => entry.startsWith("scripts/")),
     [
-    "scripts/github-release-sync.mjs",
-    "scripts/gbrain-project.mjs",
-    "scripts/linear-readonly.mjs",
-    "scripts/check-portable-bundle.mjs",
+      "scripts/github-release-sync.mjs",
+      "scripts/gbrain-project.mjs",
+      "scripts/linear-readonly.mjs",
+      "scripts/linear-write.mjs",
+      "scripts/check-portable-bundle.mjs",
       "scripts/packed-smoke.mjs",
       "scripts/release-preflight.mjs",
       "scripts/review-receipt.mjs",
@@ -544,8 +574,33 @@ test("work and evidence contracts remain portable and provider-neutral", () => {
   assert.match(linearReadonlyHelper, /https:\/\/api\.linear\.app\/graphql/);
   const linearReadonlyHash = portableTextSha256(linearReadonlyHelper);
   assert.match(packageCliSource, new RegExp(linearReadonlyHash));
+  const linearWriteHash = portableTextSha256(linearWriteHelper);
+  assert.match(packageCliSource, new RegExp(linearWriteHash));
+  assert.match(linearReceiptedWrites, /disabled by default/i);
+  assert.match(linearReceiptedWrites, /repository ledger is\s+still/i);
+  assert.match(linearReceiptedWrites, /LINEAR_CREATE_API_KEY/);
+  assert.match(linearReceiptedWrites, /LINEAR_COMMENT_API_KEY/);
+  assert.doesNotMatch(
+    linearWriteHelper,
+    /\b(issueUpdate|issueDelete|issueArchive|projectCreate|cycleCreate|labelCreate)\b/,
+  );
+  assert.match(linearWriteHelper, /\bissueCreate\b/);
+  assert.match(linearWriteHelper, /\bcommentCreate\b/);
   assert.equal(workItemSchema.additionalProperties, false);
   assert.equal(evidenceGraphSchema.additionalProperties, false);
+  assert.equal(providerReceiptSchema.additionalProperties, false);
+  assert.equal(campaignStateSchema.additionalProperties, false);
+  assert.deepEqual(campaignStateSchema.properties.status.enum, [
+    "active",
+    "complete",
+    "decision-needed",
+    "stopped",
+  ]);
+  assert.equal(campaignStateSchema.properties.max_iterations.maximum, 25);
+  assert.deepEqual(
+    providerReceiptSchema.properties.result.enum,
+    ["succeeded", "not-needed", "failed", "decision-needed"],
+  );
   assert.equal(
     workItemSchema.$defs.timestamp.oneOf[1].pattern,
     "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?Z$",

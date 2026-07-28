@@ -15,11 +15,14 @@ work, but it does not expand execution, merge, deployment, or release authority.
    [references/work-evidence-contract.md](references/work-evidence-contract.md).
    If the configured provider is Linear, also read
    [references/linear-readonly-provider.md](references/linear-readonly-provider.md).
+   If receipted writes are enabled, also read
+   [references/linear-receipted-writes.md](references/linear-receipted-writes.md).
 2. Run:
 
    ```bash
    node .agent-stack/bin/agent-stack.mjs work validate
    node .agent-stack/bin/agent-stack.mjs evidence validate
+   node .agent-stack/bin/agent-stack.mjs receipts validate
    ```
 
    Stop and repair malformed repository state before relying on it.
@@ -44,11 +47,30 @@ work, but it does not expand execution, merge, deployment, or release authority.
    and review gates passed.
 9. Revalidate both files and include their results in the handoff.
 
+## Bounded Campaigns
+
+Use campaign mode only when several already-shaped work items should be
+delivered sequentially:
+
+1. Start with an objective, an explicit 1–25 iteration bound, and the active
+   coordinator token.
+2. Ask `campaign next` to select one `ready` item whose dependencies are
+   `done`.
+3. Finish the selected item through normal evidence and review gates.
+4. Call `campaign next` again. It returns the same item while work remains
+   active, stops at the bound, and returns `decision-needed` when no safe item
+   is eligible.
+
+Campaign commands update repository state only. Never synchronize an external
+provider implicitly.
+
 ## Hard Boundaries
 
 - Repository work tracking is the fully supported default.
 - A work provider never grants authority to edit code, mutate remote work,
   merge, deploy, release, or change project scope.
+- A configured write operation still requires the active coordinator token,
+  explicit external-write confirmation, and a recorded authority source.
 - Do not invent a status, priority, node kind, node state, or edge relation.
 - Do not store credentials, raw telemetry, personal data, prompt transcripts,
   or remote payloads in either repository file.

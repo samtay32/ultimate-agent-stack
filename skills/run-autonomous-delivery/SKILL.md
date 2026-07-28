@@ -39,6 +39,9 @@ Do not say "done" until all applicable conditions hold:
    portable repository ledger and evidence graph, select only ready, bounded
    work, and tie completion to actual acceptance evidence rather than a
    provider status.
+   Use campaign mode only when the user approved a multi-item delivery
+   objective. Respect its iteration bound, process one selected item at a time,
+   and never let campaign advancement trigger provider writes.
    Run `node .agent-stack/bin/agent-stack.mjs doctor` before material work. If
    protected files drifted, proposals remain unresolved, or quality commands
    changed without review, repair setup before proceeding.

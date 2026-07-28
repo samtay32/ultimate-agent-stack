@@ -25,7 +25,8 @@ sandbox and the Markdown skills are not executable security controls.
 | Verify project-local GBrain path containment, health, and identity | Treat optional memory as advisory |
 | Validate that only reviewed telemetry providers can enter configuration | Treat read-only project telemetry as advisory evidence |
 | Validate repository work and evidence vocabulary, bounds, dependencies, and graph endpoints | Keep external work synchronized and require real acceptance evidence |
-| Restrict the Linear helper to a fixed endpoint and GraphQL query, verify configured team visibility, and expose no mutation operation | Create the upstream Linear key with only Read permission |
+| Restrict Linear reads to fixed queries and writes to issue/comment creation with explicit authority, idempotency, and receipts | Create separate upstream Linear keys with only their documented permissions |
+| Limit campaigns to one eligible repository item and at most 25 iterations | Stop for consequential decisions and verify each selected item normally |
 | Keep package publishing behind the protected release workflow | Stop after bounded non-improving repair loops and report the blocker |
 
 The left column is code. A conversation cannot persuade those checks to pass.
@@ -72,6 +73,18 @@ valid dependencies, and graph endpoints that must exist. The CLI rejects common
 credential-like content. It cannot prove that a referenced artifact is true,
 that an external provider is current, or that every relevant relationship was
 recorded; those remain verification and review responsibilities.
+
+Linear uses separate protected helpers for bounded reads and the two optional
+write operations. Writes are disabled by default. An approved write requires
+the active coordinator token, explicit external-write confirmation, a bounded
+authority source, valid work/evidence state, and an operation-specific
+credential. Deterministic provider IDs support retry reconciliation; every
+attempt writes a validated receipt. The CLI cannot inspect which permissions a
+human selected when creating an upstream key.
+
+Campaign state is also validated. One active campaign may select one ready item
+at a time, only after its dependencies are done, and stops after at most 25
+iterations. Campaign commands do not call an external work provider.
 
 Quality checks use command arrays rather than shell strings. Direct shell
 interpreters, known destructive programs, unsafe package-manager operations,

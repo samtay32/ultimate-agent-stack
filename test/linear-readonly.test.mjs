@@ -4,6 +4,9 @@ import test from "node:test";
 import {
   LINEAR_GRAPHQL_ENDPOINT,
   linearHealth,
+  linearResolveComment,
+  linearResolveIssue,
+  linearResolveTeam,
   uniqueTeamKeys,
 } from "../scripts/linear-readonly.mjs";
 
@@ -201,4 +204,97 @@ test("Linear health rejects malformed or unbounded pagination", async () => {
   assert.equal(unbounded.ok, false);
   assert.equal(page, 10);
   assert.match(unbounded.error, /bounded pagination limit/);
+});
+
+test("Linear read-only lookups return only bounded provider identifiers", async () => {
+  const team = await linearResolveTeam({
+    apiKey: TEST_KEY,
+    teamKey: "ENG",
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify({
+          data: {
+            teams: {
+              nodes: [
+                {
+                  id: "123e4567-e89b-52d3-a456-426614174001",
+                  key: "ENG",
+                },
+              ],
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+        }),
+        { status: 200 },
+      ),
+  });
+  assert.deepEqual(team, {
+    ok: true,
+    provider: "linear",
+    operation: "resolve-team",
+    team_key: "ENG",
+    provider_id: "123e4567-e89b-52d3-a456-426614174001",
+  });
+
+  const issue = await linearResolveIssue({
+    apiKey: TEST_KEY,
+    issueId: "123e4567-e89b-52d3-a456-426614174000",
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify({
+          data: {
+            issue: {
+              id: "123e4567-e89b-52d3-a456-426614174000",
+              identifier: "ENG-42",
+              team: { key: "ENG" },
+            },
+          },
+        }),
+        { status: 200 },
+      ),
+  });
+  assert.equal(issue.found, true);
+  assert.equal(issue.provider_identifier, "ENG-42");
+  assert.equal(issue.title, undefined);
+
+  const comment = await linearResolveComment({
+    apiKey: TEST_KEY,
+    commentId: "123e4567-e89b-52d3-a456-426614174002",
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify({
+          data: {
+            comment: {
+              id: "123e4567-e89b-52d3-a456-426614174002",
+              issue: { id: "123e4567-e89b-52d3-a456-426614174000" },
+            },
+          },
+        }),
+        { status: 200 },
+      ),
+  });
+  assert.equal(comment.found, true);
+  assert.equal(
+    comment.issue_id,
+    "123e4567-e89b-52d3-a456-426614174000",
+  );
+  assert.equal(comment.body, undefined);
+});
+
+test("Linear read-only lookups distinguish a missing provider object", async () => {
+  const issue = await linearResolveIssue({
+    apiKey: TEST_KEY,
+    issueId: "123e4567-e89b-52d3-a456-426614174000",
+    fetchImpl: async () =>
+      new Response(JSON.stringify({ data: { issue: null } }), {
+        status: 200,
+      }),
+  });
+  assert.deepEqual(issue, {
+    ok: true,
+    provider: "linear",
+    operation: "resolve-issue",
+    found: false,
+    provider_id: "123e4567-e89b-52d3-a456-426614174000",
+  });
 });
