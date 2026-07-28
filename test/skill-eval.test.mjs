@@ -46,7 +46,7 @@ function passingRecord() {
 test("behavioral scenario contracts cover activation and false activation", () => {
   const result = validateScenarioCatalog(catalog);
   assert.equal(result.ok, true, result.errors.join("\n"));
-  assert.equal(result.scenario_count, 13);
+  assert.equal(result.scenario_count, 14);
   assert.equal(result.skill_count, 12);
   assert.deepEqual(result.categories, [
     "authority",
@@ -183,8 +183,8 @@ test("a complete live run record passes against the current behavior surface", (
   const result = validateRunRecord(passingRecord(), catalog);
   assert.equal(result.ok, true, JSON.stringify(result, null, 2));
   assert.deepEqual(result.summary, {
-    total: 13,
-    passed: 13,
+    total: 14,
+    passed: 14,
     failed: 0,
   });
   assert.equal(result.surface_hash, behaviorSurfaceHash());

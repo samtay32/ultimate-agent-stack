@@ -190,6 +190,12 @@ requests, review, release, checkpoints, and telemetry. It stores references and
 short redacted summaries, not copies of remote systems. The graph is derived
 evidence navigation; the referenced artifacts remain authoritative.
 
+`evidence report` derives a provider-neutral summary from those two validated
+files. JSON output contains only counts and bounded identifier samples. Mermaid
+output uses generated aliases and sanitized labels, includes only edges between
+selected nodes, and is capped at 500 nodes. Reports do not query providers and
+do not promote a reference into proof.
+
 The Linear adapter is not a second orchestrator. Its fixed, paginated query
 shape checks viewer authentication and configured team visibility. Optional
 write helpers expose only deterministic issue creation and evidence-comment

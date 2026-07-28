@@ -47,6 +47,7 @@ import {
   commandCoordinator,
   commandDetect,
   commandDoctor,
+  commandEvidenceReport,
   commandEvidenceValidate,
   commandLinearHealth,
   commandLinearEvidenceComment,
@@ -1658,6 +1659,123 @@ test("work ledger validates schema-maximum dependency depth without recursion", 
     validateWorkLedger(ledger).join("\n"),
     /dependencies must not contain a cycle/,
   );
+});
+
+test("evidence reports are deterministic, bounded, and Mermaid-safe", () => {
+  const fixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    createJavaScriptFixture(fixture.directory);
+    installOrUpgrade(fixture.directory, { mode: "init" });
+    const ledger = {
+      schema_version: 1,
+      updated_at: "2026-07-28T00:00:00.000Z",
+      items: [
+        {
+          id: "report-work",
+          title: "Report evidence",
+          objective: "Render bounded repository evidence.",
+          status: "done",
+          priority: "normal",
+          acceptance_criteria: ["The report is deterministic and safe."],
+          scope: {
+            paths: ["docs/ARCHITECTURE.md"],
+            out_of_scope: ["remote-provider-reads"],
+          },
+          depends_on: [],
+          evidence_refs: ["report-test"],
+          external_refs: [],
+          updated_at: "2026-07-28T00:00:00.000Z",
+        },
+      ],
+    };
+    const graph = {
+      schema_version: 1,
+      updated_at: "2026-07-28T00:00:00.000Z",
+      nodes: [
+        {
+          id: "report-work",
+          kind: "work_item",
+          label: "Report work",
+          state: "active",
+          source: {
+            provider: "repository",
+            reference: WORK_LEDGER_PATH,
+          },
+          summary: "",
+        },
+        {
+          id: "report-test",
+          kind: "test",
+          label: "Proof \"] --> injected[\"",
+          state: "verified",
+          source: {
+            provider: "repository",
+            reference: "test/agent-stack.test.mjs",
+          },
+          summary: "A bounded test reference.",
+        },
+      ],
+      edges: [
+        {
+          from: "report-test",
+          to: "report-work",
+          relation: "verifies",
+        },
+      ],
+    };
+    writeJson(join(fixture.directory, WORK_LEDGER_PATH), ledger);
+    writeJson(join(fixture.directory, EVIDENCE_GRAPH_PATH), graph);
+
+    const first = commandEvidenceReport(fixture.directory);
+    const second = commandEvidenceReport(fixture.directory);
+    assert.deepEqual(first, second);
+    assert.deepEqual(first.report.totals, {
+      work_items: 1,
+      nodes: 2,
+      edges: 1,
+    });
+    assert.equal(first.report.coverage.work_items_without_evidence, 0);
+
+    const bounded = commandEvidenceReport(fixture.directory, {
+      format: "mermaid",
+      maxNodes: 1,
+    });
+    assert.equal(bounded.selected_node_count, 1);
+    assert.equal(bounded.omitted_node_count, 1);
+    assert.match(bounded.mermaid, /1 nodes omitted by report bound/);
+    assert.doesNotMatch(bounded.mermaid, /injected\[/);
+
+    const output = ".agent-stack/reports/evidence.mmd";
+    const complete = commandEvidenceReport(fixture.directory, {
+      format: "mermaid",
+      maxNodes: 2,
+      output,
+    });
+    assert.match(complete.mermaid, /-->\|verifies\|/);
+    assert.equal(
+      readFileSync(join(fixture.directory, output), "utf8"),
+      complete.mermaid,
+    );
+    assert.throws(
+      () =>
+        commandEvidenceReport(fixture.directory, {
+          format: "mermaid",
+          output: "../outside.mmd",
+        }),
+      /escapes the project/,
+    );
+    assert.throws(
+      () =>
+        commandEvidenceReport(fixture.directory, {
+          format: "json",
+          output: "AGENTS.md",
+        }),
+      /under \.agent-stack\/reports/,
+    );
+  } finally {
+    fixture.cleanup();
+  }
 });
 
 test("Linear work setup is read-only, scoped, and falls back safely", () => {
