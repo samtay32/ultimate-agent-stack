@@ -99,29 +99,30 @@ stateDiagram-v2
 ## Repair Loop
 
 1. Read every current check, review, and unresolved thread.
-2. Group only findings with the same root cause and fix.
-3. For each finding choose:
-   - `fixed`;
-   - `rebutted` with code/test/documentation evidence;
-   - `deferred` with an authorized issue, risk, and reason current delivery remains safe;
-   - `decision-needed` when it crosses an authority boundary.
-4. Implement a coherent batch.
-5. Run the focused reproduction or test.
-6. Run:
+2. Validate every reviewer claim against the cited code and surrounding
+   control/data flow, callers, tests, and authoritative documentation. Reproduce
+   it when practical. Never change production code on reviewer assertion alone.
+3. Group only findings with the same root cause and fix.
+4. Apply the exact disposition and response format from the
+   [Review Closure Policy](../skills/close-review-loop/references/review-closure-policy.md).
+   Do not invent another bucket or substitute a synonym.
+5. Implement a coherent batch.
+6. Run the focused reproduction or test.
+7. Run:
 
    ```bash
    node .agent-stack/bin/agent-stack.mjs check-lock
    node .agent-stack/bin/agent-stack.mjs verify
    ```
 
-7. Commit and push the verified batch.
-8. Request a fresh provider review. For CodeRabbit, comment
+8. Commit and push the verified batch.
+9. Request a fresh provider review. For CodeRabbit, comment
    `@coderabbitai review`. For GitHub human review, request a new approval from
    an allowed login.
-9. Wait for CI, an actual current-head review, and `review-receipt`; query
+10. Wait for CI, an actual current-head review, and `review-receipt`; query
    threads, not only the summary.
-10. Reply with the disposition and evidence. Resolve only after closure.
-11. Repeat while the actionable set shrinks.
+11. Reply with the disposition and evidence. Resolve only after closure.
+12. Repeat while the actionable set shrinks.
 
 If CodeRabbit is selected and reports a rate or quota limit, stop. Wait for capacity and request
 the review again; never treat the limit message or a green summary status as

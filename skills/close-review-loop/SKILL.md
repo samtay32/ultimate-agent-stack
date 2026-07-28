@@ -30,19 +30,26 @@ When selected, also read:
    configured-provider review of the current head. Query review threads and
    check runs; do not rely on a summary, reaction, status context, or
    rate-limit comment. When installed and required, `review-receipt` must pass.
-5. Normalize each finding by root cause. Deduplicate only when the same change resolves the same claim.
-6. Disposition findings:
-   - **fix:** valid and in scope;
-   - **rebut:** false positive, with code/test/docs evidence;
-   - **defer:** valid but outside the locked scope, with an authorized issue and risk statement;
-   - **decision needed:** changes intent, public contract, data safety, security posture, cost, or release authority.
-7. Apply fixes in a coherent batch. Run focused checks, then the full gate. Push once per verified batch.
-8. Trigger a new review using the selected provider's contract. For
+5. Validate each reviewer claim before acting. Open the cited file and inspect
+   the surrounding control flow, data flow, callers, tests, and authoritative
+   documentation. Reproduce the claim or run the smallest relevant test when
+   practical. Never modify production code merely because a reviewer asserted
+   a defect.
+6. Normalize findings by root cause. Deduplicate only when the same change
+   resolves the same claim.
+7. Apply one exact canonical disposition and the response format from
+   [references/review-closure-policy.md](references/review-closure-policy.md).
+   Do not invent another bucket or substitute a synonym. Use
+   `decision-needed` when evidence remains uncertain because resolving it
+   crosses an authority boundary.
+8. Apply fixes in a coherent batch. Run focused checks, then the full gate. Push once per verified batch.
+9. Trigger a new review using the selected provider's contract. For
    CodeRabbit, request an incremental review after every verified push. For an
    allowed GitHub human, request a fresh approval through the repository's
    normal process. A stale review never counts.
-9. Reply to findings with the fix commit or evidence. Resolve a thread only after the issue is actually closed.
-10. Repeat until the closure contract holds. Provider-specific convenience
+10. Reply to findings with the canonical disposition plus fix commit or
+    evidence. Resolve a thread only after the issue is actually closed.
+11. Repeat until the closure contract holds. Provider-specific convenience
     commands never replace evidence or repository policy.
 
 ## Closure Contract

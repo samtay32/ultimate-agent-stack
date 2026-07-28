@@ -55,7 +55,9 @@ Delivery contract:
 - Run focused checks while building and the complete configured gate before review and after every repair batch.
 - Review independently for engineering standards and for the locked intent.
 - Keep the PR as a draft until implementation and full verification are complete.
-- Treat reviewer claims as hypotheses: fix valid issues, rebut false positives with evidence, and defer only safe out-of-scope work with an explicit issue and risk statement.
+- Treat reviewer claims as hypotheses. Inspect the cited code and its surrounding
+  behavior before changing production code. Use only the canonical dispositions
+  and response format in `$close-review-loop`'s Review Closure Policy.
 - After a verified fix batch, push and request a fresh review through the
   configured provider. When CodeRabbit is selected, comment `@coderabbitai
   review`; use a full review after a major rebase or rewrite. Repeat until there

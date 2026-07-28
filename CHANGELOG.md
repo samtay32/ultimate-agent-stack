@@ -4,6 +4,12 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ## Unreleased
 
+### Fixed
+
+- Review findings now require claim validation against repository evidence
+  before code changes, and all review guidance consumes one canonical
+  `fixed | rebutted | deferred | decision-needed` disposition vocabulary.
+
 ## 0.7.0 - 2026-07-27
 
 ### Added

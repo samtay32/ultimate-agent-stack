@@ -67,6 +67,30 @@ const releaseSyncWorkflow = readFileSync(
   join(PACKAGE_ROOT, ".github/workflows/sync-github-release.yml"),
   "utf8",
 );
+const reviewClosurePolicy = readFileSync(
+  join(
+    PACKAGE_ROOT,
+    "skills/close-review-loop/references/review-closure-policy.md",
+  ),
+  "utf8",
+);
+const closeReviewSkill = readFileSync(
+  join(PACKAGE_ROOT, "skills/close-review-loop/SKILL.md"),
+  "utf8",
+);
+const githubLoop = readFileSync(
+  join(PACKAGE_ROOT, "docs/GITHUB_LOOP.md"),
+  "utf8",
+);
+const starterPrompt = readFileSync(
+  join(PACKAGE_ROOT, "STARTER_PROMPT.md"),
+  "utf8",
+);
+const projectAgents = readFileSync(
+  join(PACKAGE_ROOT, "assets/project-template/AGENTS.md"),
+  "utf8",
+);
+const readme = readFileSync(join(PACKAGE_ROOT, "README.md"), "utf8");
 
 function assertCheckoutCredentialsDisabled(workflow) {
   const lines = workflow.split("\n");
@@ -150,6 +174,56 @@ test("repository and installed-project CodeRabbit policies stay synchronized", (
   assert.equal(repositoryCodeRabbit, templateCodeRabbit);
   assert.match(repositoryCodeRabbit, /profile: "assertive"/);
   assert.match(repositoryCodeRabbit, /auto_incremental_review: false/);
+});
+
+test("review closure validates claims and has one disposition vocabulary", () => {
+  const dispositionLine = reviewClosurePolicy.match(
+    /^Disposition: (.+)$/m,
+  );
+  assert.ok(dispositionLine, "review policy must define its response format");
+  assert.deepEqual(
+    dispositionLine[1].split(" | "),
+    ["fixed", "rebutted", "deferred", "decision-needed"],
+  );
+  assert.match(
+    reviewClosurePolicy,
+    /Treat every reviewer claim as a hypothesis/,
+  );
+  assert.match(
+    reviewClosurePolicy,
+    /Never change production code merely because a reviewer asserted a defect/,
+  );
+  assert.match(
+    closeReviewSkill,
+    /Validate each reviewer claim before acting/,
+  );
+  assert.match(
+    closeReviewSkill,
+    /Apply one exact canonical disposition and the response format/,
+  );
+
+  for (const source of [
+    closeReviewSkill,
+    githubLoop,
+    starterPrompt,
+    projectAgents,
+    readme,
+  ]) {
+    assert.match(
+      source,
+      /Review\s+Closure Policy|review-closure-policy\.md/,
+    );
+    assert.doesNotMatch(
+      source,
+      /\*\*(?:fix|rebut|defer|decision needed):\*\*/,
+      "secondary guidance must not restate noncanonical labels",
+    );
+    assert.doesNotMatch(
+      source,
+      /^[ \t]*Disposition:/m,
+      "secondary guidance must defer to the canonical policy",
+    );
+  }
 });
 
 test("review receipt workflow never executes the pull request copy of its gate", () => {
