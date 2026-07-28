@@ -103,6 +103,14 @@ const projectAgents = readFileSync(
   "utf8",
 );
 const readme = readFileSync(join(PACKAGE_ROOT, "README.md"), "utf8");
+const behavioralEvals = readFileSync(
+  join(PACKAGE_ROOT, "docs/BEHAVIORAL_EVALS.md"),
+  "utf8",
+);
+const releaseGuide = readFileSync(
+  join(PACKAGE_ROOT, "docs/RELEASE.md"),
+  "utf8",
+);
 
 function assertCheckoutCredentialsDisabled(workflow) {
   const lines = workflow.split("\n");
@@ -313,6 +321,20 @@ test("read-only workflow checkouts do not persist Git credentials", () => {
   }
 });
 
+test("CI covers minimum Node and Windows before the required verify job", () => {
+  assert.match(ciWorkflow, /compatibility:/);
+  assert.match(ciWorkflow, /name: ubuntu-node-minimum/);
+  assert.match(ciWorkflow, /name: windows-node-minimum/);
+  assert.match(ciWorkflow, /name: windows-node-current/);
+  assert.match(ciWorkflow, /node: 20\.12\.2/);
+  assert.match(ciWorkflow, /os: windows-latest/);
+  assert.match(ciWorkflow, /verify:\s+needs: compatibility/);
+  assert.ok(
+    [...ciWorkflow.matchAll(/run: npm run release:check/g)].length >= 2,
+    "both compatibility and required verify must run the release gate",
+  );
+});
+
 test("package has no install hooks and guards publication with prepublishOnly", () => {
   const lifecycle = [
     "preinstall",
@@ -336,6 +358,7 @@ test("package has no install hooks and guards publication with prepublishOnly", 
       "scripts/packed-smoke.mjs",
       "scripts/release-preflight.mjs",
       "scripts/review-receipt.mjs",
+      "scripts/skill-eval.mjs",
       "scripts/upstream-issue.mjs",
     ],
   );
@@ -354,9 +377,32 @@ test("package has no install hooks and guards publication with prepublishOnly", 
     true,
     "package files must include the private vulnerability reporting policy",
   );
+  assert.equal(packageData.files.includes("evals/"), true);
+  assert.equal(
+    packageData.scripts?.["eval:contracts"],
+    "node scripts/skill-eval.mjs contracts",
+  );
+  assert.match(packageData.scripts?.["release:check"], /eval:contracts/);
   assert.match(packedSmoke, /packed\[0\]\.files/);
   assert.match(packedSmoke, /duplicate-copy paths/);
   assert.deepEqual(packageData.dependencies ?? {}, {});
+});
+
+test("release docs separate deterministic contracts from live model evidence", () => {
+  for (const source of [behavioralEvals, releaseGuide, readme]) {
+    assert.match(source, /behavior(?:al)?/i);
+  }
+  assert.match(
+    behavioralEvals,
+    /They cannot prove that a model activates\s+the right skill/,
+  );
+  assert.match(behavioralEvals, /false activation/);
+  assert.match(behavioralEvals, /surface.hash/i);
+  assert.match(releaseGuide, /real supported harness/);
+  assert.match(
+    releaseGuide,
+    /must not be generalized\s+to\s+untested providers/,
+  );
 });
 
 test("npm staging and GitHub release permissions remain separated", () => {

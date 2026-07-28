@@ -176,6 +176,17 @@ The test suite includes containment, symlink, tamper, approval-drift,
 script-body, environment-redaction, review-receipt, package, provenance, and
 clean-install checks.
 
+The behavioral scenario gate checks that direct, indirect, incomplete,
+negative, edge, authority, continuity, and existing-project cases remain
+defined against current skill names. It also tests the deterministic evaluator.
+Those checks do **not** prove model behavior. When skill instructions or
+activation metadata change, release readiness additionally requires an
+evaluated run from a real named harness and model. The report is bound to a hash
+of the behavioral surface and must not be presented as evidence for an untested
+harness. The evaluator does not authenticate a collector's claims; reviewers
+must inspect the named run evidence. See
+[Behavioral Evaluations](BEHAVIORAL_EVALS.md).
+
 The implementation lives in
 [`bin/ultimate-agent-stack.mjs`](../bin/ultimate-agent-stack.mjs), the protected
 review logic in

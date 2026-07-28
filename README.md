@@ -270,6 +270,7 @@ videos, platform references, and tradeoffs:
 | [Security Policy](SECURITY.md) | Private vulnerability reporting and supported-version policy |
 | [Architecture](docs/ARCHITECTURE.md) | Control flow, state, planes, and component design |
 | [Skill Stack](docs/SKILL_STACK.md) | Skill roles and harness-specific behavior |
+| [Behavioral Evaluations](docs/BEHAVIORAL_EVALS.md) | Skill activation scenarios, live-run evidence, and limits |
 | [Adapters](docs/ADAPTERS.md) | Review and knowledge provider configuration |
 | [GitHub Review Loop](docs/GITHUB_LOOP.md) | Pull requests, CodeRabbit, CI, and closure rules |
 | [Release Guide](docs/RELEASE.md) | Maintainer publishing and provenance checks |
@@ -290,7 +291,10 @@ npx --yes markdownlint-cli2@0.20.0 '**/*.md'
 ```
 
 Releases use protected GitHub Actions, npm trusted publishing, staged human 2FA
-approval, registry provenance, and a matching GitHub Release.
+approval, registry provenance, and a matching GitHub Release. `release:check`
+validates the behavioral scenario contracts; skill-changing releases also need
+a real harness run evaluated as described in
+[Behavioral Evaluations](docs/BEHAVIORAL_EVALS.md).
 
 ## License
 

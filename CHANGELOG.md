@@ -8,6 +8,14 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 - A standard private vulnerability reporting policy is included in the
   repository and published package.
+- A provider-neutral behavioral scenario suite covers direct, indirect,
+  incomplete, negative, edge, authority, continuity, and existing-project
+  cases, including both required activation and false activation.
+- A deterministic evaluator validates live harness run records against the
+  current hashed behavior surface without claiming that unit tests prove model
+  behavior.
+- CI now runs the full release gate on the minimum supported Node.js version
+  and on minimum and current Node.js versions for Windows.
 
 ### Changed
 
