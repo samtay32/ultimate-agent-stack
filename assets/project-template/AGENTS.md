@@ -112,6 +112,12 @@ expands execution, merge, deployment, or release authority. Do not store remote
 payloads, credentials, personal data, or raw telemetry in repository work
 evidence.
 
+The reviewed Linear adapter is optional and read-only. When configured, run
+`linear-health` before relying on it, restrict reads to approved team keys, and
+fall back to the repository ledger on any authentication, scope, rate-limit, or
+availability failure. Never use a write-capable key or treat Linear status as
+completion evidence.
+
 ## Continuity
 
 One primary Project Steward owns the current checkout. Start through the local

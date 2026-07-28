@@ -145,6 +145,10 @@ function main() {
         "repository evidence graph",
       ],
       [
+        [".agent-stack", "bin", "linear-readonly.mjs"],
+        "protected Linear read-only helper",
+      ],
+      [
         [".codex", "agents", "uas_researcher.toml"],
         "Codex worker adapter",
       ],
@@ -187,7 +191,7 @@ function main() {
       readFileSync(join(project, ".agent-stack", "config.json"), "utf8"),
     );
     if (
-      config.schema_version !== 4 ||
+      config.schema_version !== 5 ||
       config.onboarding?.status !== "pending" ||
       config.capabilities?.review?.provider !== "builtin" ||
       config.capabilities?.knowledge?.provider !== "repository" ||
@@ -205,6 +209,7 @@ function main() {
       config.capabilities?.work?.sync_mode !== "repository_only" ||
       config.capabilities?.work?.write_policy !== "repository_only" ||
       config.capabilities?.work?.repository_fallback !== true ||
+      config.capabilities?.work?.connection !== null ||
       !Array.isArray(config.quality?.environment?.allow) ||
       config.quality.environment.allow.length !== 0
     ) {

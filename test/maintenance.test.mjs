@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
@@ -136,6 +137,21 @@ const workEvidenceContract = readFileSync(
     PACKAGE_ROOT,
     "skills/manage-project-work/references/work-evidence-contract.md",
   ),
+  "utf8",
+);
+const linearReadonlyProvider = readFileSync(
+  join(
+    PACKAGE_ROOT,
+    "skills/manage-project-work/references/linear-readonly-provider.md",
+  ),
+  "utf8",
+);
+const linearReadonlyHelper = readFileSync(
+  join(PACKAGE_ROOT, "scripts/linear-readonly.mjs"),
+  "utf8",
+);
+const packageCliSource = readFileSync(
+  join(PACKAGE_ROOT, "bin/ultimate-agent-stack.mjs"),
   "utf8",
 );
 const workItemSchema = JSON.parse(
@@ -405,9 +421,10 @@ test("package has no install hooks and guards publication with prepublishOnly", 
   assert.deepEqual(
     packageData.files.filter((entry) => entry.startsWith("scripts/")),
     [
-      "scripts/github-release-sync.mjs",
-      "scripts/gbrain-project.mjs",
-      "scripts/check-portable-bundle.mjs",
+    "scripts/github-release-sync.mjs",
+    "scripts/gbrain-project.mjs",
+    "scripts/linear-readonly.mjs",
+    "scripts/check-portable-bundle.mjs",
       "scripts/packed-smoke.mjs",
       "scripts/release-preflight.mjs",
       "scripts/review-receipt.mjs",
@@ -508,6 +525,7 @@ test("work and evidence contracts remain portable and provider-neutral", () => {
   for (const source of [
     workSkill,
     workEvidenceContract,
+    linearReadonlyProvider,
     adaptersGuide,
     projectAgents,
     readme,
@@ -520,6 +538,14 @@ test("work and evidence contracts remain portable and provider-neutral", () => {
   assert.match(workSkill, /Do not infer completion from a provider status/i);
   assert.match(workEvidenceContract, /Provider labels never replace/);
   assert.match(workEvidenceContract, /Never store an access token/);
+  assert.match(linearReadonlyProvider, /mcp\/readonly/);
+  assert.match(linearReadonlyProvider, /repository fallback/i);
+  assert.doesNotMatch(linearReadonlyHelper, /\bmutation\b/i);
+  assert.match(linearReadonlyHelper, /https:\/\/api\.linear\.app\/graphql/);
+  const linearReadonlyHash = createHash("sha256")
+    .update(linearReadonlyHelper)
+    .digest("hex");
+  assert.match(packageCliSource, new RegExp(linearReadonlyHash));
   assert.equal(workItemSchema.additionalProperties, false);
   assert.equal(evidenceGraphSchema.additionalProperties, false);
   assert.equal(

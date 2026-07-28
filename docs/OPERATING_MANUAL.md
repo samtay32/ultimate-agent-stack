@@ -183,6 +183,23 @@ repository-only and does not ask the user to connect telemetry. Ultimate Agent
 Stack sends no usage telemetry of its own. Any future provider starts with
 read-only project scope and bounded evidence references.
 
+For work tracking, the agent asks:
+
+> Should this project keep its task list only in the repository, or also read
+> approved work from Linear while keeping a portable repository copy?
+
+Repository tracking is recommended for solo, short, or early work. If the team
+already uses Linear, the reviewed adapter can be selected with approved team
+keys and an API key created with only Linear's Read permission. The key stays in
+`LINEAR_API_KEY`, outside the repository. The agent runs `linear-setup`, waits
+for the credential action, then runs `linear-health` and `doctor`.
+
+The helper exposes a bounded, paginated GraphQL query shape and no mutations.
+It can verify authentication and configured team visibility, but Linear's
+response does not attest the permission chosen when the key was created. If the
+provider fails, the Project Steward continues from
+`.agent-stack/work-items.json` and records synchronization as pending.
+
 ## What Happens With Subagents
 
 You continue speaking only with the primary coding agent—the Project Steward.

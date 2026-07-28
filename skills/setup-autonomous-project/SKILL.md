@@ -58,9 +58,22 @@ Configure the repository without erasing its conventions. Setup is complete only
    installed. Do not ask the user to select or connect an unavailable provider,
    and never add instrumentation merely because the neutral contract exists.
 
-   Initialize repository work tracking as the portable default. Validate
-   `.agent-stack/work-items.json` and `.agent-stack/evidence-graph.json`; do not
-   select or connect an external work provider implicitly.
+   Ask the work-tracking choice in plain language:
+
+   > Should this project keep its task list only in the repository, or also
+   > read approved work from Linear while keeping a portable repository copy?
+
+   Recommend repository work tracking for a solo, short, or early project.
+   Offer Linear only when the team already uses it and can create a
+   Read-permission key for explicitly approved team keys. Explain that Linear
+   is optional, read-only in this release, and never proves completion or grants
+   delivery authority.
+
+   Always initialize and validate `.agent-stack/work-items.json` and
+   `.agent-stack/evidence-graph.json`. If Linear is approved, configure
+   `--work linear` with repeated `--linear-team KEY`, run `linear-setup`, wait
+   for the human credential step, then verify with `linear-health` and
+   `doctor`. Never select or connect it implicitly.
 
    For a local prototype or straightforward project that does not require
    production release protection, external data, external memory, or delegated
@@ -86,6 +99,8 @@ Configure the repository without erasing its conventions. Setup is complete only
      --review REVIEW_PROVIDER \
      --knowledge KNOWLEDGE_PROVIDER \
      --knowledge-scope SCOPE \
+     --work WORK_PROVIDER \
+     --linear-team LINEAR_TEAM_KEY \
      --external-data POLICY \
      --reason "Record the user's approved project and provider choices"
    ```

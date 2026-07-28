@@ -41,6 +41,8 @@ import {
   commandDetect,
   commandDoctor,
   commandEvidenceValidate,
+  commandLinearHealth,
+  commandLinearSetup,
   commandLock,
   commandMemoryHealth,
   commandMemorySetup,
@@ -468,7 +470,7 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
       initializedConfig.parallel_delivery,
       safeParallelPolicy(),
     );
-    assert.equal(initializedConfig.schema_version, 4);
+    assert.equal(initializedConfig.schema_version, 5);
     assert.equal(initializedConfig.onboarding.status, "pending");
     assert.equal(initializedConfig.capabilities.knowledge.scope, "project");
     assert.deepEqual(initializedConfig.capabilities.telemetry.providers, []);
@@ -478,6 +480,7 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
       sync_mode: "repository_only",
       write_policy: "repository_only",
       repository_fallback: true,
+      connection: null,
     });
     assert.deepEqual(initializedConfig.quality.environment, { allow: [] });
 
@@ -528,6 +531,7 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
     assert.equal(onboardingStart.phase, "onboarding");
     assert.match(onboardingStart.prompt, /at most one genuinely safe alternative/);
     assert.match(onboardingStart.prompt, /private local searchable memory/);
+    assert.match(onboardingStart.prompt, /also read approved work from Linear/);
     assert.match(
       onboardingStart.prompt,
       /Do not ask the user to select or connect an unavailable provider/,
@@ -538,6 +542,7 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
     assert.equal(capabilities.available.knowledge.repository.available, true);
     assert.equal(capabilities.available.telemetry.none.available, true);
     assert.equal(capabilities.available.work.repository.available, true);
+    assert.equal(capabilities.available.work.linear.access, "read_only");
     assert.equal(commandWorkValidate(fixture.directory).ok, true);
     assert.equal(commandEvidenceValidate(fixture.directory).ok, true);
 
@@ -976,6 +981,14 @@ test("simple preset expands to the safe local project configuration", () => {
       required: false,
       capture: "verified_proposals_only",
       repository_fallback: true,
+    });
+    assert.deepEqual(config.capabilities.work, {
+      provider: "repository",
+      required: false,
+      sync_mode: "repository_only",
+      write_policy: "repository_only",
+      repository_fallback: true,
+      connection: null,
     });
     assert.equal(config.autonomy.execution, "agent_owned");
     assert.equal(config.autonomy.merge, "human_approval_required");
@@ -1615,6 +1628,127 @@ test("work ledger validates schema-maximum dependency depth without recursion", 
   );
 });
 
+test("Linear work setup is read-only, scoped, and falls back safely", () => {
+  const fixture = temporaryProject();
+  const previousCredential = process.env.LINEAR_API_KEY;
+  try {
+    delete process.env.LINEAR_API_KEY;
+    initializeGit(fixture.directory);
+    createJavaScriptFixture(fixture.directory);
+    installOrUpgrade(fixture.directory, { mode: "init" });
+    const configured = commandConfigure(fixture.directory, {
+      profile: "standard",
+      review: "builtin",
+      knowledge: "repository",
+      work: "linear",
+      linearTeams: ["eng", "OPS"],
+      externalData: "approved_providers",
+      reason: "Approved read-only Linear access for two project teams",
+    });
+    assert.deepEqual(configured.capabilities.work, {
+      provider: "linear",
+      required: false,
+      sync_mode: "read_only_mirror",
+      write_policy: "read_only",
+      repository_fallback: true,
+      connection: {
+        kind: "linear_api_key",
+        credential_env: "LINEAR_API_KEY",
+        team_keys: ["ENG", "OPS"],
+      },
+    });
+    const storedConfig = readJson(join(fixture.directory, CONFIG_PATH));
+    assert.equal(storedConfig.capabilities.work.connection.api_key, undefined);
+    assert.doesNotMatch(JSON.stringify(storedConfig), /Bearer\s+[A-Za-z0-9]/);
+
+    const setup = commandLinearSetup(fixture.directory);
+    assert.equal(setup.mode, "guided-read-only");
+    assert.deepEqual(setup.guardrails.exposed_remote_mutations, []);
+    assert.equal(
+      setup.steps.find((step) => step.id === "optional-harness-connection")
+        .endpoint,
+      "https://mcp.linear.app/mcp/readonly",
+    );
+
+    const health = commandLinearHealth(fixture.directory);
+    assert.equal(health.ok, false);
+    assert.equal(health.fallback, "repository");
+    assert.match(health.error, /LINEAR_API_KEY/);
+    const doctor = commandDoctor(fixture.directory);
+    const providerReport = doctor.reports.find(
+      (report) => report.name === "work-provider",
+    );
+    assert.equal(providerReport.ok, false);
+    assert.equal(providerReport.severity, "warning");
+    assert.equal(providerReport.code, "repository-fallback");
+
+    const invalid = readJson(join(fixture.directory, CONFIG_PATH));
+    invalid.capabilities.work.write_policy = "repository_only";
+    invalid.capabilities.work.connection.credential_env = "OTHER_SECRET";
+    const errors = validateConfig(invalid, fixture.directory).join("\n");
+    assert.match(errors, /must begin with read_only_mirror/);
+    assert.match(errors, /credential_env must be LINEAR_API_KEY/);
+  } finally {
+    if (previousCredential === undefined) {
+      delete process.env.LINEAR_API_KEY;
+    } else {
+      process.env.LINEAR_API_KEY = previousCredential;
+    }
+    fixture.cleanup();
+  }
+});
+
+test("Linear health refuses a modified helper even when its manifest hash is spoofed", () => {
+  const fixture = temporaryProject();
+  const outside = `${fixture.directory}-linear-helper-proof`;
+  const previousCredential = process.env.LINEAR_API_KEY;
+  try {
+    initializeGit(fixture.directory);
+    createJavaScriptFixture(fixture.directory);
+    installOrUpgrade(fixture.directory, { mode: "init" });
+    commandConfigure(fixture.directory, {
+      profile: "standard",
+      review: "builtin",
+      knowledge: "repository",
+      work: "linear",
+      linearTeams: ["ENG"],
+      externalData: "approved_providers",
+      reason: "Approved read-only Linear access for the engineering team",
+    });
+    process.env.LINEAR_API_KEY = "lin_api_test_value_never_logged";
+
+    const helperPath = join(
+      fixture.directory,
+      ".agent-stack/bin/linear-readonly.mjs",
+    );
+    const tamperedSource = [
+      'import { writeFileSync } from "node:fs";',
+      `writeFileSync(${JSON.stringify(outside)}, "executed");`,
+      'process.stdout.write(JSON.stringify({ ok: true, provider: "linear", access: "read_only" }));',
+    ].join("\n");
+    writeFileSync(helperPath, tamperedSource, "utf8");
+    const installationPath = join(fixture.directory, INSTALLATION_PATH);
+    const installation = readJson(installationPath);
+    installation.managed_files[".agent-stack/bin/linear-readonly.mjs"].source_hash =
+      hashText(tamperedSource);
+    writeJson(installationPath, installation);
+
+    const health = commandLinearHealth(fixture.directory);
+    assert.equal(health.ok, false);
+    assert.equal(health.live_check, "not-run");
+    assert.match(health.error, /hash pinned in the protected CLI/);
+    assert.equal(existsSync(outside), false);
+  } finally {
+    if (previousCredential === undefined) {
+      delete process.env.LINEAR_API_KEY;
+    } else {
+      process.env.LINEAR_API_KEY = previousCredential;
+    }
+    rmSync(outside, { force: true });
+    fixture.cleanup();
+  }
+});
+
 test("provider or authority changes invalidate configuration approval", () => {
   const fixture = temporaryProject();
   try {
@@ -1911,7 +2045,7 @@ test("legacy serial policy migrates to safe adaptive coordination", () => {
       "coordinator_managed_isolated_only",
     );
     assert.deepEqual(migrated.parallel_delivery, safeParallelPolicy());
-    assert.equal(migrated.schema_version, 4);
+    assert.equal(migrated.schema_version, 5);
     assert.equal(migrated.onboarding.status, "needs_confirmation");
     assert.equal(migrated.onboarding.project_profile, "production");
     assert.equal(migrated.capabilities.review.provider, "coderabbit");
@@ -1934,6 +2068,7 @@ test("legacy serial policy migrates to safe adaptive coordination", () => {
       sync_mode: "repository_only",
       write_policy: "repository_only",
       repository_fallback: true,
+      connection: null,
     });
   } finally {
     fixture.cleanup();

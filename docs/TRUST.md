@@ -25,6 +25,7 @@ sandbox and the Markdown skills are not executable security controls.
 | Verify project-local GBrain path containment, health, and identity | Treat optional memory as advisory |
 | Validate that only reviewed telemetry providers can enter configuration | Treat read-only project telemetry as advisory evidence |
 | Validate repository work and evidence vocabulary, bounds, dependencies, and graph endpoints | Keep external work synchronized and require real acceptance evidence |
+| Restrict the Linear helper to a fixed endpoint and GraphQL query, verify configured team visibility, and expose no mutation operation | Create the upstream Linear key with only Read permission |
 | Keep package publishing behind the protected release workflow | Stop after bounded non-improving repair loops and report the blocker |
 
 The left column is code. A conversation cannot persuade those checks to pass.

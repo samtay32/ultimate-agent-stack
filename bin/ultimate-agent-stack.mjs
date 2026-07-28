@@ -44,7 +44,7 @@ const PACKAGE_JSON = existsSync(join(PACKAGE_ROOT, "package.json"))
     };
 const PACKAGE_NAME = PACKAGE_JSON.name;
 const PACKAGE_VERSION = PACKAGE_JSON.version;
-const CONFIG_SCHEMA_VERSION = 4;
+const CONFIG_SCHEMA_VERSION = 5;
 const WORK_LEDGER_PATH = ".agent-stack/work-items.json";
 const EVIDENCE_GRAPH_PATH = ".agent-stack/evidence-graph.json";
 const COMPLETION_EVIDENCE_RELATIONS = new Set([
@@ -69,6 +69,10 @@ const COORDINATOR_PATH = ".agent-stack/coordinator.json";
 const COORDINATOR_MUTEX_PATH = ".agent-stack/coordinator.mutex";
 const GBRAIN_HOME_PATH = ".agent-stack/gbrain-home";
 const GBRAIN_LAUNCHER_PATH = ".agent-stack/bin/gbrain-project.mjs";
+const LINEAR_READONLY_PATH = ".agent-stack/bin/linear-readonly.mjs";
+const LINEAR_READONLY_SOURCE_HASH =
+  "96906e7d5c9c3cf11d4e135f9d0c5688b890635a0a26d445c62f89d087899937";
+const LINEAR_CREDENTIAL_ENV = "LINEAR_API_KEY";
 const GBRAIN_CHECKPOINT_SLUG = "projects/ultimate-agent-stack/checkpoint";
 const RUNS_PATH = ".agent-stack/runs";
 const PROJECT_CLI_PATH = ".agent-stack/bin/agent-stack.mjs";
@@ -361,9 +365,9 @@ const TELEMETRY_ACCESS_MODES = new Set(["read_only"]);
 const TELEMETRY_EVIDENCE_MODES = new Set([
   "bounded_references_only",
 ]);
-const WORK_PROVIDERS = new Set(["repository"]);
-const WORK_SYNC_MODES = new Set(["repository_only"]);
-const WORK_WRITE_POLICIES = new Set(["repository_only"]);
+const WORK_PROVIDERS = new Set(["repository", "linear"]);
+const WORK_SYNC_MODES = new Set(["repository_only", "read_only_mirror"]);
+const WORK_WRITE_POLICIES = new Set(["repository_only", "read_only"]);
 const WORK_ITEM_STATUSES = new Set([
   "backlog",
   "ready",
@@ -427,6 +431,8 @@ const CONFIGURATION_PRESETS = Object.freeze({
     review: "builtin",
     knowledge: "repository",
     knowledgeScope: "project",
+    work: "repository",
+    linearTeams: Object.freeze([]),
     externalData: "local_only",
     execution: "agent_owned",
     merge: "human_approval_required",
@@ -1062,6 +1068,7 @@ function defaultConfig(target, detected) {
         sync_mode: "repository_only",
         write_policy: "repository_only",
         repository_fallback: true,
+        connection: null,
       },
     },
     learning: {
@@ -1193,6 +1200,7 @@ function migrateConfig(config, target = undefined) {
     config.capabilities.work.sync_mode ??= "repository_only";
     config.capabilities.work.write_policy ??= "repository_only";
     config.capabilities.work.repository_fallback ??= true;
+    config.capabilities.work.connection ??= null;
   }
   config.learning ??= {};
   config.learning.auto_activate_skills ??= false;
@@ -1904,29 +1912,98 @@ function validateConfig(config, target = undefined) {
         "sync_mode",
         "write_policy",
         "repository_fallback",
+        "connection",
       ]),
       "capabilities.work",
     );
     if (!WORK_PROVIDERS.has(work.provider)) {
-      errors.push("capabilities.work.provider must be repository");
+      errors.push("capabilities.work.provider must be repository or linear");
     }
     if (work.required !== false) {
       errors.push("capabilities.work.required must remain false");
     }
     if (!WORK_SYNC_MODES.has(work.sync_mode)) {
       errors.push(
-        "capabilities.work.sync_mode must be repository_only",
+        "capabilities.work.sync_mode must be repository_only or read_only_mirror",
       );
     }
     if (!WORK_WRITE_POLICIES.has(work.write_policy)) {
       errors.push(
-        "capabilities.work.write_policy must be repository_only",
+        "capabilities.work.write_policy must be repository_only or read_only",
       );
     }
     if (work.repository_fallback !== true) {
       errors.push(
         "capabilities.work.repository_fallback must remain true",
       );
+    }
+    if (work.provider === "repository") {
+      if (
+        work.sync_mode !== "repository_only" ||
+        work.write_policy !== "repository_only" ||
+        work.connection !== null
+      ) {
+        errors.push(
+          "repository work requires repository_only sync/write policy and no external connection",
+        );
+      }
+    }
+    if (work.provider === "linear") {
+      if (
+        work.sync_mode !== "read_only_mirror" ||
+        work.write_policy !== "read_only"
+      ) {
+        errors.push(
+          "linear work must begin with read_only_mirror sync and read_only provider access",
+        );
+      }
+      if (
+        !work.connection ||
+        typeof work.connection !== "object" ||
+        Array.isArray(work.connection)
+      ) {
+        errors.push("linear work requires a bounded connection object");
+      } else {
+        rejectUnknownKeys(
+          errors,
+          work.connection,
+          new Set(["kind", "credential_env", "team_keys"]),
+          "capabilities.work.connection",
+        );
+        if (work.connection.kind !== "linear_api_key") {
+          errors.push(
+            "capabilities.work.connection.kind must be linear_api_key",
+          );
+        }
+        if (work.connection.credential_env !== LINEAR_CREDENTIAL_ENV) {
+          errors.push(
+            `capabilities.work.connection.credential_env must be ${LINEAR_CREDENTIAL_ENV}`,
+          );
+        }
+        if (
+          !Array.isArray(work.connection.team_keys) ||
+          work.connection.team_keys.length === 0 ||
+          work.connection.team_keys.length > 20 ||
+          !work.connection.team_keys.every(
+            (key) =>
+              typeof key === "string" &&
+              /^[A-Z][A-Z0-9]{0,9}$/.test(key),
+          ) ||
+          new Set(work.connection.team_keys).size !==
+            work.connection.team_keys.length
+        ) {
+          errors.push(
+            "capabilities.work.connection.team_keys must contain 1-20 unique uppercase Linear team keys",
+          );
+        }
+      }
+      if (
+        config.onboarding.external_data_policy !== "approved_providers"
+      ) {
+        errors.push(
+          "linear work requires onboarding.external_data_policy approved_providers",
+        );
+      }
     }
   }
   if (
@@ -2856,6 +2933,11 @@ function sourceEntries({ claude = false } = {}) {
     protected: true,
   });
   entries.push({
+    destination: LINEAR_READONLY_PATH,
+    source: join(PACKAGE_ROOT, "scripts/linear-readonly.mjs"),
+    protected: true,
+  });
+  entries.push({
     destination: PROJECT_CLI_PATH,
     source: CLI_FILE,
     protected: true,
@@ -3197,6 +3279,17 @@ function commandCapabilities(target) {
           detail:
             "Portable repository work ledger and reference-only evidence graph",
         },
+        linear: {
+          available:
+            projectExists(target, LINEAR_READONLY_PATH) &&
+            typeof process.env[LINEAR_CREDENTIAL_ENV] === "string" &&
+            process.env[LINEAR_CREDENTIAL_ENV].length > 0,
+          external: true,
+          access: "read_only",
+          credential_environment: LINEAR_CREDENTIAL_ENV,
+          detail:
+            "Reviewed Linear GraphQL reader with repository fallback; no mutation operation is exposed",
+        },
       },
     },
   };
@@ -3266,6 +3359,350 @@ function parseProviderJson(result, label) {
       detail: result.stdout,
     };
   }
+}
+
+function linearEnvironment() {
+  const environment = {};
+  for (const name of SAFE_ENVIRONMENT_NAMES) {
+    if (typeof process.env[name] === "string") {
+      environment[name] = process.env[name];
+    }
+  }
+  if (typeof process.env[LINEAR_CREDENTIAL_ENV] === "string") {
+    environment[LINEAR_CREDENTIAL_ENV] =
+      process.env[LINEAR_CREDENTIAL_ENV];
+  }
+  return {
+    ...environment,
+    NO_COLOR: "1",
+  };
+}
+
+function runLinearReadonly(target, args, timeout = 20_000) {
+  const helper = projectFile(
+    target,
+    LINEAR_READONLY_PATH,
+    "Linear read-only helper",
+  );
+  if (!existsSync(helper)) {
+    return {
+      ok: false,
+      status: 1,
+      raw_stdout: "",
+      stdout: "",
+      stderr: `missing ${LINEAR_READONLY_PATH}`,
+    };
+  }
+  const result = spawnPortable(target, "node", [helper, ...args], {
+    cwd: target,
+    encoding: "utf8",
+    env: linearEnvironment(),
+    maxBuffer: 512 * 1024,
+    shell: false,
+    timeout,
+  });
+  const timedOut = result.error?.code === "ETIMEDOUT";
+  return {
+    ok: result.status === 0 && !timedOut,
+    status: timedOut ? 124 : (result.status ?? 1),
+    ...(timedOut ? { reason: "timeout" } : {}),
+    raw_stdout: result.stdout ?? "",
+    stdout: redact(result.stdout ?? "", 24_000),
+    stderr: redact(result.stderr ?? "", 4_000),
+  };
+}
+
+const LINEAR_HEALTH_ERRORS = new Set([
+  "LINEAR_API_KEY is missing or invalid",
+  "Linear health response exceeded the bounded capture limit",
+  "Linear returned invalid JSON",
+  "Linear GraphQL returned one or more errors",
+  "Linear health request failed",
+  "Linear health response has an invalid team connection",
+  "Linear health response has an invalid pagination cursor",
+  "Linear team visibility exceeded the bounded pagination limit",
+  "one or more configured Linear teams are not visible",
+  "Linear viewer identity is missing",
+  "Linear health request timed out",
+]);
+
+function sanitizedLinearRateLimit(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return Object.fromEntries(
+    ["limit", "remaining", "reset"]
+      .filter(
+        (key) =>
+          typeof value[key] === "string" &&
+          /^\d{1,16}$/.test(value[key]),
+      )
+      .map((key) => [key, value[key]]),
+  );
+}
+
+function sanitizeLinearHealthResult(value, teamKeys) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    typeof value.ok !== "boolean" ||
+    value.provider !== "linear" ||
+    value.access !== "read_only"
+  ) {
+    return {
+      ok: false,
+      provider: "linear",
+      live_check: "failed",
+      access: "read_only",
+      configured_team_keys: teamKeys,
+      error: "Linear read-only helper returned an invalid result",
+    };
+  }
+  const rateLimit = sanitizedLinearRateLimit(value.rate_limit);
+  if (!value.ok) {
+    return {
+      ok: false,
+      provider: "linear",
+      live_check: "failed",
+      access: "read_only",
+      configured_team_keys: teamKeys,
+      ...(Number.isInteger(value.status) &&
+      value.status >= 100 &&
+      value.status <= 599
+        ? { status: value.status }
+        : {}),
+      error: LINEAR_HEALTH_ERRORS.has(value.error)
+        ? value.error
+        : "Linear read-only helper reported a bounded provider failure",
+      rate_limit: rateLimit,
+    };
+  }
+  const visibleConfiguredTeamKeys = Array.isArray(
+    value.visible_configured_team_keys,
+  )
+    ? teamKeys.filter((key) =>
+        value.visible_configured_team_keys.includes(key),
+      )
+    : [];
+  const missingTeamKeys = teamKeys.filter(
+    (key) => !visibleConfiguredTeamKeys.includes(key),
+  );
+  const validSuccess =
+    value.live_check === "graphql-query" &&
+    value.adapter_surface_read_only === true &&
+    value.credential_scope_verified === false &&
+    value.viewer_authenticated === true &&
+    missingTeamKeys.length === 0 &&
+    Number.isInteger(value.visible_team_count) &&
+    value.visible_team_count >= visibleConfiguredTeamKeys.length &&
+    value.visible_team_count <= 500 &&
+    Number.isInteger(value.pages_read) &&
+    value.pages_read >= 1 &&
+    value.pages_read <= 10;
+  if (!validSuccess) {
+    return {
+      ok: false,
+      provider: "linear",
+      live_check: "failed",
+      access: "read_only",
+      configured_team_keys: teamKeys,
+      error: "Linear read-only helper returned an invalid result",
+    };
+  }
+  return {
+    ok: true,
+    provider: "linear",
+    live_check: "graphql-query",
+    access: "read_only",
+    adapter_surface_read_only: true,
+    credential_scope_verified: false,
+    viewer_authenticated: true,
+    configured_team_keys: teamKeys,
+    visible_configured_team_keys: visibleConfiguredTeamKeys,
+    missing_team_keys: [],
+    visible_team_count: value.visible_team_count,
+    pages_read: value.pages_read,
+    rate_limit: rateLimit,
+  };
+}
+
+function commandLinearHealth(target, suppliedConfig = undefined) {
+  const config = suppliedConfig ?? loadConfig(target);
+  const work =
+    config.capabilities.work &&
+    typeof config.capabilities.work === "object" &&
+    !Array.isArray(config.capabilities.work)
+      ? config.capabilities.work
+      : {};
+  if (work.provider !== "linear") {
+    return {
+      ok: true,
+      provider: "repository",
+      live_check: "repository",
+      access: "repository_only",
+      fallback: true,
+    };
+  }
+  const configErrors = validateConfig(config, target);
+  if (
+    configErrors.length > 0 ||
+    config.safety?.approved_configuration_hash !== configurationHash(config)
+  ) {
+    return {
+      ok: false,
+      provider: "linear",
+      live_check: "not-run",
+      access: "read_only",
+      fallback: "repository",
+      error:
+        configErrors.length > 0
+          ? "Linear connection configuration is invalid"
+          : "Linear connection configuration is not approved",
+    };
+  }
+  const teamKeys = Array.isArray(work.connection?.team_keys)
+    ? work.connection.team_keys
+    : [];
+  if (
+    work.connection?.credential_env !== LINEAR_CREDENTIAL_ENV ||
+    teamKeys.length === 0
+  ) {
+    return {
+      ok: false,
+      provider: "linear",
+      live_check: "not-run",
+      access: "read_only",
+      fallback: "repository",
+      error: "Linear connection configuration is invalid",
+    };
+  }
+  const protectedFileIssue = protectedProjectFileIssue(
+    target,
+    LINEAR_READONLY_PATH,
+  );
+  if (protectedFileIssue) {
+    return {
+      ok: false,
+      provider: "linear",
+      live_check: "not-run",
+      access: "read_only",
+      configured_team_keys: teamKeys,
+      fallback: "repository",
+      error: protectedFileIssue,
+    };
+  }
+  if (
+    typeof process.env[LINEAR_CREDENTIAL_ENV] !== "string" ||
+    process.env[LINEAR_CREDENTIAL_ENV].length === 0
+  ) {
+    return {
+      ok: false,
+      provider: "linear",
+      live_check: "not-run",
+      access: "read_only",
+      configured_team_keys: teamKeys,
+      credential_environment: LINEAR_CREDENTIAL_ENV,
+      fallback: "repository",
+      error: `${LINEAR_CREDENTIAL_ENV} is not available to this process`,
+    };
+  }
+  const parsed = parseProviderJson(
+    runLinearReadonly(
+      target,
+      ["health", ...teamKeys.flatMap((key) => ["--team", key])],
+    ),
+    "Linear read-only health check",
+  );
+  if (!parsed.ok) {
+    return {
+      ok: false,
+      provider: "linear",
+      live_check: "failed",
+      access: "read_only",
+      configured_team_keys: teamKeys,
+      credential_environment: LINEAR_CREDENTIAL_ENV,
+      fallback: "repository",
+      error: parsed.error,
+    };
+  }
+  const sanitized = sanitizeLinearHealthResult(parsed.value, teamKeys);
+  return {
+    ...sanitized,
+    credential_environment: LINEAR_CREDENTIAL_ENV,
+    fallback: "repository",
+  };
+}
+
+function commandLinearSetup(target) {
+  const config = loadConfig(target);
+  const errors = validateConfig(config, target);
+  if (
+    errors.length > 0 ||
+    config.safety?.approved_configuration_hash !== configurationHash(config)
+  ) {
+    throw new StackError(
+      "Cannot guide Linear setup until the project configuration is valid and approved.",
+      2,
+      errors,
+    );
+  }
+  const work = config.capabilities.work;
+  if (work.provider !== "linear") {
+    throw new StackError(
+      "Linear is not approved for this project. Complete the plain-language work-tracking decision and configure linear first.",
+    );
+  }
+  return {
+    ok: true,
+    provider: "linear",
+    mode: "guided-read-only",
+    configured_team_keys: work.connection.team_keys,
+    repository_fallback: true,
+    steps: [
+      {
+        id: "create-read-only-key",
+        status: "human-action-required",
+        url: "https://linear.app/settings/security",
+        instruction:
+          "Create a personal API key with only the Read permission. Never grant write or admin permission for this adapter.",
+      },
+      {
+        id: "provide-process-environment",
+        status:
+          typeof process.env[LINEAR_CREDENTIAL_ENV] === "string"
+            ? "available"
+            : "human-action-required",
+        credential_environment: LINEAR_CREDENTIAL_ENV,
+        instruction:
+          "Store the key in your shell or coding-harness secret environment, never in the repository, config, checkpoint, or evidence.",
+      },
+      {
+        id: "optional-harness-connection",
+        status: "optional",
+        endpoint: "https://mcp.linear.app/mcp/readonly",
+        instruction:
+          "If the coding harness supports remote MCP, connect Linear's official read-only endpoint. Keep this project configuration read-only even if another connection exists.",
+      },
+      {
+        id: "verify",
+        status: "required",
+        argv: [
+          "node",
+          PROJECT_CLI_PATH,
+          "linear-health",
+          "--target",
+          ".",
+        ],
+      },
+    ],
+    guardrails: {
+      exposed_remote_operations: ["GraphQL query"],
+      exposed_remote_mutations: [],
+      credential_scope:
+        "The CLI proves its own surface is query-only; the user must create the upstream key with Linear's Read permission.",
+    },
+  };
 }
 
 function pathContainedBy(root, candidate) {
@@ -3582,6 +4019,13 @@ function resolveConfigureOptions(options) {
       ["--review", options.review],
       ["--knowledge", options.knowledge],
       ["--knowledge-scope", options.knowledgeScope],
+      ["--work", options.work],
+      [
+        "--linear-team",
+        Array.isArray(options.linearTeams) && options.linearTeams.length > 0
+          ? options.linearTeams
+          : undefined,
+      ],
       ["--external-data", options.externalData],
       ["--execution", options.execution],
       ["--merge", options.merge],
@@ -3609,6 +4053,8 @@ function resolveConfigureOptions(options) {
   return {
     ...options,
     knowledgeScope: options.knowledgeScope ?? "project",
+    work: options.work ?? "repository",
+    linearTeams: options.linearTeams ?? [],
     execution: options.execution ?? "agent_owned",
     merge: options.merge ?? "human_approval_required",
     reviewers: options.reviewers ?? [],
@@ -3621,6 +4067,8 @@ function commandConfigure(target, options) {
     review,
     knowledge,
     knowledgeScope,
+    work,
+    linearTeams,
     externalData,
     execution,
     merge,
@@ -3651,6 +4099,9 @@ function commandConfigure(target, options) {
       "--knowledge-scope must be project or organization",
     );
   }
+  if (!WORK_PROVIDERS.has(work)) {
+    throw new StackError("--work must be repository or linear");
+  }
   if (!EXTERNAL_DATA_POLICIES.has(externalData)) {
     throw new StackError(
       "--external-data must be local_only or approved_providers",
@@ -3677,6 +4128,36 @@ function commandConfigure(target, options) {
   if (knowledge === "repository" && knowledgeScope !== "project") {
     throw new StackError(
       "Repository knowledge supports project scope only. Select GBrain for an approved organization scope.",
+    );
+  }
+  const normalizedLinearTeams = [
+    ...new Set(
+      linearTeams
+        .map((key) => String(key).trim().toUpperCase())
+        .filter(Boolean),
+    ),
+  ];
+  if (
+    normalizedLinearTeams.length > 20 ||
+    !normalizedLinearTeams.every((key) => /^[A-Z][A-Z0-9]{0,9}$/.test(key))
+  ) {
+    throw new StackError(
+      "--linear-team must be repeated with at most 20 valid Linear team keys",
+    );
+  }
+  if (work === "linear" && normalizedLinearTeams.length === 0) {
+    throw new StackError(
+      "Linear work tracking requires at least one --linear-team key",
+    );
+  }
+  if (work === "repository" && normalizedLinearTeams.length > 0) {
+    throw new StackError(
+      "--linear-team can only be used with --work linear",
+    );
+  }
+  if (work === "linear" && externalData !== "approved_providers") {
+    throw new StackError(
+      "Linear is an external provider. Select approved_providers or keep repository work tracking.",
     );
   }
 
@@ -3720,6 +4201,28 @@ function commandConfigure(target, options) {
     capture: "verified_proposals_only",
     repository_fallback: true,
   };
+  config.capabilities.work =
+    work === "linear"
+      ? {
+          provider: "linear",
+          required: false,
+          sync_mode: "read_only_mirror",
+          write_policy: "read_only",
+          repository_fallback: true,
+          connection: {
+            kind: "linear_api_key",
+            credential_env: LINEAR_CREDENTIAL_ENV,
+            team_keys: normalizedLinearTeams,
+          },
+        }
+      : {
+          provider: "repository",
+          required: false,
+          sync_mode: "repository_only",
+          write_policy: "repository_only",
+          repository_fallback: true,
+          connection: null,
+        };
   config.learning = {
     auto_activate_skills: false,
     verified_candidates_only: true,
@@ -3851,6 +4354,43 @@ function protectedDrift(target, installation) {
     }
   }
   return drift;
+}
+
+function protectedProjectFileIssue(target, destination) {
+  const installation = loadInstallation(target);
+  const manifestEntry = installation?.managed_files?.[destination];
+  if (
+    !installation ||
+    !manifestEntry ||
+    manifestEntry.protected !== true ||
+    manifestEntry.customized === true ||
+    typeof manifestEntry.source_hash !== "string" ||
+    !/^[a-f0-9]{64}$/.test(manifestEntry.source_hash)
+  ) {
+    return `${destination} is not recorded as an intact protected file`;
+  }
+  if (
+    destination === LINEAR_READONLY_PATH &&
+    manifestEntry.source_hash !== LINEAR_READONLY_SOURCE_HASH
+  ) {
+    return `${destination} does not match the hash pinned in the protected CLI`;
+  }
+  const file = pathInside(target, destination, "protected provider helper");
+  if (!existsSync(file) || hashFile(file) !== manifestEntry.source_hash) {
+    return `${destination} is missing or modified`;
+  }
+  if (existsSync(join(PACKAGE_ROOT, ".codex-plugin/plugin.json"))) {
+    const claude = installation.harnesses?.includes("claude") ?? false;
+    const source = sourceEntries({ claude }).find(
+      (entry) =>
+        entry.destination.split(sep).join("/") === destination &&
+        entry.protected,
+    )?.source;
+    if (!source || hashFile(source) !== manifestEntry.source_hash) {
+      return `${destination} does not match the reviewed package source`;
+    }
+  }
+  return null;
 }
 
 function isGitRepository(target) {
@@ -4004,6 +4544,17 @@ function commandDoctor(target) {
       !Array.isArray(config.capabilities.work)
         ? config.capabilities.work
         : {};
+    const workProviderHealth = commandLinearHealth(target, config);
+    report(
+      "work-provider",
+      workProviderHealth.ok,
+      {
+        selected: work.provider ?? "invalid",
+        health: workProviderHealth,
+      },
+      "warning",
+      workProviderHealth.ok ? "available" : "repository-fallback",
+    );
     const workLedger = commandWorkValidate(target);
     report(
       "work-ledger",
@@ -5429,6 +5980,7 @@ function commandStart(target, idea, coordinatorToken = undefined) {
     commandMemoryHealth(target, config),
     checkpoint,
   );
+  const workProviderHealth = commandLinearHealth(target, config);
   const request = idea?.trim() || "[describe what you want to build or change]";
   const configurationApproved =
     config.safety.approved_configuration_hash === configurationHash(config);
@@ -5439,13 +5991,14 @@ function commandStart(target, idea, coordinatorToken = undefined) {
     return {
       ok: true,
       phase: "onboarding",
-      prompt: `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, .agent-stack/config.json, and any valid .agent-stack/CHECKPOINT.md. Inspect the repository and run the capabilities command. Complete Ultimate Agent Stack onboarding before material implementation.\n\nAsk only consequential setup decisions, one at a time. For each decision use plain language, state one recommended choice, provide at most one genuinely safe alternative, explain the practical consequence, and accept "use the recommendation" as an answer. Never invent an unsafe alternative. Prefer repository evidence and safe defaults over questions.\n\nAsk this memory decision in plain language: "Should this project remember progress only in its repository files, or also use a private local searchable memory for easier continuation across conversations?" Recommend repository memory for a short or simple project. Recommend project-scoped local GBrain for a long-running build likely to span conversations. Explain that GBrain is optional, repository checkpoints remain the source of truth, and work still resumes when GBrain is unavailable. If GBrain is approved, configure it, run memory-setup for the detected harness, perform the approved setup, and verify it with doctor.\n\nTelemetry remains repository-only until a reviewed provider adapter is installed. Do not ask the user to select or connect an unavailable provider.\n\nConfigure the approved project profile, review provider, knowledge provider, external-data policy, and authority mode with the non-interactive configure command. Then run doctor and continue with this request: ${request}`,
+      prompt: `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, .agent-stack/config.json, and any valid .agent-stack/CHECKPOINT.md. Inspect the repository and run the capabilities command. Complete Ultimate Agent Stack onboarding before material implementation.\n\nAsk only consequential setup decisions, one at a time. For each decision use plain language, state one recommended choice, provide at most one genuinely safe alternative, explain the practical consequence, and accept "use the recommendation" as an answer. Never invent an unsafe alternative. Prefer repository evidence and safe defaults over questions.\n\nAsk this memory decision in plain language: "Should this project remember progress only in its repository files, or also use a private local searchable memory for easier continuation across conversations?" Recommend repository memory for a short or simple project. Recommend project-scoped local GBrain for a long-running build likely to span conversations. Explain that GBrain is optional, repository checkpoints remain the source of truth, and work still resumes when GBrain is unavailable. If GBrain is approved, configure it, run memory-setup for the detected harness, perform the approved setup, and verify it with doctor.\n\nAsk this work-tracking decision in plain language: "Should this project keep its task list only in the repository, or also read approved work from Linear while keeping a portable repository copy?" Recommend repository work tracking for a solo, short, or early project. Offer Linear only when the team already uses it and can create a Read-permission API key for the approved team keys. Explain that Linear remains optional, read-only in this release, and never becomes proof of completion or grants delivery authority. If Linear is approved, configure it, run linear-setup, complete the human credential step, and verify it with doctor.\n\nTelemetry remains repository-only until a reviewed provider adapter is installed. Do not ask the user to select or connect an unavailable provider.\n\nConfigure the approved project profile, review provider, knowledge provider, work provider, external-data policy, and authority mode with the non-interactive configure command. Then run doctor and continue with this request: ${request}`,
       pending: {
         onboarding_status: config.onboarding.status,
         configuration_approved: configurationApproved,
       },
       checkpoint,
       memory: memoryHealth,
+      work_provider: workProviderHealth,
       coordinator,
     };
   }
@@ -5474,8 +6027,9 @@ function commandStart(target, idea, coordinatorToken = undefined) {
     },
     checkpoint,
     memory: memoryHealth,
+    work_provider: workProviderHealth,
     coordinator,
-    prompt: `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, .agent-stack/config.json, .agent-stack/work-items.json, .agent-stack/evidence-graph.json, any valid .agent-stack/CHECKPOINT.md, and the installed skills. Use $run-autonomous-delivery for this request: ${request}\n\n${continuity}\n\nInspect the project first. Apply $manage-project-work using the configured ${config.capabilities.work.provider} provider; validate the repository ledger and graph, select only bounded ready work, and keep completion tied to real evidence. Apply $use-project-knowledge using the configured ${config.capabilities.knowledge.provider} provider at ${config.capabilities.knowledge.scope} scope, with repository evidence as the source of truth and fallback. The start command already tested configured memory; if its result is unhealthy or the checkpoint mirror is stale, continue from the repository and repair the optional adapter without blocking delivery. ${telemetryGuidance} Use $coordinate-parallel-delivery to manage independent subagent work when it is safe and useful; keep it serial otherwise. You are the one Project Steward and integration owner. Do not give the coordinator token to subagents, and do not make the user manage workers.\n\nBuild a living project brief. Research routine answers. Ask only consequential questions, one at a time. Each question must use plain language, recommend one safe choice, provide at most one genuinely useful safe alternative, explain the consequence, and allow "use the recommendation." Own all routine implementation and verification. Write a deterministic checkpoint after verified milestones and release the coordinator lease only at final handoff.`,
+    prompt: `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, .agent-stack/config.json, .agent-stack/work-items.json, .agent-stack/evidence-graph.json, any valid .agent-stack/CHECKPOINT.md, and the installed skills. Use $run-autonomous-delivery for this request: ${request}\n\n${continuity}\n\nInspect the project first. Apply $manage-project-work using the configured ${config.capabilities.work.provider} provider; validate the repository ledger and graph, select only bounded ready work, and keep completion tied to real evidence. The start command already tested the configured work provider. If it is unavailable or unhealthy, continue from the repository ledger and record synchronization as pending; never block safe local delivery or infer remote state. Apply $use-project-knowledge using the configured ${config.capabilities.knowledge.provider} provider at ${config.capabilities.knowledge.scope} scope, with repository evidence as the source of truth and fallback. The start command already tested configured memory; if its result is unhealthy or the checkpoint mirror is stale, continue from the repository and repair the optional adapter without blocking delivery. ${telemetryGuidance} Use $coordinate-parallel-delivery to manage independent subagent work when it is safe and useful; keep it serial otherwise. You are the one Project Steward and integration owner. Do not give the coordinator token to subagents, and do not make the user manage workers.\n\nBuild a living project brief. Research routine answers. Ask only consequential questions, one at a time. Each question must use plain language, recommend one safe choice, provide at most one genuinely useful safe alternative, explain the consequence, and allow "use the recommendation." Own all routine implementation and verification. Write a deterministic checkpoint after verified milestones and release the coordinator lease only at final handoff.`,
   };
 }
 
@@ -5571,6 +6125,8 @@ Safe project setup:
   ultimate-agent-stack evidence validate [--target DIR]
   ultimate-agent-stack memory-setup [--target DIR] [--harness NAME]
   ultimate-agent-stack memory-health [--target DIR]
+  ultimate-agent-stack linear-setup [--target DIR]
+  ultimate-agent-stack linear-health [--target DIR]
   ultimate-agent-stack start [--target DIR] [--idea TEXT]
     [--coordinator-token TOKEN]
 
@@ -5579,6 +6135,7 @@ Agent-operated quality controls:
   ultimate-agent-stack configure --preset simple --reason TEXT [--target DIR]
   ultimate-agent-stack configure --profile PROFILE --review PROVIDER
     --knowledge PROVIDER [--knowledge-scope SCOPE] --external-data POLICY
+    [--work repository|linear] [--linear-team KEY ...]
     --reason TEXT [--reviewer LOGIN ...]
     [--execution MODE] [--merge MODE] [--target DIR]
   ultimate-agent-stack approve-checks --reason TEXT [--target DIR]
@@ -5669,6 +6226,16 @@ function execute(command, args) {
       const target = resolveTarget(getOption(args, "--target", "."));
       return commandMemoryHealth(target);
     }
+    case "linear-setup": {
+      assertNoUnknownOptions(args, ["--target"]);
+      const target = resolveTarget(getOption(args, "--target", "."));
+      return commandLinearSetup(target);
+    }
+    case "linear-health": {
+      assertNoUnknownOptions(args, ["--target"]);
+      const target = resolveTarget(getOption(args, "--target", "."));
+      return commandLinearHealth(target);
+    }
     case "configure": {
       assertNoUnknownOptions(args, [
         "--target",
@@ -5677,6 +6244,8 @@ function execute(command, args) {
         "--review",
         "--knowledge",
         "--knowledge-scope",
+        "--work",
+        "--linear-team",
         "--external-data",
         "--execution",
         "--merge",
@@ -5690,6 +6259,8 @@ function execute(command, args) {
         review: getOption(args, "--review"),
         knowledge: getOption(args, "--knowledge"),
         knowledgeScope: getOption(args, "--knowledge-scope"),
+        work: getOption(args, "--work"),
+        linearTeams: getRepeatedOption(args, "--linear-team"),
         externalData: getOption(args, "--external-data"),
         execution: getOption(args, "--execution"),
         merge: getOption(args, "--merge"),
@@ -5890,6 +6461,8 @@ export {
   commandDoctor,
   commandEvidenceValidate,
   commandLock,
+  commandLinearHealth,
+  commandLinearSetup,
   commandMemoryHealth,
   commandMemorySetup,
   commandStart,
