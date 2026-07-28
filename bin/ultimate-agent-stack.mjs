@@ -44,7 +44,7 @@ const PACKAGE_JSON = existsSync(join(PACKAGE_ROOT, "package.json"))
     };
 const PACKAGE_NAME = PACKAGE_JSON.name;
 const PACKAGE_VERSION = PACKAGE_JSON.version;
-const CONFIG_SCHEMA_VERSION = 2;
+const CONFIG_SCHEMA_VERSION = 3;
 const CHECK_OUTPUT_LIMIT_BYTES = 4 * 1024 * 1024;
 const CONFIG_PATH = ".agent-stack/config.json";
 const INSTALLATION_PATH = ".agent-stack/installation.json";
@@ -342,6 +342,11 @@ const REVIEW_PROVIDERS = new Set([
 ]);
 const KNOWLEDGE_PROVIDERS = new Set(["repository", "gbrain"]);
 const KNOWLEDGE_SCOPES = new Set(["project", "organization"]);
+const TELEMETRY_PROVIDERS = new Map();
+const TELEMETRY_ACCESS_MODES = new Set(["read_only"]);
+const TELEMETRY_EVIDENCE_MODES = new Set([
+  "bounded_references_only",
+]);
 const EXTERNAL_DATA_POLICIES = new Set([
   "local_only",
   "approved_providers",
@@ -979,6 +984,14 @@ function defaultConfig(target, detected) {
         capture: "verified_proposals_only",
         repository_fallback: true,
       },
+      telemetry: {
+        providers: [],
+        required: false,
+        default_access: "read_only",
+        evidence_capture: "bounded_references_only",
+        raw_payload_storage: false,
+        repository_fallback: true,
+      },
     },
     learning: {
       auto_activate_skills: false,
@@ -1078,6 +1091,18 @@ function migrateConfig(config, target = undefined) {
   config.capabilities.knowledge.required ??= false;
   config.capabilities.knowledge.capture ??= "verified_proposals_only";
   config.capabilities.knowledge.repository_fallback ??= true;
+  config.capabilities.telemetry ??= {};
+  config.capabilities.telemetry.providers = Array.isArray(
+    config.capabilities.telemetry.providers,
+  )
+    ? config.capabilities.telemetry.providers
+    : [];
+  config.capabilities.telemetry.required ??= false;
+  config.capabilities.telemetry.default_access ??= "read_only";
+  config.capabilities.telemetry.evidence_capture ??=
+    "bounded_references_only";
+  config.capabilities.telemetry.raw_payload_storage ??= false;
+  config.capabilities.telemetry.repository_fallback ??= true;
   config.learning ??= {};
   config.learning.auto_activate_skills ??= false;
   config.learning.verified_candidates_only ??= true;
@@ -1583,10 +1608,11 @@ function validateConfig(config, target = undefined) {
   }
   const review = config.capabilities?.review;
   const knowledge = config.capabilities?.knowledge;
+  const telemetry = config.capabilities?.telemetry;
   rejectUnknownKeys(
     errors,
     config.capabilities,
-    new Set(["review", "knowledge"]),
+    new Set(["review", "knowledge", "telemetry"]),
     "capabilities",
   );
   if (!review || typeof review !== "object" || Array.isArray(review)) {
@@ -1693,6 +1719,85 @@ function validateConfig(config, target = undefined) {
       knowledge.scope !== "project"
     ) {
       errors.push("repository knowledge supports project scope only");
+    }
+  }
+  if (!telemetry || typeof telemetry !== "object" || Array.isArray(telemetry)) {
+    errors.push("capabilities.telemetry must be an object");
+  } else {
+    rejectUnknownKeys(
+      errors,
+      telemetry,
+      new Set([
+        "providers",
+        "required",
+        "default_access",
+        "evidence_capture",
+        "raw_payload_storage",
+        "repository_fallback",
+      ]),
+      "capabilities.telemetry",
+    );
+    if (!Array.isArray(telemetry.providers)) {
+      errors.push("capabilities.telemetry.providers must be an array");
+    } else {
+      const providerNames = new Set();
+      for (const [index, provider] of telemetry.providers.entries()) {
+        const label = `capabilities.telemetry.providers[${index}]`;
+        if (!provider || typeof provider !== "object" || Array.isArray(provider)) {
+          errors.push(`${label} must be an object`);
+          continue;
+        }
+        if (typeof provider.provider !== "string") {
+          errors.push(`${label}.provider must be a string`);
+          continue;
+        }
+        if (providerNames.has(provider.provider)) {
+          errors.push(
+            `capabilities.telemetry.providers contains duplicate provider: ${provider.provider}`,
+          );
+        }
+        providerNames.add(provider.provider);
+        const validator = TELEMETRY_PROVIDERS.get(provider.provider);
+        if (!validator) {
+          errors.push(
+            `${label}.provider is not a reviewed telemetry provider: ${provider.provider}`,
+          );
+        } else {
+          errors.push(...validator(provider, label));
+        }
+      }
+    }
+    if (telemetry.required !== false) {
+      errors.push("capabilities.telemetry.required must remain false");
+    }
+    if (!TELEMETRY_ACCESS_MODES.has(telemetry.default_access)) {
+      errors.push(
+        "capabilities.telemetry.default_access must be read_only",
+      );
+    }
+    if (!TELEMETRY_EVIDENCE_MODES.has(telemetry.evidence_capture)) {
+      errors.push(
+        "capabilities.telemetry.evidence_capture must be bounded_references_only",
+      );
+    }
+    if (telemetry.raw_payload_storage !== false) {
+      errors.push(
+        "capabilities.telemetry.raw_payload_storage must remain false",
+      );
+    }
+    if (telemetry.repository_fallback !== true) {
+      errors.push(
+        "capabilities.telemetry.repository_fallback must remain true",
+      );
+    }
+    if (
+      Array.isArray(telemetry.providers) &&
+      telemetry.providers.length > 0 &&
+      config.onboarding.external_data_policy !== "approved_providers"
+    ) {
+      errors.push(
+        "external telemetry providers require onboarding.external_data_policy approved_providers",
+      );
     }
   }
   if (
@@ -2367,6 +2472,14 @@ function commandCapabilities(target) {
           detail: executableExists(target, "gbrain")
             ? "gbrain CLI detected; the agent must still verify the selected brain and access scope"
             : "CLI not detected; an existing harness MCP connection may still be available",
+        },
+      },
+      telemetry: {
+        none: {
+          available: true,
+          external: false,
+          detail:
+            "Repository evidence only; Ultimate Agent Stack sends no usage telemetry",
         },
       },
     },
@@ -3146,6 +3259,22 @@ function commandDoctor(target) {
         health: knowledgeHealth,
       },
       "warning",
+    );
+    const telemetryProviders = config.capabilities.telemetry.providers;
+    report(
+      "telemetry-providers",
+      true,
+      {
+        selected: telemetryProviders.map((provider) => provider.provider),
+        access: config.capabilities.telemetry.default_access,
+        evidence_capture:
+          config.capabilities.telemetry.evidence_capture,
+        raw_payload_storage:
+          config.capabilities.telemetry.raw_payload_storage,
+        fallback: "repository evidence",
+      },
+      "warning",
+      telemetryProviders.length === 0 ? "not-configured" : "configured",
     );
     const parallel = config.parallel_delivery;
     const parallelErrors = errors.filter(
@@ -4557,7 +4686,7 @@ function commandStart(target, idea, coordinatorToken = undefined) {
     return {
       ok: true,
       phase: "onboarding",
-      prompt: `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, .agent-stack/config.json, and any valid .agent-stack/CHECKPOINT.md. Inspect the repository and run the capabilities command. Complete Ultimate Agent Stack onboarding before material implementation.\n\nAsk only consequential setup decisions, one at a time. For each decision use plain language, state one recommended choice, provide at most one genuinely safe alternative, explain the practical consequence, and accept "use the recommendation" as an answer. Never invent an unsafe alternative. Prefer repository evidence and safe defaults over questions.\n\nAsk this memory decision in plain language: "Should this project remember progress only in its repository files, or also use a private local searchable memory for easier continuation across conversations?" Recommend repository memory for a short or simple project. Recommend project-scoped local GBrain for a long-running build likely to span conversations. Explain that GBrain is optional, repository checkpoints remain the source of truth, and work still resumes when GBrain is unavailable. If GBrain is approved, configure it, run memory-setup for the detected harness, perform the approved setup, and verify it with doctor.\n\nConfigure the approved project profile, review provider, knowledge provider, external-data policy, and authority mode with the non-interactive configure command. Then run doctor and continue with this request: ${request}`,
+      prompt: `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, .agent-stack/config.json, and any valid .agent-stack/CHECKPOINT.md. Inspect the repository and run the capabilities command. Complete Ultimate Agent Stack onboarding before material implementation.\n\nAsk only consequential setup decisions, one at a time. For each decision use plain language, state one recommended choice, provide at most one genuinely safe alternative, explain the practical consequence, and accept "use the recommendation" as an answer. Never invent an unsafe alternative. Prefer repository evidence and safe defaults over questions.\n\nAsk this memory decision in plain language: "Should this project remember progress only in its repository files, or also use a private local searchable memory for easier continuation across conversations?" Recommend repository memory for a short or simple project. Recommend project-scoped local GBrain for a long-running build likely to span conversations. Explain that GBrain is optional, repository checkpoints remain the source of truth, and work still resumes when GBrain is unavailable. If GBrain is approved, configure it, run memory-setup for the detected harness, perform the approved setup, and verify it with doctor.\n\nFor an existing or deployed project, ask whether it already collects product usage, production errors, service health, or AI traces that should be used as read-only evidence. Recommend no telemetry provider for an undeployed project or when none is already in use. Explain that telemetry is optional external data, repository evidence remains authoritative, and telemetry never grants production mutation authority.\n\nConfigure the approved project profile, review provider, knowledge provider, external-data policy, and authority mode with the non-interactive configure command. Then run doctor and continue with this request: ${request}`,
       pending: {
         onboarding_status: config.onboarding.status,
         configuration_approved: configurationApproved,
@@ -4570,6 +4699,13 @@ function commandStart(target, idea, coordinatorToken = undefined) {
   const continuity = checkpoint
     ? `Resume checkpoint ${checkpoint.checkpoint_id}: ${checkpoint.summary} Next steps: ${checkpoint.next_steps.join("; ") || "none recorded"}.`
     : "No checkpoint exists yet. Create one after the first verified delivery milestone.";
+  const telemetryProviders = config.capabilities.telemetry.providers.map(
+    (provider) => provider.provider,
+  );
+  const telemetryGuidance =
+    telemetryProviders.length > 0
+      ? `Apply $use-project-telemetry only when production evidence is relevant, using the configured ${telemetryProviders.join(", ")} provider${telemetryProviders.length === 1 ? "" : "s"}. Keep access read-only and bounded, retain references instead of raw payloads, validate observations against repository evidence, and never let telemetry authorize a mutation.`
+      : "No project telemetry provider is configured. Continue with repository evidence; do not add instrumentation or connect a provider implicitly.";
   return {
     ok: true,
     phase: "project-discovery",
@@ -4578,13 +4714,14 @@ function commandStart(target, idea, coordinatorToken = undefined) {
       review: config.capabilities.review.provider,
       knowledge: config.capabilities.knowledge.provider,
       knowledge_scope: config.capabilities.knowledge.scope,
+      telemetry: telemetryProviders,
       execution: config.autonomy.execution,
       merge: config.autonomy.merge,
     },
     checkpoint,
     memory: memoryHealth,
     coordinator,
-    prompt: `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, .agent-stack/config.json, any valid .agent-stack/CHECKPOINT.md, and the installed skills. Use $run-autonomous-delivery for this request: ${request}\n\n${continuity}\n\nInspect the project first. Apply $use-project-knowledge using the configured ${config.capabilities.knowledge.provider} provider at ${config.capabilities.knowledge.scope} scope, with repository evidence as the source of truth and fallback. The start command already tested configured memory; if its result is unhealthy or the checkpoint mirror is stale, continue from the repository and repair the optional adapter without blocking delivery. Use $coordinate-parallel-delivery to manage independent subagent work when it is safe and useful; keep it serial otherwise. You are the one Project Steward and integration owner. Do not give the coordinator token to subagents, and do not make the user manage workers.\n\nBuild a living project brief. Research routine answers. Ask only consequential questions, one at a time. Each question must use plain language, recommend one safe choice, provide at most one genuinely useful safe alternative, explain the consequence, and allow "use the recommendation." Own all routine implementation and verification. Write a deterministic checkpoint after verified milestones and release the coordinator lease only at final handoff.`,
+    prompt: `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, .agent-stack/config.json, any valid .agent-stack/CHECKPOINT.md, and the installed skills. Use $run-autonomous-delivery for this request: ${request}\n\n${continuity}\n\nInspect the project first. Apply $use-project-knowledge using the configured ${config.capabilities.knowledge.provider} provider at ${config.capabilities.knowledge.scope} scope, with repository evidence as the source of truth and fallback. The start command already tested configured memory; if its result is unhealthy or the checkpoint mirror is stale, continue from the repository and repair the optional adapter without blocking delivery. ${telemetryGuidance} Use $coordinate-parallel-delivery to manage independent subagent work when it is safe and useful; keep it serial otherwise. You are the one Project Steward and integration owner. Do not give the coordinator token to subagents, and do not make the user manage workers.\n\nBuild a living project brief. Research routine answers. Ask only consequential questions, one at a time. Each question must use plain language, recommend one safe choice, provide at most one genuinely useful safe alternative, explain the consequence, and allow "use the recommendation." Own all routine implementation and verification. Write a deterministic checkpoint after verified milestones and release the coordinator lease only at final handoff.`,
   };
 }
 
@@ -4715,7 +4852,9 @@ isolation is absent. The coding agent conducts guided onboarding; configure reco
 the approved choices. The simple preset selects standard, local-only, repository-
 backed defaults with built-in review and human-controlled merge authority.
 Repository checkpoints remain authoritative. Optional GBrain memory is project-
-scoped and falls back safely. One active Project Steward owns a checkout at a time.`;
+scoped and falls back safely. Optional project telemetry is read-only, disabled by
+default, and falls back to repository evidence; Ultimate Agent Stack does not phone
+home. One active Project Steward owns a checkout at a time.`;
 }
 
 function execute(command, args) {

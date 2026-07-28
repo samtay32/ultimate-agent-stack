@@ -461,9 +461,10 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
       initializedConfig.parallel_delivery,
       safeParallelPolicy(),
     );
-    assert.equal(initializedConfig.schema_version, 2);
+    assert.equal(initializedConfig.schema_version, 3);
     assert.equal(initializedConfig.onboarding.status, "pending");
     assert.equal(initializedConfig.capabilities.knowledge.scope, "project");
+    assert.deepEqual(initializedConfig.capabilities.telemetry.providers, []);
     assert.deepEqual(initializedConfig.quality.environment, { allow: [] });
 
     const copiedCli = spawnSync(
@@ -513,10 +514,12 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
     assert.equal(onboardingStart.phase, "onboarding");
     assert.match(onboardingStart.prompt, /at most one genuinely safe alternative/);
     assert.match(onboardingStart.prompt, /private local searchable memory/);
+    assert.match(onboardingStart.prompt, /read-only evidence/);
 
     const capabilities = commandCapabilities(fixture.directory);
     assert.equal(capabilities.available.review.builtin.available, true);
     assert.equal(capabilities.available.knowledge.repository.available, true);
+    assert.equal(capabilities.available.telemetry.none.available, true);
 
     commandConfigure(fixture.directory, {
       profile: "standard",
@@ -1313,6 +1316,42 @@ test("github-human validation returns errors for non-array allowlists", () => {
   assert.match(errors.join("\n"), /requires at least one allowed/);
 });
 
+test("telemetry defaults to no provider and rejects unreviewed or weakened adapters", () => {
+  const config = safeConfig();
+  assert.deepEqual(config.capabilities.telemetry, {
+    providers: [],
+    required: false,
+    default_access: "read_only",
+    evidence_capture: "bounded_references_only",
+    raw_payload_storage: false,
+    repository_fallback: true,
+  });
+  assert.deepEqual(validateConfig(config), []);
+
+  config.capabilities.telemetry.providers = [
+    {
+      provider: "unreviewed-provider",
+      role: "product",
+    },
+  ];
+  config.capabilities.telemetry.default_access = "read_write";
+  config.capabilities.telemetry.raw_payload_storage = true;
+  config.capabilities.telemetry.repository_fallback = false;
+
+  const errors = validateConfig(config);
+  assert.match(
+    errors.join("\n"),
+    /not a reviewed telemetry provider: unreviewed-provider/,
+  );
+  assert.match(
+    errors.join("\n"),
+    /external telemetry providers require.*approved_providers/,
+  );
+  assert.match(errors.join("\n"), /default_access must be read_only/);
+  assert.match(errors.join("\n"), /raw_payload_storage must remain false/);
+  assert.match(errors.join("\n"), /repository_fallback must remain true/);
+});
+
 test("provider or authority changes invalidate configuration approval", () => {
   const fixture = temporaryProject();
   try {
@@ -1609,7 +1648,7 @@ test("legacy serial policy migrates to safe adaptive coordination", () => {
       "coordinator_managed_isolated_only",
     );
     assert.deepEqual(migrated.parallel_delivery, safeParallelPolicy());
-    assert.equal(migrated.schema_version, 2);
+    assert.equal(migrated.schema_version, 3);
     assert.equal(migrated.onboarding.status, "needs_confirmation");
     assert.equal(migrated.onboarding.project_profile, "production");
     assert.equal(migrated.capabilities.review.provider, "coderabbit");
@@ -1618,6 +1657,14 @@ test("legacy serial policy migrates to safe adaptive coordination", () => {
       true,
     );
     assert.deepEqual(migrated.quality.environment, { allow: [] });
+    assert.deepEqual(migrated.capabilities.telemetry, {
+      providers: [],
+      required: false,
+      default_access: "read_only",
+      evidence_capture: "bounded_references_only",
+      raw_payload_storage: false,
+      repository_fallback: true,
+    });
   } finally {
     fixture.cleanup();
   }

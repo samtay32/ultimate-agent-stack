@@ -103,7 +103,7 @@ result. It does not restart the product or force a new architecture.
 ## What You Will Be Asked
 
 The agent asks only when your answer changes the product, risk, outside data,
-review provider, memory provider, or authority.
+review provider, memory provider, telemetry access, or authority.
 
 It may ask:
 
@@ -113,6 +113,8 @@ It may ask:
 - Does a production release need independent review?
 - Should progress live only in repository files, or also in private local
   searchable memory?
+- Does an existing or deployed project already have product, error, service, or
+  AI telemetry that should be used as read-only evidence?
 - May it merge after every required check passes?
 
 It should not ask you to choose routine frameworks, write test commands, manage
@@ -177,6 +179,32 @@ current checkpoint can be retrieved. Raw chat history, unrestricted
 environments, autonomous queues, dream cycles, and the full GBrain skill pack
 are not enabled.
 
+## Optional Project Telemetry
+
+Telemetry is evidence about the project, not analytics collected by Ultimate
+Agent Stack. The package sends no usage data by default.
+
+An existing or deployed project may connect several complementary read-only
+roles:
+
+| Role | Answers |
+|---|---|
+| Product | What users do and where a workflow loses them |
+| Errors | Which production exceptions or regressions occur |
+| Service | Why an application is slow, unavailable, or unhealthy |
+| AI | Which model, retrieval, prompt, or tool step failed |
+
+The default is no provider. Onboarding recommends an existing provider only
+when it can answer a concrete delivery or verification question. The Project
+Steward retrieves bounded aggregates, saved-query references, issues, or trace
+references; it does not copy raw events, recordings, sessions, logs, prompts,
+or credentials into the repository. Every observation remains a hypothesis
+until repository and deployment evidence validates it.
+
+Telemetry cannot authorize a code change, feature-flag change, merge, deploy,
+rollback, or other production mutation. Provider failure falls back to
+repository evidence.
+
 ## One Coordinator Versus Subagents
 
 The Project Steward is the one user-facing primary coding agent. It owns the
@@ -220,9 +248,11 @@ The core workflow depends on capabilities, not vendor names.
 | Coding agent | Portable project rules and serial execution | Native Codex, Claude Code, Gemini, OpenCode, Cursor, or other supported features |
 | Independent review | Repository standards and intent review | CodeRabbit or an approved GitHub human |
 | Project knowledge | Repository checkpoint, evidence, and Git history | Project-scoped local or separately approved remote GBrain |
+| Project telemetry | Repository and deployment evidence | Reviewed read-only product, error, service, or AI provider |
 
 Optional providers cannot expand authority. A missing knowledge provider falls
-back to repository state. A required review provider fails closed.
+back to repository state. Missing telemetry falls back to repository evidence.
+A required review provider fails closed.
 
 ## Safety in Plain Language
 
@@ -273,7 +303,7 @@ videos, platform references, and tradeoffs:
 | [Architecture](docs/ARCHITECTURE.md) | Control flow, state, planes, and component design |
 | [Skill Stack](docs/SKILL_STACK.md) | Skill roles and harness-specific behavior |
 | [Behavioral Evaluations](docs/BEHAVIORAL_EVALS.md) | Skill activation scenarios, live-run evidence, and limits |
-| [Adapters](docs/ADAPTERS.md) | Review and knowledge provider configuration |
+| [Adapters](docs/ADAPTERS.md) | Review, knowledge, and telemetry provider configuration |
 | [GitHub Review Loop](docs/GITHUB_LOOP.md) | Pull requests, CodeRabbit, CI, and closure rules |
 | [Release Guide](docs/RELEASE.md) | Maintainer publishing and provenance checks |
 | [Sources and Tradeoffs](docs/SOURCES_AND_TRADEOFFS.md) | Research lineage and adoption decisions |

@@ -54,6 +54,18 @@ Configure the repository without erasing its conventions. Setup is complete only
    conversations. Explain that GBrain is optional, the repository checkpoint
    remains authoritative, and work still resumes when GBrain is unavailable.
 
+   For an existing or deployed project, also ask:
+
+   > Does this project already collect product usage, production errors,
+   > service health, or AI traces that the Project Steward should use as
+   > read-only evidence?
+
+   Recommend no telemetry provider for an undeployed project or when none is
+   already in use. Recommend connecting an existing provider only when it will
+   answer a concrete delivery or verification question. Explain that telemetry
+   is optional, may include sensitive external data, never replaces repository
+   evidence, and never gives the agent production mutation authority.
+
    For a local prototype or straightforward project that does not require
    production release protection, external data, external memory, or delegated
    merge authority, recommend the simple setup. After the user approves that
@@ -148,6 +160,9 @@ Configure the repository without erasing its conventions. Setup is complete only
   closest safe implementation and continue what is safe.
 - A green self-check is not a substitute for project tests. If no real project check exists, setup remains incomplete.
 - Never claim universal compatibility. Report the detected and actually tested environment.
+- Never install analytics merely because a provider is supported. Detect and
+  recommend an existing project service; adding new instrumentation is a
+  separate product, privacy, and deployment decision.
 
 ## Completion Contract
 
@@ -163,4 +178,6 @@ Setup is done when:
 - launch-security surfaces are classified and applicable gates have evidence;
 - a required review provider is available, while optional knowledge has a
   verified repository fallback;
+- optional telemetry is disabled or scoped read-only with repository evidence
+  fallback;
 - secret, billing, account, or deployment inputs are the only remaining user work.

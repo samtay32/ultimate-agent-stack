@@ -30,6 +30,10 @@
     "knowledge_is_advisory_and_repository_evidence_remains_authoritative": true,
     "knowledge_capture_requires_provenance_redaction_and_verification": true,
     "knowledge_provider_failure_must_fall_back_to_repository_state": true,
+    "project_telemetry_is_optional_read_only_advisory_evidence": true,
+    "telemetry_provider_failure_must_fall_back_to_repository_evidence": true,
+    "telemetry_raw_payloads_and_credentials_must_not_enter_repository_evidence": true,
+    "ultimate_agent_stack_must_not_phone_home_by_default": true,
     "skill_candidates_must_not_activate_without_review_and_evaluation": true
   },
   "authority_required": [

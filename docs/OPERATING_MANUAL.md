@@ -47,7 +47,7 @@ accepted for compatibility. The agent then:
 1. reads existing project instructions and preserves them;
 2. reconciles any proposals instead of overwriting files;
 3. detects the project's real checks;
-4. detects review and knowledge capabilities;
+4. detects review, knowledge, and telemetry capabilities;
 5. asks the plain-language repository-only versus optional local searchable
    memory question, then asks only consequential profile, provider,
    external-data, and authority questions;
@@ -134,7 +134,7 @@ takeover command.
 The coordinator lease is an Ultimate Agent Stack guardrail, not an
 operating-system lock. Unrelated tools can ignore it.
 
-## Review and Knowledge Providers
+## Review, Knowledge, and Telemetry Providers
 
 The agent runs:
 
@@ -171,6 +171,19 @@ merges a project-scoped MCP connection into the detected harness. A missing
 global GBrain CLI still requires explicit installation approval. `doctor`
 verifies the active database path, GBrain health, and brain identity; `start`
 also checks retrieval of the mirrored repository checkpoint.
+
+For an existing or deployed project, the agent may also ask:
+
+> Does this project already collect product usage, production errors, service
+> health, or AI traces that the Project Steward should use as read-only
+> evidence?
+
+The default for a new or undeployed project is no telemetry provider. Connecting
+an existing provider requires external-data approval and verified project
+scope. The agent retrieves bounded aggregates or provider references, validates
+material observations against current repository and deployment evidence, and
+falls back to repository evidence when the provider is unavailable. Ultimate
+Agent Stack sends no usage telemetry of its own.
 
 ## What Happens With Subagents
 
@@ -327,10 +340,11 @@ new install and after migrating an older configuration.
 
 ### An optional provider is unavailable
 
-Review and knowledge fail differently. An optional knowledge provider falls
-back to repository state and produces a warning. A review provider required by
-the selected profile blocks release until a current qualifying review exists;
-the agent may not silently downgrade the profile or switch providers.
+Review, knowledge, and telemetry fail differently. Optional knowledge falls
+back to repository state. Optional telemetry falls back to repository evidence.
+Both produce a warning. A review provider required by the selected profile
+blocks release until a current qualifying review exists; the agent may not
+silently downgrade the profile, broaden data scope, or switch providers.
 
 ### An update reports pending reconciliation
 

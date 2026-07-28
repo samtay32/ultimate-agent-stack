@@ -1,4 +1,4 @@
-# Review and Knowledge Adapters
+# Review, Knowledge, and Telemetry Adapters
 
 ## Purpose
 
@@ -75,6 +75,30 @@ GBrain is healthy, it mirrors that bounded handoff to a fixed searchable page.
 with repository fallback. Organization-scoped remote brains require separate
 identity and authorization verification; a local check never attests remote
 scope.
+
+## Telemetry Providers
+
+Telemetry is an optional multi-provider capability because product analytics,
+errors, service observability, and AI traces answer different questions. The
+portable baseline is an empty provider list and repository evidence fallback.
+Ultimate Agent Stack sends no usage telemetry.
+
+Every configured telemetry provider must:
+
+- be registered by reviewed package code rather than an arbitrary project
+  command;
+- use `approved_providers` external-data policy;
+- begin with read-only project-scoped access;
+- keep credentials outside repository configuration and evidence;
+- return bounded normalized references rather than raw payloads;
+- remain optional and fall back to repository evidence;
+- never authorize provider mutation, code changes, merge, deploy, rollback, or
+  release.
+
+The shared observation receipt and failure behavior live in
+[`use-project-telemetry`](../skills/use-project-telemetry/references/telemetry-contract.md).
+Provider-specific operations belong in progressively disclosed references and
+must not enlarge the core tool surface.
 
 ## Adding a Future Provider
 

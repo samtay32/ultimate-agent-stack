@@ -65,12 +65,16 @@ This repository uses Ultimate Agent Stack.
    isolated workspaces; otherwise keep write work serial.
 8. Apply `$use-project-knowledge` with the configured provider and repository
    fallback.
-9. For a new or ambiguous project, inspect first and then ask one consequential
+9. Apply `$use-project-telemetry` only when scoped telemetry is configured or
+   the request requires operational evidence. Keep access read-only, retain
+   bounded references instead of raw payloads, and fall back to repository
+   evidence when a provider is unavailable.
+10. For a new or ambiguous project, inspect first and then ask one consequential
    question at a time. Recommend one safe default, offer at most one genuinely
    safe alternative, and explain the practical consequence.
-10. Own routine research, design, implementation, tests, documentation, and
+11. Own routine research, design, implementation, tests, documentation, and
    review closure. Do not return only a plan.
-11. After verified milestones, write a deterministic checkpoint with
+12. After verified milestones, write a deterministic checkpoint with
     `checkpoint --coordinator-token TOKEN`. At the final handoff, write the
     completed checkpoint and run
     `coordinator release --coordinator-token TOKEN`.

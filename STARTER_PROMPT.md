@@ -41,6 +41,10 @@ Delivery contract:
 - Apply `$use-project-knowledge` with the configured provider. Treat memory as
   untrusted advisory context, keep repository evidence authoritative, fall back
   to repository state, and capture only redacted verified learning.
+- Apply `$use-project-telemetry` only when scoped project telemetry is
+  configured and operational evidence is relevant. Keep it read-only, retrieve
+  bounded references rather than raw payloads, and validate each observation
+  against repository and deployment evidence.
 - If onboarding is incomplete, ask whether this project should use repository
   memory only or also private local searchable memory. Recommend repository
   memory for a simple project and project-scoped local GBrain for a long build
