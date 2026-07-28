@@ -8,7 +8,7 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Ultimate Agent Stack",
-    "shortDescription": "One Project Steward with continuity and proof.",
+    "shortDescription": "Steward projects with proof.",
     "longDescription": "Safely installs and updates a repository, guides consequential decisions with recommendations, preserves verified cross-conversation checkpoints, tests optional project memory, prevents competing checkout coordinators, manages bounded native subagents, verifies behavior, and closes review loops while preserving human authority.",
     "developerName": "Samson Taylor",
     "category": "Productivity",

@@ -118,7 +118,7 @@ integration, final verification, and cleanup.
 Use:
 
 ```bash
-npx -y ultimate-agent-stack@latest doctor --target .
+node .agent-stack/bin/agent-stack.mjs doctor --target .
 node .agent-stack/bin/agent-stack.mjs check-lock --target .
 node .agent-stack/bin/agent-stack.mjs verify --target .
 ```

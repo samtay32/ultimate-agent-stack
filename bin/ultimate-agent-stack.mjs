@@ -155,6 +155,10 @@ const EXECUTION_CONTROL_ENVIRONMENT_NAMES = new Set([
   "PYTHONSTARTUP",
   "RUBYOPT",
 ]);
+const EXECUTION_CONTROL_ENVIRONMENT_PREFIXES = [
+  "GIT_",
+  "TF_",
+];
 const INLINE_EVALUATION_ARGUMENTS = new Map([
   ["deno", new Set(["eval"])],
   ["node", new Set(["-e", "--eval", "-p", "--print"])],
@@ -166,6 +170,156 @@ const INLINE_EVALUATION_ARGUMENTS = new Map([
   ["python3", new Set(["-c"])],
   ["ruby", new Set(["-e"])],
 ]);
+const GIT_INSPECTION_SUBCOMMANDS = new Set([
+  "diff",
+  "log",
+  "rev-parse",
+  "show",
+  "status",
+]);
+const GIT_DIFF_EXACT_ARGUMENTS = new Set([
+  "--",
+  "--cached",
+  "--check",
+  "--compact-summary",
+  "--exit-code",
+  "--histogram",
+  "--ignore-all-space",
+  "--ignore-blank-lines",
+  "--ignore-cr-at-eol",
+  "--ignore-space-at-eol",
+  "--ignore-space-change",
+  "--merge-base",
+  "--minimal",
+  "--name-only",
+  "--name-status",
+  "--no-color",
+  "--no-ext-diff",
+  "--no-patch",
+  "--no-renames",
+  "--no-textconv",
+  "--numstat",
+  "--patch",
+  "--patience",
+  "--quiet",
+  "--raw",
+  "--relative",
+  "--shortstat",
+  "--staged",
+  "--stat",
+  "--summary",
+  "-b",
+  "-p",
+  "-s",
+  "-w",
+  "-z",
+]);
+const GIT_LOG_EXACT_ARGUMENTS = new Set([
+  "--",
+  "--abbrev-commit",
+  "--all",
+  "--author-date-order",
+  "--boundary",
+  "--branches",
+  "--cherry",
+  "--cherry-mark",
+  "--cherry-pick",
+  "--date-order",
+  "--decorate",
+  "--first-parent",
+  "--left-right",
+  "--merges",
+  "--name-only",
+  "--name-status",
+  "--no-color",
+  "--no-decorate",
+  "--no-ext-diff",
+  "--no-mailmap",
+  "--no-merges",
+  "--no-patch",
+  "--no-textconv",
+  "--numstat",
+  "--oneline",
+  "--patch",
+  "--remotes",
+  "--reverse",
+  "--shortstat",
+  "--source",
+  "--stat",
+  "--summary",
+  "--tags",
+  "--topo-order",
+  "--use-mailmap",
+  "-p",
+  "-s",
+]);
+const GIT_REV_PARSE_EXACT_ARGUMENTS = new Set([
+  "--abbrev-ref",
+  "--absolute-git-dir",
+  "--end-of-options",
+  "--git-dir",
+  "--is-bare-repository",
+  "--is-inside-git-dir",
+  "--is-inside-work-tree",
+  "--is-shallow-repository",
+  "--quiet",
+  "--short",
+  "--show-cdup",
+  "--show-object-format",
+  "--show-prefix",
+  "--show-superproject-working-tree",
+  "--show-toplevel",
+  "--symbolic",
+  "--symbolic-full-name",
+  "--verify",
+  "-q",
+]);
+const GIT_SHOW_EXACT_ARGUMENTS = new Set([
+  "--",
+  "--abbrev-commit",
+  "--decorate",
+  "--name-only",
+  "--name-status",
+  "--no-color",
+  "--no-decorate",
+  "--no-ext-diff",
+  "--no-patch",
+  "--no-textconv",
+  "--numstat",
+  "--oneline",
+  "--patch",
+  "--quiet",
+  "--shortstat",
+  "--stat",
+  "--summary",
+  "-p",
+  "-s",
+]);
+const GIT_STATUS_EXACT_ARGUMENTS = new Set([
+  "--",
+  "--ahead-behind",
+  "--branch",
+  "--column",
+  "--long",
+  "--no-ahead-behind",
+  "--no-column",
+  "--no-renames",
+  "--porcelain",
+  "--renames",
+  "--short",
+  "--show-stash",
+  "-b",
+  "-s",
+  "-z",
+]);
+const GIT_FORBIDDEN_ARGUMENT_PATTERNS = [
+  /^--config-env(?:=|$)/,
+  /^--exec(?:=|$)/,
+  /^--ext-diff$/,
+  /^--no-index$/,
+  /^--output(?:=|$)/,
+  /^--textconv$/,
+];
 const SUPPORTED_HARNESSES = new Set([
   "claude",
   "codex",
@@ -947,6 +1101,247 @@ function migrateConfig(config, target = undefined) {
   return config;
 }
 
+function gitArgumentAllowed(subcommand, argument) {
+  const exactArguments = {
+    diff: GIT_DIFF_EXACT_ARGUMENTS,
+    log: GIT_LOG_EXACT_ARGUMENTS,
+    "rev-parse": GIT_REV_PARSE_EXACT_ARGUMENTS,
+    show: GIT_SHOW_EXACT_ARGUMENTS,
+    status: GIT_STATUS_EXACT_ARGUMENTS,
+  }[subcommand];
+  if (exactArguments?.has(argument)) {
+    return true;
+  }
+  const patterns = {
+    diff: [
+      /^--color=(?:always|auto|never)$/,
+      /^--diff-filter=[ACDMRTUXB*]+$/,
+      /^--ignore-submodules=(?:all|dirty|none|untracked)$/,
+      /^--unified=\d+$/,
+      /^-U\d+$/,
+    ],
+    log: [
+      /^--color=(?:always|auto|never)$/,
+      /^--date=(?:default|human|iso|iso-strict|local|raw|relative|rfc|short|unix)$/,
+      /^--decorate=(?:auto|full|no|short)$/,
+      /^--diff-filter=[ACDMRTUXB*]+$/,
+      /^--format=(?:%H|%h|%s|%an|%ae|%aI|%cI)$/,
+      /^--grep=.+$/,
+      /^--ignore-submodules=(?:all|dirty|none|untracked)$/,
+      /^--max-count=\d+$/,
+      /^--pretty=(?:email|full|fuller|medium|oneline|raw|reference|short)$/,
+      /^--skip=\d+$/,
+      /^-n\d+$/,
+    ],
+    "rev-parse": [
+      /^--abbrev-ref=(?:loose|strict)$/,
+      /^--short=\d+$/,
+      /^--show-object-format=(?:input|output|storage)$/,
+    ],
+    show: [
+      /^--color=(?:always|auto|never)$/,
+      /^--date=(?:default|human|iso|iso-strict|local|raw|relative|rfc|short|unix)$/,
+      /^--decorate=(?:auto|full|no|short)$/,
+      /^--diff-filter=[ACDMRTUXB*]+$/,
+      /^--format=(?:%H|%h|%s|%an|%ae|%aI|%cI)$/,
+      /^--ignore-submodules=(?:all|dirty|none|untracked)$/,
+      /^--pretty=(?:email|full|fuller|medium|oneline|raw|reference|short)$/,
+    ],
+    status: [
+      /^--find-renames=\d+%?$/,
+      /^--ignore-submodules=(?:all|dirty|none|untracked)$/,
+      /^--ignored=(?:matching|no|traditional)$/,
+      /^--porcelain=v[12]$/,
+      /^--untracked-files=(?:all|no|normal)$/,
+      /^-u(?:all|no|normal)$/,
+    ],
+  }[subcommand] ?? [];
+  return patterns.some((pattern) => pattern.test(argument));
+}
+
+function gitRevisionAtomSafe(value) {
+  const withoutSuffix = value.replace(/(?:[~^]\d*)+$/, "");
+  if (
+    !/^(?:@|HEAD|[0-9A-Fa-f]{4,64}|(?:refs\/)?[A-Za-z0-9][A-Za-z0-9._/-]*)$/.test(
+      withoutSuffix,
+    )
+  ) {
+    return false;
+  }
+  const segments = withoutSuffix.split("/");
+  return !segments.includes(".") && !segments.includes("..");
+}
+
+function gitRevisionSafe(value) {
+  if (
+    value.includes("\\") ||
+    value.includes(":") ||
+    isAbsolute(value)
+  ) {
+    return false;
+  }
+  const separator = value.includes("...") ? "..." : value.includes("..") ? ".." : null;
+  const atoms = separator ? value.split(separator) : [value];
+  return (
+    atoms.length <= 2 &&
+    atoms.every((atom) => atom.length > 0 && gitRevisionAtomSafe(atom))
+  );
+}
+
+function projectArgumentSafe(raw, target, label) {
+  if (
+    isAbsolute(raw) ||
+    /^[A-Za-z]:[\\/]/.test(raw) ||
+    raw.split(/[\\/]+/).includes("..")
+  ) {
+    return false;
+  }
+  if (!target) {
+    return true;
+  }
+  try {
+    projectFile(target, raw, label);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function validateGitCommand(argv, index, target = undefined) {
+  const errors = [];
+  const subcommand = argv[1];
+  const label = `quality.checks[${index}]`;
+  if (!GIT_INSPECTION_SUBCOMMANDS.has(subcommand)) {
+    return [
+      `${label} uses a non-read-only git command: ${subcommand}`,
+    ];
+  }
+
+  const argumentsAfterSubcommand = argv.slice(2);
+  const forbidden = argumentsAfterSubcommand.find((argument) =>
+    GIT_FORBIDDEN_ARGUMENT_PATTERNS.some((pattern) =>
+      pattern.test(argument),
+    ),
+  );
+  if (forbidden) {
+    errors.push(
+      `${label} git ${subcommand} forbids write or execution argument: ${forbidden}`,
+    );
+  }
+
+  const requiresDiffIsolation = ["diff", "log", "show"].includes(subcommand);
+  if (
+    requiresDiffIsolation &&
+    (!argumentsAfterSubcommand.includes("--no-ext-diff") ||
+      !argumentsAfterSubcommand.includes("--no-textconv"))
+  ) {
+    errors.push(
+      `${label} git ${subcommand} must include --no-ext-diff and --no-textconv`,
+    );
+  }
+
+  let pathsFollow = false;
+  let revisionCount = 0;
+  for (const argument of argumentsAfterSubcommand) {
+    if (pathsFollow) {
+      if (!projectArgumentSafe(argument, target, "git pathspec")) {
+        errors.push(
+          `${label} git ${subcommand} pathspec escapes the project root: ${argument}`,
+        );
+      }
+      continue;
+    }
+    if (argument === "--" && subcommand !== "rev-parse") {
+      pathsFollow = true;
+      continue;
+    }
+    if (argument.startsWith("-")) {
+      if (!gitArgumentAllowed(subcommand, argument)) {
+        errors.push(
+          `${label} git ${subcommand} argument is not allowlisted: ${argument}`,
+        );
+      }
+      continue;
+    }
+    if (subcommand === "status") {
+      errors.push(
+        `${label} git status pathspecs must follow --: ${argument}`,
+      );
+      continue;
+    }
+    if (!gitRevisionSafe(argument)) {
+      errors.push(
+        `${label} git ${subcommand} revision is not allowlisted: ${argument}`,
+      );
+      continue;
+    }
+    revisionCount += 1;
+  }
+
+  const maximumRevisions = {
+    diff: 2,
+    log: 2,
+    "rev-parse": 1,
+    show: 1,
+    status: 0,
+  }[subcommand];
+  if (revisionCount > maximumRevisions) {
+    errors.push(
+      `${label} git ${subcommand} accepts at most ${maximumRevisions} revision argument${maximumRevisions === 1 ? "" : "s"}`,
+    );
+  }
+  return errors;
+}
+
+function validateTerraformCommand(argv, index, target = undefined) {
+  const errors = [];
+  const subcommand = argv[1];
+  const label = `quality.checks[${index}]`;
+  if (!["fmt", "validate"].includes(subcommand)) {
+    return [`${label} terraform command must be fmt or validate`];
+  }
+  const argumentsAfterSubcommand = argv.slice(2);
+  if (subcommand === "validate") {
+    const allowed = new Set(["-json", "-no-color"]);
+    for (const argument of argumentsAfterSubcommand) {
+      if (!allowed.has(argument)) {
+        errors.push(
+          `${label} terraform validate argument is not allowlisted: ${argument}`,
+        );
+      }
+    }
+    return errors;
+  }
+
+  const allowed = new Set([
+    "-check",
+    "-diff",
+    "-list=false",
+    "-no-color",
+    "-recursive",
+    "-write=false",
+  ]);
+  if (!argumentsAfterSubcommand.includes("-check")) {
+    errors.push(`${label} terraform fmt must include -check`);
+  }
+  for (const argument of argumentsAfterSubcommand) {
+    if (argument.startsWith("-")) {
+      if (!allowed.has(argument)) {
+        errors.push(
+          `${label} terraform fmt argument is not allowlisted: ${argument}`,
+        );
+      }
+      continue;
+    }
+    if (!projectArgumentSafe(argument, target, "terraform fmt target")) {
+      errors.push(
+        `${label} terraform fmt target escapes the project root: ${argument}`,
+      );
+    }
+  }
+  return errors;
+}
+
 function validateCommand(check, index, config, target = undefined) {
   const errors = [];
   if (!check || typeof check !== "object" || Array.isArray(check)) {
@@ -1021,12 +1416,9 @@ function validateCommand(check, index, config, target = undefined) {
     );
   }
   if (
-    executable === "git" &&
-    !["diff", "status", "rev-parse", "show", "log"].includes(check.argv[1])
+    executable === "git"
   ) {
-    errors.push(
-      `quality.checks[${index}] uses a non-read-only git command: ${check.argv[1]}`,
-    );
+    errors.push(...validateGitCommand(check.argv, index, target));
   }
   if (
     PACKAGE_MANAGERS.has(executable) &&
@@ -1037,12 +1429,9 @@ function validateCommand(check, index, config, target = undefined) {
     );
   }
   if (
-    executable === "terraform" &&
-    !["fmt", "validate"].includes(check.argv[1])
+    executable === "terraform"
   ) {
-    errors.push(
-      `quality.checks[${index}] terraform command must be fmt or validate`,
-    );
+    errors.push(...validateTerraformCommand(check.argv, index, target));
   }
   if (
     executable === "docker" &&
@@ -1393,7 +1782,10 @@ function validateConfig(config, target = undefined) {
           typeof name === "string" &&
           ENVIRONMENT_NAME.test(name) &&
           !SENSITIVE_ENVIRONMENT_NAME.test(name) &&
-          !EXECUTION_CONTROL_ENVIRONMENT_NAMES.has(name.toUpperCase()),
+          !EXECUTION_CONTROL_ENVIRONMENT_NAMES.has(name.toUpperCase()) &&
+          !EXECUTION_CONTROL_ENVIRONMENT_PREFIXES.some((prefix) =>
+            name.toUpperCase().startsWith(prefix),
+          ),
       )
     ) {
       errors.push(
@@ -3079,6 +3471,36 @@ function checkEnvironment(target, config) {
   };
 }
 
+function hardenCheckEnvironment(check, environment) {
+  if (basename(check.argv[0]).toLowerCase() !== "git") {
+    return environment;
+  }
+  return {
+    ...environment,
+    GIT_ATTR_NOSYSTEM: "1",
+    GIT_CONFIG_COUNT: "7",
+    GIT_CONFIG_KEY_0: "core.fsmonitor",
+    GIT_CONFIG_VALUE_0: "false",
+    GIT_CONFIG_KEY_1: "diff.external",
+    GIT_CONFIG_VALUE_1: "",
+    GIT_CONFIG_KEY_2: "core.pager",
+    GIT_CONFIG_VALUE_2: "",
+    GIT_CONFIG_KEY_3: "pager.diff",
+    GIT_CONFIG_VALUE_3: "false",
+    GIT_CONFIG_KEY_4: "pager.log",
+    GIT_CONFIG_VALUE_4: "false",
+    GIT_CONFIG_KEY_5: "pager.show",
+    GIT_CONFIG_VALUE_5: "false",
+    GIT_CONFIG_KEY_6: "pager.status",
+    GIT_CONFIG_VALUE_6: "false",
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_OPTIONAL_LOCKS: "0",
+    GIT_PAGER: "",
+    GIT_TERMINAL_PROMPT: "0",
+    PAGER: "",
+  };
+}
+
 function runCheck(target, check, config) {
   const startedAt = utcTimestamp();
   const started = Date.now();
@@ -3097,7 +3519,10 @@ function runCheck(target, check, config) {
       output: `command not found: ${check.argv[0]}`,
     };
   }
-  const environment = checkEnvironment(target, config);
+  const environment = hardenCheckEnvironment(
+    check,
+    checkEnvironment(target, config),
+  );
   const processResult = spawnSync(check.argv[0], check.argv.slice(1), {
     cwd: target,
     encoding: "utf8",

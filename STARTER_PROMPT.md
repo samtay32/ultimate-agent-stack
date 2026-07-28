@@ -8,7 +8,8 @@ Use $run-autonomous-delivery as the controlling workflow. If this repository is 
 Before material work, read `.agent-stack/core-policy.json` and run the local
 `start` command to acquire or resume the Project Steward lease, load the
 checkpoint, and test configured memory. Keep its coordinator token only in the
-primary conversation. Then run `npx -y ultimate-agent-stack@latest doctor`.
+primary conversation. Then run
+`node .agent-stack/bin/agent-stack.mjs doctor`.
 Repair protected drift, unresolved update proposals, incomplete onboarding,
 unapproved provider changes, or unreviewed quality-command changes before
 continuing.
