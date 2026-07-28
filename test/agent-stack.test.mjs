@@ -1744,45 +1744,96 @@ test("Git inspection checks use subcommand-specific argument allowlists", () => 
   }
 
   const rejected = [
-    ["git", "diff", "--no-ext-diff", "--no-textconv", "--no-index", "a", "b"],
-    [
-      "git",
-      "diff",
-      "--no-ext-diff",
-      "--no-textconv",
-      "--output=/tmp/proof",
-    ],
-    ["git", "diff", "--no-ext-diff", "--textconv", "--check"],
-    ["git", "diff", "--ext-diff", "--no-textconv", "--check"],
-    ["git", "diff", "--check"],
-    [
-      "git",
-      "log",
-      "--no-ext-diff",
-      "--no-textconv",
-      "--output",
-      "/tmp/proof",
-    ],
-    [
-      "git",
-      "log",
-      "--no-ext-diff",
-      "--no-textconv",
-      "--exec=touch /tmp/proof",
-    ],
-    [
-      "git",
-      "log",
-      "--no-ext-diff",
-      "--no-textconv",
-      "--format=%G?",
-    ],
-    ["git", "rev-parse", "--git-path=../../outside"],
-    ["git", "show", "--no-ext-diff", "--no-textconv", "HEAD", "HEAD~1"],
-    ["git", "status", "--porcelain", "../outside"],
-    ["git", "status", "--porcelain", "--", "../outside"],
+    {
+      argv: [
+        "git",
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--no-index",
+        "a",
+        "b",
+      ],
+      expected: /forbids write or execution argument: --no-index/,
+    },
+    {
+      argv: [
+        "git",
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--output=/tmp/proof",
+      ],
+      expected: /forbids write or execution argument: --output=/,
+    },
+    {
+      argv: ["git", "diff", "--no-ext-diff", "--textconv", "--check"],
+      expected: /forbids write or execution argument: --textconv/,
+    },
+    {
+      argv: ["git", "diff", "--ext-diff", "--no-textconv", "--check"],
+      expected: /forbids write or execution argument: --ext-diff/,
+    },
+    {
+      argv: ["git", "diff", "--check"],
+      expected: /must include --no-ext-diff and --no-textconv/,
+    },
+    {
+      argv: [
+        "git",
+        "log",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--output",
+        "/tmp/proof",
+      ],
+      expected: /forbids write or execution argument: --output/,
+    },
+    {
+      argv: [
+        "git",
+        "log",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--exec=touch /tmp/proof",
+      ],
+      expected: /forbids write or execution argument: --exec=/,
+    },
+    {
+      argv: [
+        "git",
+        "log",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--format=%G?",
+      ],
+      expected: /argument is not allowlisted: --format=%G\?/,
+    },
+    {
+      argv: ["git", "rev-parse", "--git-path=../../outside"],
+      expected: /argument is not allowlisted: --git-path=/,
+    },
+    {
+      argv: [
+        "git",
+        "show",
+        "--no-ext-diff",
+        "--no-textconv",
+        "HEAD",
+        "HEAD~1",
+      ],
+      expected: /accepts at most 1 revision argument/,
+    },
+    {
+      argv: ["git", "status", "--porcelain", "../outside"],
+      expected: /pathspecs must follow --/,
+    },
+    {
+      argv: ["git", "status", "--porcelain", "--", "../outside"],
+      expected: /pathspec escapes the project root/,
+    },
   ];
-  for (const argv of rejected) {
+  for (const { argv, expected } of rejected) {
     const config = safeConfig();
     config.quality.checks = [
       {
@@ -1792,11 +1843,37 @@ test("Git inspection checks use subcommand-specific argument allowlists", () => 
         timeout_seconds: 30,
       },
     ];
-    assert.notDeepEqual(
-      validateConfig(config),
-      [],
-      `expected ${argv.join(" ")} to be rejected`,
+    assert.match(
+      validateConfig(config).join("\n"),
+      expected,
+      `expected ${argv.join(" ")} to be rejected by ${expected}`,
     );
+  }
+
+  const fixture = temporaryProject();
+  const outside = temporaryProject();
+  try {
+    symlinkSync(
+      outside.directory,
+      join(fixture.directory, "escaped"),
+      platform() === "win32" ? "junction" : "dir",
+    );
+    const config = safeConfig();
+    config.quality.checks = [
+      {
+        id: "git-inspection",
+        argv: ["git", "status", "--porcelain", "--", "escaped"],
+        required: true,
+        timeout_seconds: 30,
+      },
+    ];
+    assert.match(
+      validateConfig(config, fixture.directory).join("\n"),
+      /git status pathspec escapes the project root: escaped/,
+    );
+  } finally {
+    fixture.cleanup();
+    outside.cleanup();
   }
 });
 
@@ -1832,12 +1909,27 @@ test("Terraform checks cannot format files or read arbitrary targets", () => {
     );
   }
 
-  for (const argv of [
-    ["terraform", "fmt"],
-    ["terraform", "fmt", "-write=true"],
-    ["terraform", "fmt", "-check", "../outside"],
-    ["terraform", "validate", "-var-file=../../outside.tfvars"],
-    ["terraform", "validate", "../outside"],
+  for (const { argv, expected } of [
+    {
+      argv: ["terraform", "fmt"],
+      expected: /terraform fmt must include -check/,
+    },
+    {
+      argv: ["terraform", "fmt", "-write=true"],
+      expected: /terraform fmt argument is not allowlisted: -write=true/,
+    },
+    {
+      argv: ["terraform", "fmt", "-check", "../outside"],
+      expected: /terraform fmt target escapes the project root/,
+    },
+    {
+      argv: ["terraform", "validate", "-var-file=../../outside.tfvars"],
+      expected: /terraform validate argument is not allowlisted: -var-file=/,
+    },
+    {
+      argv: ["terraform", "validate", "../outside"],
+      expected: /terraform validate argument is not allowlisted: ..\/outside/,
+    },
   ]) {
     const config = safeConfig();
     config.quality.checks = [
@@ -1848,10 +1940,10 @@ test("Terraform checks cannot format files or read arbitrary targets", () => {
         timeout_seconds: 30,
       },
     ];
-    assert.notDeepEqual(
-      validateConfig(config),
-      [],
-      `expected ${argv.join(" ")} to be rejected`,
+    assert.match(
+      validateConfig(config).join("\n"),
+      expected,
+      `expected ${argv.join(" ")} to be rejected by ${expected}`,
     );
   }
 });
