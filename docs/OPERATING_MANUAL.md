@@ -47,7 +47,7 @@ accepted for compatibility. The agent then:
 1. reads existing project instructions and preserves them;
 2. reconciles any proposals instead of overwriting files;
 3. detects the project's real checks;
-4. detects review, knowledge, and telemetry capabilities;
+4. detects review, knowledge, work, and telemetry capabilities;
 5. asks the plain-language repository-only versus optional local searchable
    memory question, then asks only consequential profile, provider,
    external-data, and authority questions;
@@ -56,6 +56,11 @@ accepted for compatibility. The agent then:
 7. applies `$secure-launch` to classify exposure and add proportionate gates;
 8. runs `doctor` and the initial verification baseline;
 9. starts `$run-autonomous-delivery` and asks the first meaningful question.
+
+The installed repository work ledger and evidence graph need no outside
+account. The agent validates both before material work, uses only bounded ready
+items, and links completion to acceptance evidence. An external tracker remains
+optional and cannot change merge, deployment, or release authority.
 
 If you prefer to run setup yourself, that one `npx` command is enough. Open a
 fresh agent session afterward if the agent harness discovers new skills only at

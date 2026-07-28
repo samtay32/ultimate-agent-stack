@@ -1,0 +1,6 @@
+interface:
+  display_name: "Manage Project Work"
+  short_description: "Track work and evidence safely"
+  default_prompt: "Use $manage-project-work to plan, update, and verify this project through the configured work provider and repository evidence graph."
+policy:
+  allow_implicit_invocation: true

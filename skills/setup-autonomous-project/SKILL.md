@@ -58,6 +58,10 @@ Configure the repository without erasing its conventions. Setup is complete only
    installed. Do not ask the user to select or connect an unavailable provider,
    and never add instrumentation merely because the neutral contract exists.
 
+   Initialize repository work tracking as the portable default. Validate
+   `.agent-stack/work-items.json` and `.agent-stack/evidence-graph.json`; do not
+   select or connect an external work provider implicitly.
+
    For a local prototype or straightforward project that does not require
    production release protection, external data, external memory, or delegated
    merge authority, recommend the simple setup. After the user approves that
@@ -172,4 +176,6 @@ Setup is done when:
   verified repository fallback;
 - optional telemetry is disabled or scoped read-only with repository evidence
   fallback;
+- the repository work ledger and evidence graph validate and remain usable
+  without an external provider;
 - secret, billing, account, or deployment inputs are the only remaining user work.

@@ -1,4 +1,4 @@
-# Review, Knowledge, and Telemetry Adapters
+# Review, Knowledge, Work, and Telemetry Adapters
 
 ## Purpose
 
@@ -99,6 +99,22 @@ The shared observation receipt and failure behavior live in
 [`use-project-telemetry`](../skills/use-project-telemetry/references/telemetry-contract.md).
 Provider-specific operations belong in progressively disclosed references and
 must not enlarge the core tool surface.
+
+## Work Providers
+
+The repository provider is always available. It stores normalized work in
+`.agent-stack/work-items.json` and bounded evidence relationships in
+`.agent-stack/evidence-graph.json`. Both files have shipped JSON Schemas and
+dependency-free CLI validation.
+
+Only one work provider may organize canonical work at a time. A reviewed
+external provider must map its vocabulary to the fixed work contract, preserve
+the repository fallback, and emit receipts for every external operation.
+Provider state never grants execution, merge, deployment, or release authority,
+and `done` still requires repository or approved-provider acceptance evidence.
+
+The shared vocabulary and receipt live in
+[`manage-project-work`](../skills/manage-project-work/references/work-evidence-contract.md).
 
 ## Adding a Future Provider
 

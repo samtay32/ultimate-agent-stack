@@ -9,6 +9,8 @@
 | `coordinate-parallel-delivery` | Routed by delivery | Two or more independent tracks may shorten the critical path | Serial or bounded parallel strategy with primary-agent integration |
 | `shape-project` | Implicit or explicit | Intent, acceptance, architecture, migration, or UX is unclear | Lockable delivery contract |
 | `use-project-knowledge` | Routed by setup/delivery | Prior knowledge may inform work or verified learning should be preserved | Scoped retrieval receipt or redacted learning proposal |
+| `use-project-telemetry` | Explicit or routed by delivery | Configured operational evidence may answer a bounded delivery question | Redacted observation receipt validated against repository evidence |
+| `manage-project-work` | Implicit or routed by delivery | Work must be planned, selected, updated, reconciled, or proven complete | Valid normalized work plus bounded evidence relationships |
 | `build-vertical-slice` | Implicit or explicit | A locked slice is ready to implement | Demonstrable increment with focused tests/docs |
 | `verify-change` | Implicit or explicit | Implementation or a repair batch needs proof | Evidence matrix and binary readiness result |
 | `close-review-loop` | Implicit or explicit | PR, CI, human feedback, or configured-provider review needs closure | Closed actionable set and merge decision |
@@ -25,7 +27,9 @@ implicitly from precise descriptions.
 flowchart LR
     SET["setup-autonomous-project"] --> RUN["run-autonomous-delivery"]
     RUN --> KNOW["use-project-knowledge"]
-    RUN --> SHAPE["shape-project"]
+    RUN --> TELEMETRY["use-project-telemetry"]
+    RUN --> WORK["manage-project-work"]
+    WORK --> SHAPE["shape-project"]
     SHAPE --> SECURE["secure-launch"]
     SECURE --> COORD["coordinate-parallel-delivery"]
     COORD --> BUILD["build-vertical-slice"]
@@ -37,15 +41,16 @@ flowchart LR
     MAINTAIN["maintain-agent-stack"] --> PACKAGE["reviewed npm update"]
 ```
 
-## Why Ten
+## Why Twelve
 
 Fewer skills would load large irrelevant procedures into every task. Many more
 skills would make discovery unreliable and spread state across shallow modules.
-Ten gives:
+Twelve gives:
 
 - four stable user entry points;
 - one owner for each high-risk seam: intent, launch security, implementation,
-  knowledge, delegation, verification, and external review;
+  knowledge, work evidence, telemetry, delegation, verification, and external
+  review;
 - one-level references for progressive disclosure;
 - no persona catalog, mandatory swarm, or separate orchestration runtime.
 
@@ -106,6 +111,8 @@ and the baseline.
 - CodeRabbit or an allowed GitHub human for adversarial PR review;
 - GBrain for optional project-scoped cross-conversation knowledge, with
   repository checkpoint fallback;
+- an optional reviewed work provider using the same repository work/evidence
+  contract;
 - Treehouse for reusable isolated worktrees;
 - no-mistakes for an additional local push gate;
 - AXI wrappers for token-efficient structured tool output;

@@ -32,6 +32,13 @@ Status: DRAFT
 
 1. [[SLICE]]
 
+## Work and Evidence
+
+- Work ledger: `.agent-stack/work-items.json`
+- Evidence graph: `.agent-stack/evidence-graph.json`
+- Completion requires linked acceptance, implementation, verification, and
+  review evidence.
+
 ## Rollout and Rollback
 
 [[ROLLOUT]]

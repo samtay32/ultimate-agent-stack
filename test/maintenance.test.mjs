@@ -127,6 +127,35 @@ const adaptersGuide = readFileSync(
   join(PACKAGE_ROOT, "docs/ADAPTERS.md"),
   "utf8",
 );
+const workSkill = readFileSync(
+  join(PACKAGE_ROOT, "skills/manage-project-work/SKILL.md"),
+  "utf8",
+);
+const workEvidenceContract = readFileSync(
+  join(
+    PACKAGE_ROOT,
+    "skills/manage-project-work/references/work-evidence-contract.md",
+  ),
+  "utf8",
+);
+const workItemSchema = JSON.parse(
+  readFileSync(
+    join(
+      PACKAGE_ROOT,
+      "assets/project-template/.agent-stack/contracts/work-item.schema.json",
+    ),
+    "utf8",
+  ),
+);
+const evidenceGraphSchema = JSON.parse(
+  readFileSync(
+    join(
+      PACKAGE_ROOT,
+      "assets/project-template/.agent-stack/contracts/evidence-graph.schema.json",
+    ),
+    "utf8",
+  ),
+);
 
 function assertCheckoutCredentialsDisabled(workflow) {
   const lines = workflow.split("\n");
@@ -472,6 +501,36 @@ test("telemetry remains optional, bounded, read-only, and provider-neutral", () 
     telemetryContract,
     /api[_ -]?key|access[_ -]?token|client[_ -]?secret/i,
     "the provider-neutral contract must not introduce credential fields",
+  );
+});
+
+test("work and evidence contracts remain portable and provider-neutral", () => {
+  for (const source of [
+    workSkill,
+    workEvidenceContract,
+    adaptersGuide,
+    projectAgents,
+    readme,
+  ]) {
+    assert.match(source, /repository/i);
+    assert.match(source, /provider/i);
+    assert.match(source, /evidence/i);
+  }
+  assert.match(workSkill, /provider never grants authority/i);
+  assert.match(workSkill, /Do not infer completion from a provider status/i);
+  assert.match(workEvidenceContract, /Provider labels never replace/);
+  assert.match(workEvidenceContract, /Never store an access token/);
+  assert.equal(workItemSchema.additionalProperties, false);
+  assert.equal(evidenceGraphSchema.additionalProperties, false);
+  assert.equal(
+    workItemSchema.$defs.workItem.properties.status.enum.includes("done"),
+    true,
+  );
+  assert.equal(
+    evidenceGraphSchema.$defs.edge.properties.relation.enum.includes(
+      "verifies",
+    ),
+    true,
   );
 });
 

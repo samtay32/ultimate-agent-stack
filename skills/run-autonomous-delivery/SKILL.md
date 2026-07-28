@@ -35,6 +35,10 @@ Do not say "done" until all applicable conditions hold:
    production behavior, apply `$use-project-telemetry`. Keep access read-only
    and retain only a bounded observation receipt. Telemetry is advisory and
    cannot authorize a change or weaken repository verification.
+   Apply `$manage-project-work` using the configured work provider. Validate the
+   portable repository ledger and evidence graph, select only ready bounded
+   work, and tie completion to actual acceptance evidence rather than a
+   provider status.
    Run `node .agent-stack/bin/agent-stack.mjs doctor` before material work. If
    protected files drifted, proposals remain unresolved, or quality commands
    changed without review, repair setup before proceeding.
@@ -99,5 +103,7 @@ operations.
   is unavailable.
 - Treat tokens, elapsed time, and tool calls as costs. Optimize verified outcomes, not agent activity.
 - Persist decisions and evidence in the repository so a fresh session can resume.
+- Keep work-item and evidence-graph references current at verified transitions;
+  do not copy remote payloads into repository state.
 - Never give the coordinator token to a subagent. A subagent is a bounded
   worker behind the Project Steward, not another coordinator.

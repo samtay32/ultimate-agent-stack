@@ -23,11 +23,13 @@ import {
   CONFIG_PATH,
   COORDINATOR_PATH,
   CORE_POLICY_PATH,
+  EVIDENCE_GRAPH_PATH,
   INSTALLATION_PATH,
   PROJECT_CLI_PATH,
   REVIEW_RECEIPT_PATH,
   REVIEW_WORKFLOW_PATH,
   StackError,
+  WORK_LEDGER_PATH,
   checksHash,
   commandCheckpoint,
   commandCapabilities,
@@ -38,6 +40,7 @@ import {
   commandCoordinator,
   commandDetect,
   commandDoctor,
+  commandEvidenceValidate,
   commandLock,
   commandMemoryHealth,
   commandMemorySetup,
@@ -45,6 +48,7 @@ import {
   commandStatus,
   commandUnlock,
   commandVerify,
+  commandWorkValidate,
   configurationHash,
   defaultConfig,
   detectProject,
@@ -55,6 +59,9 @@ import {
   pathInside,
   resolveTarget,
   validateConfig,
+  validateEvidenceGraph,
+  validateWorkEvidenceLinkage,
+  validateWorkLedger,
 } from "../bin/ultimate-agent-stack.mjs";
 
 const PACKAGE_CLI = fileURLToPath(
@@ -461,10 +468,17 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
       initializedConfig.parallel_delivery,
       safeParallelPolicy(),
     );
-    assert.equal(initializedConfig.schema_version, 3);
+    assert.equal(initializedConfig.schema_version, 4);
     assert.equal(initializedConfig.onboarding.status, "pending");
     assert.equal(initializedConfig.capabilities.knowledge.scope, "project");
     assert.deepEqual(initializedConfig.capabilities.telemetry.providers, []);
+    assert.deepEqual(initializedConfig.capabilities.work, {
+      provider: "repository",
+      required: false,
+      sync_mode: "repository_only",
+      write_policy: "repository_only",
+      repository_fallback: true,
+    });
     assert.deepEqual(initializedConfig.quality.environment, { allow: [] });
 
     const copiedCli = spawnSync(
@@ -523,6 +537,9 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
     assert.equal(capabilities.available.review.builtin.available, true);
     assert.equal(capabilities.available.knowledge.repository.available, true);
     assert.equal(capabilities.available.telemetry.none.available, true);
+    assert.equal(capabilities.available.work.repository.available, true);
+    assert.equal(commandWorkValidate(fixture.directory).ok, true);
+    assert.equal(commandEvidenceValidate(fixture.directory).ok, true);
 
     commandConfigure(fixture.directory, {
       profile: "standard",
@@ -1386,6 +1403,129 @@ test("doctor reports malformed telemetry configuration without crashing", () => 
   }
 });
 
+test("work ledger and evidence graph reject unsafe or broken repository state", () => {
+  const ledger = {
+    schema_version: 1,
+    updated_at: null,
+    items: [
+      {
+        id: "work-contract",
+        title: "Define portable work",
+        objective: "Keep work usable without an external provider.",
+        status: "ready",
+        priority: "normal",
+        acceptance_criteria: ["Repository validation passes."],
+        scope: {
+          paths: [WORK_LEDGER_PATH],
+          out_of_scope: ["production/"],
+        },
+        depends_on: [],
+        evidence_refs: ["test-work-contract"],
+        external_refs: [],
+        updated_at: null,
+      },
+    ],
+  };
+  const graph = {
+    schema_version: 1,
+    updated_at: null,
+    nodes: [
+      {
+        id: "work-contract",
+        kind: "work_item",
+        label: "Portable work contract",
+        state: "active",
+        source: {
+          provider: "repository",
+          reference: WORK_LEDGER_PATH,
+        },
+        summary: "The normalized work item.",
+      },
+      {
+        id: "test-work-contract",
+        kind: "test",
+        label: "Work contract validation",
+        state: "verified",
+        source: {
+          provider: "repository",
+          reference: "test/agent-stack.test.mjs",
+        },
+        summary: "The validator rejects unsafe state.",
+      },
+    ],
+    edges: [
+      {
+        from: "test-work-contract",
+        to: "work-contract",
+        relation: "verifies",
+      },
+    ],
+  };
+
+  assert.deepEqual(validateWorkLedger(ledger), []);
+  assert.deepEqual(validateEvidenceGraph(graph), []);
+  assert.deepEqual(validateWorkEvidenceLinkage(ledger, graph), []);
+
+  const unlinkedLedger = structuredClone(ledger);
+  unlinkedLedger.items[0].evidence_refs = ["missing-evidence"];
+  assert.match(
+    validateWorkEvidenceLinkage(unlinkedLedger, graph).join("\n"),
+    /references missing evidence node/,
+  );
+  const unsupportedCompletion = structuredClone(ledger);
+  unsupportedCompletion.items[0].status = "done";
+  unsupportedCompletion.items[0].evidence_refs = ["work-contract"];
+  assert.match(
+    validateWorkEvidenceLinkage(unsupportedCompletion, graph).join("\n"),
+    /requires verified evidence node/,
+  );
+
+  const unsafeLedger = structuredClone(ledger);
+  unsafeLedger.items[0].scope.paths = [
+    "../outside",
+    "\\\\server\\share\\outside",
+    "C:\\outside",
+  ];
+  unsafeLedger.items[0].depends_on = ["missing-work"];
+  unsafeLedger.items[0].objective = "api_key=supersecretvalue";
+  const ledgerErrors = validateWorkLedger(unsafeLedger).join("\n");
+  assert.match(ledgerErrors, /project-relative path/);
+  assert.match(ledgerErrors, /depends on missing item/);
+  assert.match(ledgerErrors, /credential-like text/);
+
+  const cyclicLedger = structuredClone(ledger);
+  const dependent = structuredClone(cyclicLedger.items[0]);
+  dependent.id = "dependent-work";
+  dependent.depends_on = ["work-contract"];
+  dependent.evidence_refs = [];
+  cyclicLedger.items[0].depends_on = ["dependent-work"];
+  cyclicLedger.items.push(dependent);
+  const cycleErrors = validateWorkLedger(cyclicLedger).join("\n");
+  assert.match(cycleErrors, /dependencies must not contain a cycle/);
+  assert.match(cycleErrors, /until dependency .* is done/);
+
+  const missingEdge = structuredClone(graph);
+  missingEdge.edges = [];
+  assert.match(
+    validateWorkEvidenceLinkage(ledger, missingEdge).join("\n"),
+    /requires a completion-evidence edge/,
+  );
+
+  const brokenGraph = structuredClone(graph);
+  brokenGraph.nodes[0].source.reference = "access_token=supersecretvalue";
+  brokenGraph.edges.push({
+    from: "missing-node",
+    to: "work-contract",
+    relation: "verifies",
+  });
+  brokenGraph.edges.push(structuredClone(brokenGraph.edges[0]));
+  const graphErrors = validateEvidenceGraph(brokenGraph).join("\n");
+  assert.match(graphErrors, /credential-like text/);
+  assert.match(graphErrors, /references a missing node/);
+  assert.match(graphErrors, /duplicate edges/);
+  assert.equal(EVIDENCE_GRAPH_PATH, ".agent-stack/evidence-graph.json");
+});
+
 test("provider or authority changes invalidate configuration approval", () => {
   const fixture = temporaryProject();
   try {
@@ -1682,7 +1822,7 @@ test("legacy serial policy migrates to safe adaptive coordination", () => {
       "coordinator_managed_isolated_only",
     );
     assert.deepEqual(migrated.parallel_delivery, safeParallelPolicy());
-    assert.equal(migrated.schema_version, 3);
+    assert.equal(migrated.schema_version, 4);
     assert.equal(migrated.onboarding.status, "needs_confirmation");
     assert.equal(migrated.onboarding.project_profile, "production");
     assert.equal(migrated.capabilities.review.provider, "coderabbit");
@@ -1697,6 +1837,13 @@ test("legacy serial policy migrates to safe adaptive coordination", () => {
       default_access: "read_only",
       evidence_capture: "bounded_references_only",
       raw_payload_storage: false,
+      repository_fallback: true,
+    });
+    assert.deepEqual(migrated.capabilities.work, {
+      provider: "repository",
+      required: false,
+      sync_mode: "repository_only",
+      write_policy: "repository_only",
       repository_fallback: true,
     });
   } finally {
@@ -2268,6 +2415,35 @@ test("malformed environment policy reports validation instead of crashing migrat
     assert.match(
       JSON.stringify(configReport.detail),
       /quality\.environment must be an object/,
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("malformed work policy reports validation instead of crashing migration", () => {
+  const fixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    createJavaScriptFixture(fixture.directory);
+    installOrUpgrade(fixture.directory, { mode: "init" });
+    const configFile = join(fixture.directory, CONFIG_PATH);
+    const config = readJson(configFile);
+    config.capabilities.work = "linear-without-a-reviewed-adapter";
+    writeJson(configFile, config);
+
+    assert.doesNotThrow(() =>
+      installOrUpgrade(fixture.directory, { mode: "upgrade" }),
+    );
+    const doctor = commandDoctor(fixture.directory);
+    const configReport = doctor.reports.find(
+      (report) => report.name === "config",
+    );
+    assert.equal(doctor.ok, false);
+    assert.equal(configReport.ok, false);
+    assert.match(
+      JSON.stringify(configReport.detail),
+      /capabilities\.work must be an object/,
     );
   } finally {
     fixture.cleanup();

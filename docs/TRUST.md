@@ -24,6 +24,7 @@ sandbox and the Markdown skills are not executable security controls.
 | Integrity-check bounded repository checkpoints and reject common secret shapes | Write checkpoints after verified milestones |
 | Verify project-local GBrain path containment, health, and identity | Treat optional memory as advisory |
 | Validate that only reviewed telemetry providers can enter configuration | Treat read-only project telemetry as advisory evidence |
+| Validate repository work and evidence vocabulary, bounds, dependencies, and graph endpoints | Keep external work synchronized and require real acceptance evidence |
 | Keep package publishing behind the protected release workflow | Stop after bounded non-improving repair loops and report the blocker |
 
 The left column is code. A conversation cannot persuade those checks to pass.
@@ -63,6 +64,13 @@ bounded evidence references, no raw-payload storage, and repository fallback.
 The CLI rejects unregistered provider names and configuration that relaxes
 those invariants. Provider authentication, remote authorization, query
 correctness, and agent obedience remain outside the CLI's enforcement boundary.
+
+The work ledger and evidence graph use strict top-level and entry vocabularies,
+bounded strings and collections, project-relative paths, unique identifiers,
+valid dependencies, and graph endpoints that must exist. The CLI rejects common
+credential-like content. It cannot prove that a referenced artifact is true,
+that an external provider is current, or that every relevant relationship was
+recorded; those remain verification and review responsibilities.
 
 Quality checks use command arrays rather than shell strings. Direct shell
 interpreters, known destructive programs, unsafe package-manager operations,
