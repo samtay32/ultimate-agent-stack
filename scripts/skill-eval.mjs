@@ -52,12 +52,14 @@ function parseSkillMetadata(content, path = "SKILL.md") {
   const frontmatter = content.match(
     /^---\r?\n([\s\S]*?)\r?\n---\r?\n/,
   );
-  const name = frontmatter?.[1]
-    .match(/^name:\s*(.+)\r?$/m)?.[1]
-    ?.trim();
-  const description = frontmatter?.[1]
-    .match(/^description:\s*(.+)\r?$/m)?.[1]
-    ?.trim();
+  const lines = frontmatter?.[1].split(/\r?\n/) ?? [];
+  const field = (key) => {
+    const prefix = `${key}:`;
+    const line = lines.find((candidate) => candidate.startsWith(prefix));
+    return line?.slice(prefix.length).trim();
+  };
+  const name = field("name");
+  const description = field("description");
   if (!name || !description) {
     throw new Error(`Missing skill metadata in ${path}`);
   }

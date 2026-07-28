@@ -79,6 +79,15 @@ test("skill metadata and surface hashes are stable across line endings", () => {
     hashBehaviorEntries([["skill.md", Buffer.from(crlf)]]),
     hashBehaviorEntries([["skill.md", Buffer.from(lf)]]),
   );
+  assert.deepEqual(
+    parseSkillMetadata(
+      `---\nname:${" ".repeat(100_000)}example\ndescription: Example skill.\n---\n`,
+    ),
+    {
+      name: "example",
+      description: "Example skill.",
+    },
+  );
 });
 
 test("a complete live run record passes against the current behavior surface", () => {
