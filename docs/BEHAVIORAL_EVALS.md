@@ -39,6 +39,11 @@ The negative case makes false activation a first-class failure. Adding more
 positive examples cannot compensate for an agent starting work when it should
 not.
 
+A scenario counts as a false-activation case only when `must_activate` is empty
+and `must_not_activate` names every skill currently in the catalog. Adding a
+skill requires adding it to that list so the negative scenario continues to
+satisfy the contract gate.
+
 ## Deterministic Contract Gate
 
 Run:

@@ -15,7 +15,7 @@ All notable changes to Ultimate Agent Stack are documented here.
   current hashed behavior surface without claiming that unit tests prove model
   behavior.
 - The supported runtime is now Node.js 22 or newer. CI runs the full release
-  gate on Node.js 22 for Ubuntu and Windows, plus current Node.js on Windows.
+  gate on Node.js 22 for Ubuntu and Windows, plus current Node.js 26 on Windows.
 
 ### Changed
 
