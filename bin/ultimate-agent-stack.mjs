@@ -3494,6 +3494,221 @@ function commandEvidenceValidate(target) {
   };
 }
 
+function incrementCount(counts, value) {
+  counts.set(value, (counts.get(value) ?? 0) + 1);
+}
+
+function sortedCounts(counts) {
+  return Object.fromEntries(
+    [...counts.entries()].sort(([left], [right]) =>
+      left.localeCompare(right),
+    ),
+  );
+}
+
+function evidenceReportData(ledger, graph) {
+  const nodeKinds = new Map();
+  const nodeStates = new Map();
+  const sourceProviders = new Map();
+  const edgeRelations = new Map();
+  const connected = new Set();
+  for (const node of graph.nodes) {
+    incrementCount(nodeKinds, node.kind);
+    incrementCount(nodeStates, node.state);
+    incrementCount(sourceProviders, node.source.provider);
+  }
+  for (const edge of graph.edges) {
+    incrementCount(edgeRelations, edge.relation);
+    connected.add(edge.from);
+    connected.add(edge.to);
+  }
+  const workStatuses = new Map();
+  for (const item of ledger.items) {
+    incrementCount(workStatuses, item.status);
+  }
+  const evidenceEligibleWork = ledger.items.filter(
+    (item) => item.status !== "cancelled",
+  );
+  const unconnected = graph.nodes
+    .filter((node) => node.kind !== "work_item" && !connected.has(node.id))
+    .map((node) => node.id)
+    .sort();
+  const withoutEvidence = evidenceEligibleWork
+    .filter((item) => item.evidence_refs.length === 0)
+    .map((item) => item.id)
+    .sort();
+  return {
+    schema_version: 1,
+    source: {
+      work_ledger: WORK_LEDGER_PATH,
+      evidence_graph: EVIDENCE_GRAPH_PATH,
+      work_ledger_updated_at: ledger.updated_at,
+      evidence_graph_updated_at: graph.updated_at,
+    },
+    totals: {
+      work_items: ledger.items.length,
+      nodes: graph.nodes.length,
+      edges: graph.edges.length,
+    },
+    work_statuses: sortedCounts(workStatuses),
+    node_kinds: sortedCounts(nodeKinds),
+    node_states: sortedCounts(nodeStates),
+    edge_relations: sortedCounts(edgeRelations),
+    source_providers: sortedCounts(sourceProviders),
+    coverage: {
+      work_items_with_evidence: evidenceEligibleWork.filter(
+        (item) => item.evidence_refs.length > 0,
+      ).length,
+      work_items_without_evidence: withoutEvidence.length,
+      work_items_without_evidence_sample: withoutEvidence.slice(0, 100),
+      work_items_without_evidence_sample_truncated:
+        withoutEvidence.length > 100,
+      unconnected_non_work_nodes: unconnected.length,
+      unconnected_non_work_node_sample: unconnected.slice(0, 100),
+      unconnected_non_work_node_sample_truncated: unconnected.length > 100,
+    },
+  };
+}
+
+function mermaidLabel(value, maximum = 80) {
+  return String(value)
+    .normalize("NFKC")
+    .replace(/[^\p{L}\p{N} .,:;_()/-]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maximum);
+}
+
+function evidenceMermaid(graph, maxNodes) {
+  const orderedNodes = [...graph.nodes].sort(
+    (left, right) =>
+      Number(right.kind === "work_item") -
+        Number(left.kind === "work_item") ||
+      left.id.localeCompare(right.id),
+  );
+  const selected = orderedNodes.slice(0, maxNodes);
+  const selectedIds = new Set(selected.map((node) => node.id));
+  const aliases = new Map(
+    selected.map((node, index) => [node.id, `n${index + 1}`]),
+  );
+  const lines = [
+    "flowchart LR",
+    ...selected.map((node) => {
+      const label = mermaidLabel(
+        `${node.label} · ${node.kind} · ${node.state}`,
+      );
+      return `    ${aliases.get(node.id)}["${label}"]:::${node.state}`;
+    }),
+    ...graph.edges
+      .filter(
+        (edge) =>
+          selectedIds.has(edge.from) && selectedIds.has(edge.to),
+      )
+      .sort(
+        (left, right) =>
+          left.from.localeCompare(right.from) ||
+          left.relation.localeCompare(right.relation) ||
+          left.to.localeCompare(right.to),
+      )
+      .map(
+        (edge) =>
+          `    ${aliases.get(edge.from)} -->|${edge.relation}| ${aliases.get(edge.to)}`,
+      ),
+  ];
+  const omitted = graph.nodes.length - selected.length;
+  if (omitted > 0) {
+    lines.push(
+      `    omitted["${omitted} nodes omitted by report bound"]:::omitted`,
+    );
+  }
+  lines.push(
+    "    classDef planned fill:#f4f4f5,stroke:#71717a,color:#18181b",
+    "    classDef active fill:#dbeafe,stroke:#2563eb,color:#172554",
+    "    classDef verified fill:#dcfce7,stroke:#16a34a,color:#14532d",
+    "    classDef failed fill:#fee2e2,stroke:#dc2626,color:#7f1d1d",
+    "    classDef superseded fill:#fef3c7,stroke:#d97706,color:#78350f",
+    "    classDef omitted fill:#ffffff,stroke:#a1a1aa,color:#52525b,stroke-dasharray: 4 4",
+  );
+  return {
+    mermaid: `${lines.join("\n")}\n`,
+    selected_node_count: selected.length,
+    omitted_node_count: omitted,
+  };
+}
+
+function commandEvidenceReport(
+  target,
+  { format = "json", output = undefined, maxNodes = 200 } = {},
+) {
+  if (!["json", "mermaid"].includes(format)) {
+    throw new StackError("--format must be json or mermaid");
+  }
+  const numericMaxNodes = Number(maxNodes);
+  if (
+    !Number.isInteger(numericMaxNodes) ||
+    numericMaxNodes < 1 ||
+    numericMaxNodes > 500
+  ) {
+    throw new StackError("--max-nodes must be an integer between 1 and 500");
+  }
+  const work = commandWorkValidate(target);
+  const evidence = commandEvidenceValidate(target);
+  if (!work.ok || !evidence.ok) {
+    throw new StackError(
+      "Evidence reporting requires valid repository work and evidence.",
+      2,
+      [...work.errors, ...evidence.errors],
+    );
+  }
+  const ledger = readJson(
+    projectFile(target, WORK_LEDGER_PATH, "work ledger"),
+    "work ledger",
+  );
+  const graph = readJson(
+    projectFile(target, EVIDENCE_GRAPH_PATH, "evidence graph"),
+    "evidence graph",
+  );
+  const report = evidenceReportData(ledger, graph);
+  const visualization =
+    format === "mermaid"
+      ? evidenceMermaid(graph, numericMaxNodes)
+      : null;
+  let normalizedOutput;
+  if (output !== undefined) {
+    const outputFile = projectFile(target, output, "evidence report");
+    normalizedOutput = relative(realpathSync(target), outputFile)
+      .split(sep)
+      .join("/");
+    if (
+      !normalizedOutput.startsWith(".agent-stack/reports/") ||
+      normalizedOutput === ".agent-stack/reports/" ||
+      (format === "json" && !normalizedOutput.endsWith(".json")) ||
+      (format === "mermaid" && !normalizedOutput.endsWith(".mmd"))
+    ) {
+      throw new StackError(
+        "Evidence report output must be a .json or .mmd file under .agent-stack/reports for the selected format.",
+      );
+    }
+    if (existsSync(outputFile) && lstatSync(outputFile).isSymbolicLink()) {
+      throw new StackError("Refusing to overwrite a symlinked evidence report.");
+    }
+    if (format === "json") {
+      atomicJson(outputFile, report);
+    } else {
+      atomicText(outputFile, visualization.mermaid);
+    }
+  }
+  return {
+    ok: true,
+    format,
+    report,
+    ...(visualization ?? {}),
+    ...(normalizedOutput === undefined
+      ? {}
+      : { output: normalizedOutput }),
+  };
+}
+
 function delegatedCheckDefinition(target, check) {
   const executable = basename(check.argv?.[0] ?? "").toLowerCase();
   if (PACKAGE_MANAGERS.has(executable)) {
@@ -7974,6 +8189,8 @@ Safe project setup:
   ultimate-agent-stack capabilities [--target DIR]
   ultimate-agent-stack work validate [--target DIR]
   ultimate-agent-stack evidence validate [--target DIR]
+  ultimate-agent-stack evidence report [--format json|mermaid]
+    [--max-nodes 1..500] [--output PATH] [--target DIR]
   ultimate-agent-stack receipts validate [--target DIR]
   ultimate-agent-stack campaign status [--target DIR]
   ultimate-agent-stack campaign start --objective TEXT --max-iterations 1..25
@@ -8077,12 +8294,23 @@ function execute(command, args) {
     }
     case "evidence": {
       const [subcommand, ...evidenceArgs] = args;
-      if (subcommand !== "validate") {
-        throw new StackError("evidence subcommand must be validate");
+      if (!["validate", "report"].includes(subcommand)) {
+        throw new StackError("evidence subcommand must be validate or report");
       }
-      assertNoUnknownOptions(evidenceArgs, ["--target"]);
+      assertNoUnknownOptions(
+        evidenceArgs,
+        subcommand === "validate"
+          ? ["--target"]
+          : ["--target", "--format", "--max-nodes", "--output"],
+      );
       const target = resolveTarget(getOption(evidenceArgs, "--target", "."));
-      return commandEvidenceValidate(target);
+      return subcommand === "validate"
+        ? commandEvidenceValidate(target)
+        : commandEvidenceReport(target, {
+            format: getOption(evidenceArgs, "--format", "json"),
+            maxNodes: getOption(evidenceArgs, "--max-nodes", "200"),
+            output: getOption(evidenceArgs, "--output"),
+          });
     }
     case "receipts": {
       const [subcommand, ...receiptArgs] = args;
@@ -8429,6 +8657,7 @@ export {
   commandDetect,
   commandDoctor,
   commandEvidenceValidate,
+  commandEvidenceReport,
   commandLock,
   commandLinearHealth,
   commandLinearEvidenceComment,

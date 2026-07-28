@@ -264,6 +264,28 @@ function main() {
     if (!campaign.ok || campaign.campaign !== null) {
       throw new Error("packed install did not report an inactive campaign");
     }
+    const evidenceReport = JSON.parse(
+      run(
+        process.execPath,
+        [
+          localCli,
+          "evidence",
+          "report",
+          "--format",
+          "mermaid",
+          "--target",
+          project,
+        ],
+        project,
+      ),
+    );
+    if (
+      !evidenceReport.ok ||
+      evidenceReport.format !== "mermaid" ||
+      !evidenceReport.mermaid.startsWith("flowchart LR")
+    ) {
+      throw new Error("packed install did not render the evidence graph");
+    }
     process.stdout.write(
       `${JSON.stringify(
         {

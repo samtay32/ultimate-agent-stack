@@ -273,6 +273,22 @@ includes them in `doctor`. Repository tracking works with no account or vendor.
 An optional provider may organize the same normalized work later, but it cannot
 change delivery authority or replace acceptance evidence.
 
+Generate a bounded summary or a Mermaid diagram directly from validated
+repository state:
+
+```bash
+node .agent-stack/bin/agent-stack.mjs evidence report
+node .agent-stack/bin/agent-stack.mjs evidence report \
+  --format mermaid \
+  --max-nodes 200 \
+  --output .agent-stack/reports/evidence.mmd
+```
+
+The JSON report shows work status, node/edge/provider counts, evidence coverage,
+and bounded samples of missing or unconnected evidence. Mermaid uses generated
+node aliases and sanitized labels, includes only edges whose endpoints are
+shown, and states when the configured visualization bound omitted nodes.
+
 ### Bounded campaign loop
 
 Campaign mode walks the provider-neutral ledger one work item at a time. A

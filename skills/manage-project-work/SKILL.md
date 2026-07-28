@@ -46,6 +46,9 @@ work, but it does not expand execution, merge, deployment, or release authority.
    repository or approved-provider evidence path and the normal verification
    and review gates passed.
 9. Revalidate both files and include their results in the handoff.
+10. When a human-readable map helps, run `evidence report`. Use JSON for a
+    compact coverage summary or bounded Mermaid for a diagram. Never describe
+    the derived report as stronger proof than its referenced artifacts.
 
 ## Bounded Campaigns
 

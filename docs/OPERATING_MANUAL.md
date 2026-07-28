@@ -217,6 +217,12 @@ For a bounded campaign, use `campaign start` with 1–25 iterations and then
 provider. Stop when the bound is reached, evidence is incomplete, work is
 blocked, or a consequential decision is required.
 
+Use `evidence report` when the user needs a compact state summary. Use
+`--format mermaid --output .agent-stack/reports/evidence.mmd` for a diagram.
+Keep `--max-nodes` proportionate to the review context. An omitted node is not
+lost evidence; it is outside the visualization bound and remains in the
+validated graph.
+
 ## What Happens With Subagents
 
 You continue speaking only with the primary coding agent—the Project Steward.
