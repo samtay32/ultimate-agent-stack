@@ -130,8 +130,11 @@ Add focused tests before the full gate. Treat missing or skipped required checks
 Use a draft pull request until material work and full verification are complete.
 Apply the configured independent review provider. Address valid findings, rebut
 false positives with evidence, and explicitly defer only safe out-of-scope
-improvements. Re-run the full gate after each repair batch. Do not merge unless
-current repository or user policy grants merge authority.
+improvements. Treat every reviewer claim as a hypothesis: inspect the cited code
+and its surrounding behavior before changing production code. Use only the
+canonical dispositions and response format in `$close-review-loop`'s Review
+Closure Policy. Re-run the full gate after each repair batch. Do not merge
+unless current repository or user policy grants merge authority.
 
 ## Completion
 

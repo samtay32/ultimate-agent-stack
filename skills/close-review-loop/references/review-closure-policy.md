@@ -1,5 +1,36 @@
 # Review Closure Policy
 
+## Claim Validation
+
+Treat every reviewer claim as a hypothesis until repository evidence establishes
+whether it is true.
+
+Before choosing a disposition:
+
+1. Open the cited file and line, then inspect enough surrounding control flow,
+   data flow, callers, tests, and authoritative documentation to understand the
+   behavior.
+2. Reproduce the claim or run the smallest relevant test when practical.
+3. Record whether the claim is true, false, duplicate, or still uncertain.
+
+Never change production code merely because a reviewer asserted a defect. If
+the available evidence cannot establish the truth without crossing an authority
+boundary, use `decision-needed`.
+
+## Canonical Dispositions
+
+These are the only review-finding dispositions:
+
+| Disposition | Meaning |
+| --- | --- |
+| `fixed` | The claim is true, in scope, and resolved by a verified change. |
+| `rebutted` | The claim is false, duplicate, or inapplicable, with evidence. |
+| `deferred` | The claim is true but safely outside locked scope, with explicit authorization, an issue, and a risk statement. |
+| `decision-needed` | Closing the claim requires a human decision about intent, public contract, data safety, security posture, cost, or release authority. |
+
+Do not invent another value or substitute a synonym, tense variant, or spacing
+variant.
+
 ## Finding Threshold
 
 Fix by default:

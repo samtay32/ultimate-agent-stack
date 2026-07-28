@@ -130,15 +130,24 @@ flowchart LR
     V --> T["Project tests and checks"]
     T --> Q{"Independent review required?"}
     Q -- "Yes" --> R["Independent review"]
-    R --> F{"Valid finding?"}
-    F -- "Yes" --> V
-    F -- "No" --> D["Merge-ready result + evidence"]
+    R --> C["Inspect the cited code and evidence"]
+    C --> F{"Claim established?"}
+    F -- "True and in scope" --> V
+    F -- "False or duplicate" --> E["Rebut with evidence"]
+    F -- "Needs scope or authority decision" --> H["Ask the human"]
+    E --> G{"Closure policy satisfied?"}
+    H --> G
+    G -- "Yes" --> D["Merge-ready result + evidence"]
+    G -- "No" --> R
     Q -- "No" --> D
 ```
 
 The workflow scales with risk. A small local tool gets a short brief. A public,
 paid, sensitive, or hard-to-reverse system gets deeper planning and stronger
-gates.
+gates. Review findings use the exact vocabulary and evidence format in the
+[Review Closure Policy](skills/close-review-loop/references/review-closure-policy.md);
+the system never changes production code solely because a reviewer asserted a
+defect.
 
 When parallel work is useful, the primary agent may use a few isolated native
 subagents. The primary agent owns their instructions, integration, checks, and
