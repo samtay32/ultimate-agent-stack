@@ -130,7 +130,7 @@ function createJavaScriptFixture(directory) {
     type: "module",
     scripts: {
       lint: "node --check app.mjs",
-      test: "node --test tests",
+      test: "node --test tests/app.test.mjs",
       build: "node -e \"console.log('build pass')\"",
     },
   });

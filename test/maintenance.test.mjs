@@ -391,7 +391,7 @@ test("package has no install hooks and guards publication with prepublishOnly", 
   assert.match(packedSmoke, /packed\[0\]\.files/);
   assert.match(packedSmoke, /duplicate-copy paths/);
   assert.match(packedSmoke, /process\.env\.npm_execpath/);
-  assert.match(packedSmoke, /node --test tests/);
+  assert.match(packedSmoke, /node --test tests\/smoke\.test\.mjs/);
   assert.deepEqual(packageData.dependencies ?? {}, {});
 });
 

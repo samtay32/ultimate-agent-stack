@@ -670,6 +670,47 @@ function executableExists(target, executable) {
   return resolveExecutable(target, executable) !== null;
 }
 
+const WINDOWS_CMD_META_CHARACTERS = /([()\][%!^"`<>&|;, *?])/g;
+
+function escapeWindowsBatchCommand(value) {
+  return value.replace(WINDOWS_CMD_META_CHARACTERS, "^$1");
+}
+
+function escapeWindowsBatchArgument(value, doubleEscapeMetaCharacters) {
+  let escaped = String(value);
+  escaped = escaped.replace(/(?=(\\+?)?)\1"/g, "$1$1\\\"");
+  escaped = escaped.replace(/(?=(\\+?)?)\1$/, "$1$1");
+  escaped = `"${escaped}"`;
+  escaped = escaped.replace(WINDOWS_CMD_META_CHARACTERS, "^$1");
+  if (doubleEscapeMetaCharacters) {
+    escaped = escaped.replace(WINDOWS_CMD_META_CHARACTERS, "^$1");
+  }
+  return escaped;
+}
+
+function windowsNpmInvocation(resolved, args) {
+  const executable = basename(resolved).toLowerCase();
+  const cliName =
+    executable === "npm.cmd"
+      ? "npm-cli.js"
+      : executable === "npx.cmd"
+        ? "npx-cli.js"
+        : null;
+  if (!cliName) {
+    return null;
+  }
+  const cli = [
+    process.env.npm_execpath,
+    join(dirname(resolved), "node_modules", "npm", "bin", cliName),
+  ].find((candidate) => candidate && existsSync(candidate));
+  return cli
+    ? {
+        command: process.execPath,
+        args: [cli, ...args],
+      }
+    : null;
+}
+
 function spawnPortable(target, executable, args, options) {
   const resolved = resolveExecutable(target, executable) ?? executable;
   if (
@@ -678,10 +719,18 @@ function spawnPortable(target, executable, args, options) {
   ) {
     return spawnSync(resolved, args, options);
   }
+  const npmInvocation = windowsNpmInvocation(resolved, args);
+  if (npmInvocation) {
+    return spawnSync(
+      npmInvocation.command,
+      npmInvocation.args,
+      options,
+    );
+  }
   const commandParts = [resolved, ...args];
   if (
     commandParts.some(
-      (value) => typeof value !== "string" || /[\0\r\n"%]/.test(value),
+      (value) => typeof value !== "string" || /[\0\r\n]/.test(value),
     )
   ) {
     return {
@@ -694,9 +743,12 @@ function spawnPortable(target, executable, args, options) {
       ),
     };
   }
-  const commandLine = `"${commandParts
-    .map((value) => `"${value}"`)
-    .join(" ")}"`;
+  const commandLine = `"${[
+    escapeWindowsBatchCommand(resolved),
+    ...args.map((value) =>
+      escapeWindowsBatchArgument(value, /\.cmd$/i.test(resolved)),
+    ),
+  ].join(" ")}"`;
   const commandInterpreter =
     process.env.ComSpec ??
     join(process.env.SystemRoot ?? "C:\\Windows", "System32", "cmd.exe");
