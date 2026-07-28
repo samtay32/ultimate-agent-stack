@@ -30,6 +30,10 @@ async function createBundle(outfile) {
   });
 }
 
+function normalizedBundle(file) {
+  return readFileSync(file, "utf8").replaceAll("\r\n", "\n");
+}
+
 async function main() {
   if (process.argv.includes("--write")) {
     await createBundle(BUNDLE);
@@ -39,7 +43,7 @@ async function main() {
   const candidate = join(directory, "portable-process.mjs");
   try {
     await createBundle(candidate);
-    if (readFileSync(candidate, "utf8") !== readFileSync(BUNDLE, "utf8")) {
+    if (normalizedBundle(candidate) !== normalizedBundle(BUNDLE)) {
       throw new Error(
         "lib/portable-process.mjs is stale; run npm run build:portable",
       );
