@@ -694,16 +694,19 @@ function spawnPortable(target, executable, args, options) {
       ),
     };
   }
-  const commandLine = commandParts
+  const commandLine = `"${commandParts
     .map((value) => `"${value}"`)
-    .join(" ");
+    .join(" ")}"`;
   const commandInterpreter =
     process.env.ComSpec ??
     join(process.env.SystemRoot ?? "C:\\Windows", "System32", "cmd.exe");
   return spawnSync(
     commandInterpreter,
     ["/d", "/s", "/v:off", "/c", commandLine],
-    options,
+    {
+      ...options,
+      windowsVerbatimArguments: true,
+    },
   );
 }
 
