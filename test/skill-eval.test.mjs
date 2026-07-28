@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 import {
   behaviorSurfaceHash,
   buildScaffold,
+  hashBehaviorEntries,
+  parseSkillMetadata,
   validateRunRecord,
   validateScenarioCatalog,
 } from "../scripts/skill-eval.mjs";
@@ -63,6 +65,20 @@ test("behavioral scenario contracts cover activation and false activation", () =
     result.skill_count,
   );
   assert.match(result.surface_hash, /^sha256:[a-f0-9]{64}$/);
+});
+
+test("skill metadata and surface hashes are stable across line endings", () => {
+  const lf = "---\nname: example\ndescription: Example skill.\n---\n";
+  const crlf = lf.replaceAll("\n", "\r\n");
+  assert.deepEqual(parseSkillMetadata(lf), {
+    name: "example",
+    description: "Example skill.",
+  });
+  assert.deepEqual(parseSkillMetadata(crlf), parseSkillMetadata(lf));
+  assert.equal(
+    hashBehaviorEntries([["skill.md", Buffer.from(crlf)]]),
+    hashBehaviorEntries([["skill.md", Buffer.from(lf)]]),
+  );
 });
 
 test("a complete live run record passes against the current behavior surface", () => {

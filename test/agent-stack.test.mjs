@@ -130,7 +130,7 @@ function createJavaScriptFixture(directory) {
     type: "module",
     scripts: {
       lint: "node --check app.mjs",
-      test: "node --test tests/*.test.mjs",
+      test: "node --test tests",
       build: "node -e \"console.log('build pass')\"",
     },
   });
@@ -192,7 +192,11 @@ function configureFixture(directory, knowledge = "repository") {
 
 function installFakeGbrain(directory, options = {}) {
   const toolDirectory = join(directory, "tool-bin");
-  const executable = join(toolDirectory, "gbrain");
+  const program = join(toolDirectory, "gbrain-fixture.cjs");
+  const executable = join(
+    toolDirectory,
+    platform() === "win32" ? "gbrain.cmd" : "gbrain",
+  );
   const identity = options.malformedIdentity
     ? { version: "test" }
     : {
@@ -203,9 +207,7 @@ function installFakeGbrain(directory, options = {}) {
       };
   mkdirSync(toolDirectory, { recursive: true });
   writeJson(join(toolDirectory, "package.json"), { type: "commonjs" });
-  writeFileSync(
-    executable,
-    `#!/usr/bin/env node
+  const source = `
 const fs = require("node:fs");
 const path = require("node:path");
 const args = process.argv.slice(2);
@@ -228,10 +230,18 @@ if (args[0] === "config" && args[1] === "get" && args[2] === "database_path") {
   process.stderr.write("unexpected fake gbrain command: " + args.join(" ") + "\\n");
   process.exit(2);
 }
-`,
+`;
+  writeFileSync(program, source, "utf8");
+  writeFileSync(
+    executable,
+    platform() === "win32"
+      ? `@"${process.execPath}" "${program}" %*\r\n`
+      : `#!/usr/bin/env node${source}`,
     "utf8",
   );
-  chmodSync(executable, 0o755);
+  if (platform() !== "win32") {
+    chmodSync(executable, 0o755);
+  }
   mkdirSync(join(directory, ".agent-stack", "gbrain-home"), {
     recursive: true,
   });
@@ -709,7 +719,7 @@ test("local GBrain setup is scoped and doctor performs live checks", () => {
     assert.match(
       setup.steps.find((step) => step.id === "initialize-local-brain")
         .environment.GBRAIN_HOME,
-      /\.agent-stack\/gbrain-home$/,
+      /\.agent-stack[\\/]gbrain-home$/,
     );
 
     const health = commandMemoryHealth(fixture.directory);

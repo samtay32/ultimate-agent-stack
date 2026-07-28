@@ -135,8 +135,15 @@ function main() {
     throw new Error(`Missing package.json: ${packageFile}`);
   }
   const packageData = JSON.parse(readFileSync(packageFile, "utf8"));
-  const npmExecutable = process.platform === "win32" ? "npm.cmd" : "npm";
-  const npmResult = spawnSync(npmExecutable, ["--version"], {
+  const npmCli = [
+    process.env.npm_execpath,
+    join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
+  ].find((candidate) => candidate && existsSync(candidate));
+  const npmExecutable = npmCli
+    ? process.execPath
+    : (process.platform === "win32" ? "npm.cmd" : "npm");
+  const npmArguments = npmCli ? [npmCli, "--version"] : ["--version"];
+  const npmResult = spawnSync(npmExecutable, npmArguments, {
     encoding: "utf8",
     shell: false,
     timeout: 10_000,

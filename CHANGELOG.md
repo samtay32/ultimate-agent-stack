@@ -39,6 +39,13 @@ All notable changes to Ultimate Agent Stack are documented here.
   `-check`. Inspect the updated command arrays and approve them again; do not
   weaken the new policy to preserve an unsafe command.
 
+### Fixed
+
+- Quality checks, local GBrain commands, npm release preflight, and packed smoke
+  now execute Windows command shims without enabling an unrestricted shell.
+  Test discovery, skill metadata parsing, and behavioral-surface hashes are
+  stable across Windows paths and CRLF checkouts.
+
 ## 0.7.1 - 2026-07-27
 
 ### Fixed

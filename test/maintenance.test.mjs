@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import test from "node:test";
 
 import {
@@ -350,6 +350,11 @@ test("package has no install hooks and guards publication with prepublishOnly", 
     packageData.scripts?.prepublishOnly,
     "node scripts/release-preflight.mjs",
   );
+  assert.equal(
+    packageData.scripts?.test,
+    "node --test",
+    "test discovery must not depend on shell glob expansion",
+  );
   assert.deepEqual(
     packageData.files.filter((entry) => entry.startsWith("scripts/")),
     [
@@ -385,6 +390,8 @@ test("package has no install hooks and guards publication with prepublishOnly", 
   assert.match(packageData.scripts?.["release:check"], /eval:contracts/);
   assert.match(packedSmoke, /packed\[0\]\.files/);
   assert.match(packedSmoke, /duplicate-copy paths/);
+  assert.match(packedSmoke, /process\.env\.npm_execpath/);
+  assert.match(packedSmoke, /node --test tests/);
   assert.deepEqual(packageData.dependencies ?? {}, {});
 });
 
@@ -573,11 +580,20 @@ test("release preflight accepts explicit fully configured metadata", () => {
 });
 
 test("direct npm publication fails closed without explicit release authority", () => {
-  const npmExecutable = process.platform === "win32" ? "npm.cmd" : "npm";
+  const npmCli = [
+    process.env.npm_execpath,
+    join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
+  ].find((candidate) => candidate && existsSync(candidate));
+  const npmExecutable = npmCli
+    ? process.execPath
+    : (process.platform === "win32" ? "npm.cmd" : "npm");
+  const npmArguments = npmCli
+    ? [npmCli, "publish", "--dry-run"]
+    : ["publish", "--dry-run"];
   const environment = { ...process.env };
   delete environment.NPM_RELEASE_MODE;
   delete environment.PUBLISH_CONFIRM;
-  const result = spawnSync(npmExecutable, ["publish", "--dry-run"], {
+  const result = spawnSync(npmExecutable, npmArguments, {
     cwd: PACKAGE_ROOT,
     encoding: "utf8",
     env: environment,
