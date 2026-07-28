@@ -2549,9 +2549,20 @@ test("verification distinguishes output capture overflow from test failure", () 
       externalData: "local_only",
       reason: "Approved safe defaults for output overflow classification",
     });
+    const configFile = join(fixture.directory, CONFIG_PATH);
+    const config = readJson(configFile);
+    config.quality.checks = [
+      {
+        id: "test",
+        argv: ["node", "noisy.mjs"],
+        required: true,
+        timeout_seconds: 30,
+      },
+    ];
+    writeJson(configFile, config);
     commandApproveChecks(
       fixture.directory,
-      "Inspected the intentionally verbose package test definition",
+      "Inspected the intentionally verbose direct check definition",
     );
 
     const verification = commandVerify(fixture.directory);
