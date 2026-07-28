@@ -113,6 +113,8 @@ It may ask:
 - Does a production release need independent review?
 - Should progress live only in repository files, or also in private local
   searchable memory?
+- Should work stay in the portable repository ledger, or also read approved
+  Linear teams through the reviewed read-only adapter?
 - May it merge after every required check passes?
 
 It should not ask you to choose routine frameworks, write test commands, manage
@@ -248,7 +250,7 @@ The core workflow depends on capabilities, not vendor names.
 | Independent review | Repository standards and intent review | CodeRabbit or an approved GitHub human |
 | Project knowledge | Repository checkpoint, evidence, and Git history | Project-scoped local or separately approved remote GBrain |
 | Project telemetry | Repository and deployment evidence | Reviewed read-only product, error, service, or AI provider |
-| Work tracking | Portable repository ledger and evidence graph | Reviewed external provider through the same normalized contract |
+| Work tracking | Portable repository ledger and evidence graph | Scoped read-only Linear today; other reviewed providers can implement the same contract |
 
 Optional providers cannot expand authority. A missing knowledge provider falls
 back to repository state. Missing telemetry falls back to repository evidence.
@@ -269,6 +271,28 @@ includes them in `doctor`. Repository tracking works with no account or vendor.
 An optional provider may organize the same normalized work later, but it cannot
 change delivery authority or replace acceptance evidence.
 
+### Optional Linear connection
+
+Onboarding asks whether work should remain repository-only or also read from
+approved Linear teams. Repository-only is recommended for solo, short, or
+early projects. Linear is offered when the team already uses it; the portable
+repository ledger remains available either way.
+
+The guided setup requires a Linear API key created with only the **Read**
+permission and kept outside the repository as `LINEAR_API_KEY`. The protected
+helper exposes one bounded, paginated GraphQL query shape but no mutations.
+`linear-health` and
+`doctor` verify authentication plus visibility of the approved team keys, and
+`start` tests the configured provider automatically.
+
+Linear's response does not attest the permission selected when the key was
+created. The CLI can prove its own surface is query-only; the human confirms
+that the upstream key was created with Read permission. Compatible coding
+harnesses may additionally use Linear's official
+`https://mcp.linear.app/mcp/readonly` endpoint. Failure always returns to the
+repository ledger. Native Linear Agent sessions, Agent Auth, and remote writes
+remain deliberately out of this adapter.
+
 ## Safety in Plain Language
 
 The CLI checks the controls it owns:
@@ -288,6 +312,8 @@ The CLI checks the controls it owns:
 - Updates preserve local changes and never silently delete old package files.
 - The work ledger and evidence graph reject malformed, duplicate, escaping, or
   credential-like content before the CLI treats them as valid.
+- The Linear adapter exposes no remote mutation, stores no credential, scopes
+  health checks to approved team keys, and keeps repository fallback available.
 - Direct npm publishing still runs the release preflight outside GitHub Actions.
 
 Checks are still executable project code. They must run inside the sandbox and

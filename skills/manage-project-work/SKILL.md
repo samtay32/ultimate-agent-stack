@@ -13,6 +13,8 @@ work, but it does not expand execution, merge, deployment, or release authority.
 1. Read `.agent-stack/config.json`, `.agent-stack/work-items.json`,
    `.agent-stack/evidence-graph.json`, and
    [references/work-evidence-contract.md](references/work-evidence-contract.md).
+   If the configured provider is Linear, also read
+   [references/linear-readonly-provider.md](references/linear-readonly-provider.md).
 2. Run:
 
    ```bash
@@ -21,6 +23,8 @@ work, but it does not expand execution, merge, deployment, or release authority.
    ```
 
    Stop and repair malformed repository state before relying on it.
+   When Linear is configured, also run `linear-health`. If it is unhealthy,
+   continue from repository state and mark synchronization pending.
 3. Convert the current intent into the smallest work item that has a bounded
    objective, explicit acceptance criteria, path scope, exclusions,
    dependencies, and canonical status. A backlog item may remain ledger-only

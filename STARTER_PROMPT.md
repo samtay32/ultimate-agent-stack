@@ -52,6 +52,10 @@ Delivery contract:
   memory only or also private local searchable memory. Recommend repository
   memory for a simple project and project-scoped local GBrain for a long build
   likely to span conversations.
+- Also ask whether work should stay in the portable repository ledger or read
+  approved Linear teams through the reviewed read-only adapter. Recommend the
+  repository for a solo, short, or early project. Offer Linear only when it is
+  already the team's work surface; preserve the repository mirror either way.
 - For ambiguous UX, state models, APIs, algorithms, or feasibility, use the smallest throwaway prototype or deterministic experiment that can answer the question, capture the decision, and keep prototype code out of production.
 - Lock the outcome, acceptance criteria, non-goals, assumptions, binding architecture decisions, launch-security gates, vertical slices, and verification evidence before material implementation.
 - Implement end-to-end slices and preserve a fast red-capable feedback loop for changed behavior.

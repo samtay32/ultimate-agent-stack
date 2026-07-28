@@ -35,6 +35,7 @@
     "telemetry_raw_payloads_and_credentials_must_not_enter_repository_evidence": true,
     "ultimate_agent_stack_must_not_phone_home_by_default": true,
     "work_provider_must_not_expand_delivery_authority": true,
+    "linear_work_adapter_must_remain_read_only_until_separately_approved": true,
     "repository_work_ledger_must_remain_a_portable_fallback": true,
     "evidence_graph_must_store_bounded_references_not_remote_payloads": true,
     "work_completion_requires_real_repository_or_approved_provider_evidence": true,

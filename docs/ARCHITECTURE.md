@@ -163,7 +163,7 @@ delivery continues.
 | Review | Built-in standards and intent review | CodeRabbit or allowed GitHub human | A required provider fails closed; a stale review never counts |
 | Knowledge | Project-scoped repository instructions, artifacts, evidence, and Git | Project- or organization-scoped GBrain | Warn, retain provenance, and continue with repository fallback |
 | Telemetry | Repository and deployment evidence | Zero or more reviewed read-only product, error, service, or AI providers | Warn, retain bounded references, and continue with repository fallback |
-| Work | Portable repository ledger and evidence graph | One reviewed external work provider | Continue from the repository mirror; never expand delivery authority |
+| Work | Portable repository ledger and evidence graph | Scoped read-only Linear today; future reviewed providers use the same contract | Continue from the repository mirror; never expand delivery authority |
 
 Provider configuration is declarative and validated by package code. A
 repository cannot add an arbitrary executable adapter merely by naming it in
@@ -187,6 +187,12 @@ those items to intent, requirements, decisions, files, tests, commits, pull
 requests, review, release, checkpoints, and telemetry. It stores references and
 short redacted summaries, not copies of remote systems. The graph is derived
 evidence navigation; the referenced artifacts remain authoritative.
+
+The Linear adapter is a bounded reader, not a second orchestrator. Its fixed,
+paginated GraphQL query shape checks viewer authentication and configured team
+visibility; it exposes no mutation. The official read-only MCP endpoint is an
+optional harness-owned connection. Native Linear Agent sessions and Agent Auth
+remain outside the current architecture.
 
 ## Continuity and Checkout Ownership
 
