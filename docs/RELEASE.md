@@ -34,10 +34,13 @@ Before the owner step, the agent must:
    `main`;
 3. confirm the bootstrap machine has Node.js 20.12+ and npm 10.8+;
 4. run every release, skill, plugin, Markdown, packed-install, archive, secret,
-   and adversarial safety check;
-5. inspect the exact `0.1.0` tarball and confirm the MIT license and repository
+   adversarial safety, and behavioral-scenario contract check;
+5. when the behavior-surface hash changed, run the behavioral scenarios through
+   at least one real supported harness and attach the evaluated report with the
+   exact harness and model identity;
+6. inspect the exact `0.1.0` tarball and confirm the MIT license and repository
    metadata;
-6. stop and report the exact hash and remaining owner step.
+7. stop and report the exact hash and remaining owner step.
 
 The owner then:
 
@@ -82,10 +85,22 @@ The agent:
 
 1. classifies the SemVer change and synchronizes npm, plugin, CLI, lockfile, and
    documentation versions;
-2. runs the complete release and adversarial gate;
-3. commits and pushes the reviewed source to `main`;
-4. starts **Publish npm package** with the exact
+2. runs the complete release and adversarial gate, including behavioral
+   scenario contracts;
+3. compares `npm run eval:contracts` with the previous release evidence. If the
+   behavior-surface hash changed, runs the exact scenarios through at least one
+   real supported harness and attaches the output from
+   `npm run eval:behavior -- --input RUN_RECORD.json` to the pull request;
+4. commits and pushes the reviewed source to `main`;
+5. starts **Publish npm package** with the exact
    `ultimate-agent-stack@VERSION` input.
+
+Deterministic unit tests prove the scenario schema, evaluator, package, and
+guardrails. They do not prove that a model selected the right skill or followed
+it. The live record supplies that separate behavioral evidence. A result
+applies only to the named harness and model; it must not be generalized to
+untested providers. A metadata-only release may cite the prior live result when
+the behavior-surface hash is unchanged.
 
 The owner approves the protected GitHub `npm` environment. GitHub uses
 short-lived OIDC credentials to run `npm stage publish`. The owner then reviews
