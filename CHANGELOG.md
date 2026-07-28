@@ -4,6 +4,8 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ## Unreleased
 
+## 0.7.2 - 2026-07-28
+
 ### Added
 
 - A standard private vulnerability reporting policy is included in the
