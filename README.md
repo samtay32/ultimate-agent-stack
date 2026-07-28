@@ -204,10 +204,12 @@ sandbox against unrelated tools that ignore the package.
 | Harness adapters | Use supported native agent features without changing authority |
 | Review gate | Require current review evidence when project policy calls for it |
 
-The package has no runtime dependencies and no install hook. By default it does
-not run a cloud agent service, add a database, or replace your project's own
-tests and CI. A checkout-local GBrain database is added only after you approve
-that optional adapter.
+The package has no runtime dependencies and no install hook. It bundles the
+pinned, maintained `cross-spawn` implementation for safe cross-platform
+process execution in the protected project-local CLI. By default it does not
+run a cloud agent service, add a database, or replace your project's own tests
+and CI. A checkout-local GBrain database is added only after you approve that
+optional adapter.
 
 ## Replaceable Adapters
 
@@ -278,7 +280,7 @@ videos, platform references, and tradeoffs:
 
 ## Requirements
 
-- Node.js 20.12 or newer.
+- Node.js 22 or newer.
 - Git.
 - A capable coding agent or a developer running the CLI.
 - Project-native checks before the project can be declared ready.

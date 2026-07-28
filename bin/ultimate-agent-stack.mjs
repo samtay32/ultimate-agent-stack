@@ -32,6 +32,8 @@ import { spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
+import { spawnPortable as spawnPortableProcess } from "../lib/portable-process.mjs";
+
 const CLI_FILE = fileURLToPath(import.meta.url);
 const PACKAGE_ROOT = resolve(dirname(CLI_FILE), "..");
 const PACKAGE_JSON = existsSync(join(PACKAGE_ROOT, "package.json"))
@@ -56,6 +58,10 @@ const GBRAIN_LAUNCHER_PATH = ".agent-stack/bin/gbrain-project.mjs";
 const GBRAIN_CHECKPOINT_SLUG = "projects/ultimate-agent-stack/checkpoint";
 const RUNS_PATH = ".agent-stack/runs";
 const PROJECT_CLI_PATH = ".agent-stack/bin/agent-stack.mjs";
+const PROJECT_PROCESS_HELPER_PATH =
+  ".agent-stack/lib/portable-process.mjs";
+const PROJECT_THIRD_PARTY_NOTICES_PATH =
+  ".agent-stack/lib/THIRD_PARTY_NOTICES.md";
 const CORE_POLICY_PATH = ".agent-stack/core-policy.json";
 const REVIEW_RECEIPT_PATH = ".agent-stack/bin/review-receipt.mjs";
 const REVIEW_WORKFLOW_PATH = ".github/workflows/review-receipt.yml";
@@ -670,96 +676,9 @@ function executableExists(target, executable) {
   return resolveExecutable(target, executable) !== null;
 }
 
-const WINDOWS_CMD_META_CHARACTERS = /([()\][%!^"`<>&|;, *?])/g;
-
-function escapeWindowsBatchCommand(value) {
-  return value.replace(WINDOWS_CMD_META_CHARACTERS, "^$1");
-}
-
-function escapeWindowsBatchArgument(value, doubleEscapeMetaCharacters) {
-  let escaped = String(value);
-  escaped = escaped.replace(/(?=(\\+?)?)\1"/g, "$1$1\\\"");
-  escaped = escaped.replace(/(?=(\\+?)?)\1$/, "$1$1");
-  escaped = `"${escaped}"`;
-  escaped = escaped.replace(WINDOWS_CMD_META_CHARACTERS, "^$1");
-  if (doubleEscapeMetaCharacters) {
-    escaped = escaped.replace(WINDOWS_CMD_META_CHARACTERS, "^$1");
-  }
-  return escaped;
-}
-
-function windowsNpmInvocation(resolved, args) {
-  const executable = basename(resolved).toLowerCase();
-  const cliName =
-    executable === "npm.cmd"
-      ? "npm-cli.js"
-      : executable === "npx.cmd"
-        ? "npx-cli.js"
-        : null;
-  if (!cliName) {
-    return null;
-  }
-  const cli = [
-    process.env.npm_execpath,
-    join(dirname(resolved), "node_modules", "npm", "bin", cliName),
-  ].find((candidate) => candidate && existsSync(candidate));
-  return cli
-    ? {
-        command: process.execPath,
-        args: [cli, ...args],
-      }
-    : null;
-}
-
 function spawnPortable(target, executable, args, options) {
   const resolved = resolveExecutable(target, executable) ?? executable;
-  if (
-    platform() !== "win32" ||
-    !/\.(?:bat|cmd)$/i.test(resolved)
-  ) {
-    return spawnSync(resolved, args, options);
-  }
-  const npmInvocation = windowsNpmInvocation(resolved, args);
-  if (npmInvocation) {
-    return spawnSync(
-      npmInvocation.command,
-      npmInvocation.args,
-      options,
-    );
-  }
-  const commandParts = [resolved, ...args];
-  if (
-    commandParts.some(
-      (value) => typeof value !== "string" || /[\0\r\n]/.test(value),
-    )
-  ) {
-    return {
-      status: null,
-      stdout: "",
-      stderr: "",
-      error: Object.assign(
-        new Error("unsafe Windows batch command argument"),
-        { code: "EINVAL" },
-      ),
-    };
-  }
-  const commandLine = `"${[
-    escapeWindowsBatchCommand(resolved),
-    ...args.map((value) =>
-      escapeWindowsBatchArgument(value, /\.cmd$/i.test(resolved)),
-    ),
-  ].join(" ")}"`;
-  const commandInterpreter =
-    process.env.ComSpec ??
-    join(process.env.SystemRoot ?? "C:\\Windows", "System32", "cmd.exe");
-  return spawnSync(
-    commandInterpreter,
-    ["/d", "/s", "/v:off", "/c", commandLine],
-    {
-      ...options,
-      windowsVerbatimArguments: true,
-    },
-  );
+  return spawnPortableProcess(resolved, args, options);
 }
 
 function addCheck(checks, id, argv, timeoutSeconds = 900) {
@@ -2114,6 +2033,16 @@ function sourceEntries({ claude = false } = {}) {
   entries.push({
     destination: PROJECT_CLI_PATH,
     source: CLI_FILE,
+    protected: true,
+  });
+  entries.push({
+    destination: PROJECT_PROCESS_HELPER_PATH,
+    source: join(PACKAGE_ROOT, "lib/portable-process.mjs"),
+    protected: true,
+  });
+  entries.push({
+    destination: PROJECT_THIRD_PARTY_NOTICES_PATH,
+    source: join(PACKAGE_ROOT, "lib/THIRD_PARTY_NOTICES.md"),
     protected: true,
   });
   return entries.sort((left, right) =>

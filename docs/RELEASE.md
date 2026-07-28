@@ -32,7 +32,7 @@ Before the owner step, the agent must:
 1. verify that the package name is still unclaimed;
 2. confirm the source is committed and pushed to the public repository on
    `main`;
-3. confirm the bootstrap machine has Node.js 20.12+ and npm 10.8+;
+3. confirm the bootstrap machine has Node.js 22+ and npm 10.8+;
 4. run every release, skill, plugin, Markdown, packed-install, archive, secret,
    adversarial safety, and behavioral-scenario contract check;
 5. when the behavior-surface hash changed, run the behavioral scenarios through
@@ -122,8 +122,8 @@ without attestations is left as a draft without blocking later verified
 releases. Synchronization never approves an npm stage and never publishes a
 package.
 
-The release job requires Node.js 22.14+ and npm 11.15+. Project users may run
-the package with Node.js 20.12+.
+The release job requires Node.js 22.14+ and npm 11.15+. Project users need
+Node.js 22+.
 
 ## Project Upgrade
 

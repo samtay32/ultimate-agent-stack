@@ -139,11 +139,13 @@ boundary, and MCP client configuration still relies on the coding harness.
 
 ### Package release
 
-The npm package has no runtime dependencies and no install hook. Direct
-publication runs a release preflight. The repository release path separates
-read-only package staging from GitHub release writes, uses short-lived trusted
-publishing credentials, requires human npm approval, and checks registry
-provenance before publishing the matching GitHub Release.
+The npm package has no runtime dependencies and no install hook. It bundles the
+pinned, maintained `cross-spawn` implementation for safe cross-platform process
+execution in the protected project-local CLI, with licenses recorded beside the
+bundle. Direct publication runs a release preflight. The repository release
+path separates read-only package staging from GitHub release writes, uses
+short-lived trusted publishing credentials, requires human npm approval, and
+checks registry provenance before publishing the matching GitHub Release.
 
 No repository control can protect an already compromised GitHub, npm, or owner
 account. Account security and recovery remain human responsibilities.
