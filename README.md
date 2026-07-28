@@ -227,6 +227,7 @@ sandbox against unrelated tools that ignore the package.
 | Guided skills | Shape, build, verify, review, secure, and maintain the project |
 | Local CLI | Detect checks, protect approvals, lock intent, and record evidence |
 | Checkpoint and progress files | Preserve a verified handoff so another conversation can resume |
+| Work ledger and evidence graph | Keep portable work state and show what proves completion |
 | Harness adapters | Use supported native agent features without changing authority |
 | Review gate | Require current review evidence when project policy calls for it |
 
@@ -247,10 +248,26 @@ The core workflow depends on capabilities, not vendor names.
 | Independent review | Repository standards and intent review | CodeRabbit or an approved GitHub human |
 | Project knowledge | Repository checkpoint, evidence, and Git history | Project-scoped local or separately approved remote GBrain |
 | Project telemetry | Repository and deployment evidence | Reviewed read-only product, error, service, or AI provider |
+| Work tracking | Portable repository ledger and evidence graph | Reviewed external provider through the same normalized contract |
 
 Optional providers cannot expand authority. A missing knowledge provider falls
 back to repository state. Missing telemetry falls back to repository evidence.
-A required review provider fails closed.
+Missing work tracking falls back to the repository ledger. A required review
+provider fails closed.
+
+## Portable Work and Evidence
+
+Every installed project receives `.agent-stack/work-items.json` and
+`.agent-stack/evidence-graph.json`. The first tracks bounded objectives,
+acceptance criteria, scope, dependencies, and canonical status. The second
+connects intent and work to implementation, tests, review, release, and
+optional telemetry through bounded references.
+
+The graph is an index, not a second database and not proof by itself. The local
+CLI validates both files, rejects unknown vocabulary and broken references, and
+includes them in `doctor`. Repository tracking works with no account or vendor.
+An optional provider may organize the same normalized work later, but it cannot
+change delivery authority or replace acceptance evidence.
 
 ## Safety in Plain Language
 
@@ -269,6 +286,8 @@ The CLI checks the controls it owns:
   integrity hash.
 - Project-scoped GBrain must pass live health, identity, and containment checks.
 - Updates preserve local changes and never silently delete old package files.
+- The work ledger and evidence graph reject malformed, duplicate, escaping, or
+  credential-like content before the CLI treats them as valid.
 - Direct npm publishing still runs the release preflight outside GitHub Actions.
 
 Checks are still executable project code. They must run inside the sandbox and

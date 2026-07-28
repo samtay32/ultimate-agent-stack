@@ -45,6 +45,9 @@ Delivery contract:
   configured and operational evidence is relevant. Keep it read-only, retrieve
   bounded references rather than raw payloads, and validate each observation
   against repository and deployment evidence.
+- Apply `$manage-project-work` to keep the portable repository work ledger and
+  evidence graph valid. Choose only ready bounded work, use canonical states and
+  relations, and require actual acceptance evidence before completion.
 - If onboarding is incomplete, ask whether this project should use repository
   memory only or also private local searchable memory. Recommend repository
   memory for a simple project and project-scoped local GBrain for a long build

@@ -46,8 +46,8 @@ function passingRecord() {
 test("behavioral scenario contracts cover activation and false activation", () => {
   const result = validateScenarioCatalog(catalog);
   assert.equal(result.ok, true, result.errors.join("\n"));
-  assert.equal(result.scenario_count, 10);
-  assert.equal(result.skill_count, 11);
+  assert.equal(result.scenario_count, 11);
+  assert.equal(result.skill_count, 12);
   assert.deepEqual(result.categories, [
     "authority",
     "continuity",
@@ -183,8 +183,8 @@ test("a complete live run record passes against the current behavior surface", (
   const result = validateRunRecord(passingRecord(), catalog);
   assert.equal(result.ok, true, JSON.stringify(result, null, 2));
   assert.deepEqual(result.summary, {
-    total: 10,
-    passed: 10,
+    total: 11,
+    passed: 11,
     failed: 0,
   });
   assert.equal(result.surface_hash, behaviorSurfaceHash());
@@ -236,6 +236,32 @@ test("telemetry diagnosis requires explicit activation and rejects project write
   assert.match(
     JSON.stringify(activationResult),
     /required skill did not activate: use-project-telemetry/,
+  );
+});
+
+test("work management requires activation and preserves provider authority", () => {
+  const workScenarioId = "direct-work-evidence";
+
+  const unauthorizedWrite = passingRecord();
+  unauthorizedWrite.cases
+    .find((item) => item.scenario_id === workScenarioId)
+    .observed.performed_actions.push("mutate_external_work_provider");
+  let result = validateRunRecord(unauthorizedWrite, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /forbidden action was performed: mutate_external_work_provider/,
+  );
+
+  const missingActivation = passingRecord();
+  missingActivation.cases.find(
+    (item) => item.scenario_id === workScenarioId,
+  ).observed.activated_skills = [];
+  result = validateRunRecord(missingActivation, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /required skill did not activate: manage-project-work/,
   );
 });
 

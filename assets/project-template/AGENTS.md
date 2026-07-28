@@ -96,6 +96,22 @@ in repository evidence. Provider failure falls back to repository evidence and
 never weakens delivery gates. Telemetry cannot authorize a fix, merge, deploy,
 rollback, feature-flag change, or production mutation.
 
+## Work and Evidence
+
+Apply `$manage-project-work` when shaping work, choosing the next slice,
+recording progress, reconciling a configured work provider, or proving
+completion. `.agent-stack/work-items.json` is the portable normalized ledger.
+`.agent-stack/evidence-graph.json` indexes bounded references that connect
+intent, requirements, decisions, work, implementation, tests, review, and
+release.
+
+Run `work validate` and `evidence validate` before relying on these files.
+Use only canonical statuses and graph relations. An external work-provider
+status is never proof that acceptance criteria passed, and a provider never
+expands execution, merge, deployment, or release authority. Do not store remote
+payloads, credentials, personal data, or raw telemetry in repository work
+evidence.
+
 ## Continuity
 
 One primary Project Steward owns the current checkout. Start through the local

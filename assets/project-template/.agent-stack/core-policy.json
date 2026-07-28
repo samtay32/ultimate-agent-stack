@@ -34,6 +34,10 @@
     "telemetry_provider_failure_must_fall_back_to_repository_evidence": true,
     "telemetry_raw_payloads_and_credentials_must_not_enter_repository_evidence": true,
     "ultimate_agent_stack_must_not_phone_home_by_default": true,
+    "work_provider_must_not_expand_delivery_authority": true,
+    "repository_work_ledger_must_remain_a_portable_fallback": true,
+    "evidence_graph_must_store_bounded_references_not_remote_payloads": true,
+    "work_completion_requires_real_repository_or_approved_provider_evidence": true,
     "skill_candidates_must_not_activate_without_review_and_evaluation": true
   },
   "authority_required": [

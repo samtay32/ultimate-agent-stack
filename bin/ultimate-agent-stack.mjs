@@ -44,7 +44,16 @@ const PACKAGE_JSON = existsSync(join(PACKAGE_ROOT, "package.json"))
     };
 const PACKAGE_NAME = PACKAGE_JSON.name;
 const PACKAGE_VERSION = PACKAGE_JSON.version;
-const CONFIG_SCHEMA_VERSION = 3;
+const CONFIG_SCHEMA_VERSION = 4;
+const WORK_LEDGER_PATH = ".agent-stack/work-items.json";
+const EVIDENCE_GRAPH_PATH = ".agent-stack/evidence-graph.json";
+const COMPLETION_EVIDENCE_RELATIONS = new Set([
+  "implements",
+  "verifies",
+  "reviews",
+  "releases",
+  "observes",
+]);
 const CHECK_OUTPUT_LIMIT_BYTES = 4 * 1024 * 1024;
 const CONFIG_PATH = ".agent-stack/config.json";
 const INSTALLATION_PATH = ".agent-stack/installation.json";
@@ -346,6 +355,56 @@ const TELEMETRY_PROVIDERS = new Map();
 const TELEMETRY_ACCESS_MODES = new Set(["read_only"]);
 const TELEMETRY_EVIDENCE_MODES = new Set([
   "bounded_references_only",
+]);
+const WORK_PROVIDERS = new Set(["repository"]);
+const WORK_SYNC_MODES = new Set(["repository_only"]);
+const WORK_WRITE_POLICIES = new Set(["repository_only"]);
+const WORK_ITEM_STATUSES = new Set([
+  "backlog",
+  "ready",
+  "in_progress",
+  "blocked",
+  "in_review",
+  "done",
+  "cancelled",
+]);
+const WORK_ITEM_PRIORITIES = new Set([
+  "urgent",
+  "high",
+  "normal",
+  "low",
+]);
+const EVIDENCE_NODE_KINDS = new Set([
+  "intent",
+  "requirement",
+  "decision",
+  "work_item",
+  "file",
+  "test",
+  "commit",
+  "pull_request",
+  "review",
+  "release",
+  "telemetry",
+  "checkpoint",
+]);
+const EVIDENCE_NODE_STATES = new Set([
+  "planned",
+  "active",
+  "verified",
+  "failed",
+  "superseded",
+]);
+const EVIDENCE_RELATIONS = new Set([
+  "requires",
+  "implements",
+  "verifies",
+  "reviews",
+  "releases",
+  "observes",
+  "blocks",
+  "depends_on",
+  "supersedes",
 ]);
 const EXTERNAL_DATA_POLICIES = new Set([
   "local_only",
@@ -992,6 +1051,13 @@ function defaultConfig(target, detected) {
         raw_payload_storage: false,
         repository_fallback: true,
       },
+      work: {
+        provider: "repository",
+        required: false,
+        sync_mode: "repository_only",
+        write_policy: "repository_only",
+        repository_fallback: true,
+      },
     },
     learning: {
       auto_activate_skills: false,
@@ -1109,6 +1175,19 @@ function migrateConfig(config, target = undefined) {
       "bounded_references_only";
     config.capabilities.telemetry.raw_payload_storage ??= false;
     config.capabilities.telemetry.repository_fallback ??= true;
+  }
+  if (config.capabilities.work == null) {
+    config.capabilities.work = {};
+  }
+  if (
+    typeof config.capabilities.work === "object" &&
+    !Array.isArray(config.capabilities.work)
+  ) {
+    config.capabilities.work.provider ??= "repository";
+    config.capabilities.work.required ??= false;
+    config.capabilities.work.sync_mode ??= "repository_only";
+    config.capabilities.work.write_policy ??= "repository_only";
+    config.capabilities.work.repository_fallback ??= true;
   }
   config.learning ??= {};
   config.learning.auto_activate_skills ??= false;
@@ -1616,10 +1695,11 @@ function validateConfig(config, target = undefined) {
   const review = config.capabilities?.review;
   const knowledge = config.capabilities?.knowledge;
   const telemetry = config.capabilities?.telemetry;
+  const work = config.capabilities?.work;
   rejectUnknownKeys(
     errors,
     config.capabilities,
-    new Set(["review", "knowledge", "telemetry"]),
+    new Set(["review", "knowledge", "telemetry", "work"]),
     "capabilities",
   );
   if (!review || typeof review !== "object" || Array.isArray(review)) {
@@ -1807,6 +1887,43 @@ function validateConfig(config, target = undefined) {
       );
     }
   }
+  if (!work || typeof work !== "object" || Array.isArray(work)) {
+    errors.push("capabilities.work must be an object");
+  } else {
+    rejectUnknownKeys(
+      errors,
+      work,
+      new Set([
+        "provider",
+        "required",
+        "sync_mode",
+        "write_policy",
+        "repository_fallback",
+      ]),
+      "capabilities.work",
+    );
+    if (!WORK_PROVIDERS.has(work.provider)) {
+      errors.push("capabilities.work.provider must be repository");
+    }
+    if (work.required !== false) {
+      errors.push("capabilities.work.required must remain false");
+    }
+    if (!WORK_SYNC_MODES.has(work.sync_mode)) {
+      errors.push(
+        "capabilities.work.sync_mode must be repository_only",
+      );
+    }
+    if (!WORK_WRITE_POLICIES.has(work.write_policy)) {
+      errors.push(
+        "capabilities.work.write_policy must be repository_only",
+      );
+    }
+    if (work.repository_fallback !== true) {
+      errors.push(
+        "capabilities.work.repository_fallback must remain true",
+      );
+    }
+  }
   if (
     config.learning?.auto_activate_skills !== false ||
     config.learning?.verified_candidates_only !== true ||
@@ -1972,6 +2089,529 @@ function validateConfig(config, target = undefined) {
     errors.push("lock_artifacts must be a non-empty string array");
   }
   return errors;
+}
+
+function contractIdentifier(value) {
+  return (
+    typeof value === "string" &&
+    /^[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*$/.test(value) &&
+    value.length <= 96
+  );
+}
+
+function contractString(errors, value, label, maximum, { empty = false } = {}) {
+  if (
+    typeof value !== "string" ||
+    (!empty && value.trim().length === 0) ||
+    value.length > maximum
+  ) {
+    errors.push(
+      `${label} must be ${empty ? "a" : "a non-empty"} string of at most ${maximum} characters`,
+    );
+    return;
+  }
+  if (SECRET_LIKE_TEXT.test(value) || SECRET_ASSIGNMENT.test(value)) {
+    SECRET_ASSIGNMENT.lastIndex = 0;
+    errors.push(`${label} must not contain credential-like text`);
+  }
+  SECRET_ASSIGNMENT.lastIndex = 0;
+}
+
+function contractStringArray(
+  errors,
+  value,
+  label,
+  { maximumItems = 100, maximumLength = 512 } = {},
+) {
+  if (!Array.isArray(value) || value.length > maximumItems) {
+    errors.push(`${label} must be an array with at most ${maximumItems} items`);
+    return;
+  }
+  const seen = new Set();
+  value.forEach((item, index) => {
+    contractString(errors, item, `${label}[${index}]`, maximumLength);
+    if (typeof item === "string") {
+      if (seen.has(item)) {
+        errors.push(`${label} must not contain duplicates`);
+      }
+      seen.add(item);
+    }
+  });
+}
+
+function contractTimestamp(errors, value, label) {
+  if (
+    value !== null &&
+    (typeof value !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value) ||
+      Number.isNaN(Date.parse(value)))
+  ) {
+    errors.push(`${label} must be null or an ISO-8601 UTC timestamp`);
+  }
+}
+
+function contractProjectPath(value) {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= 512 &&
+    !value.includes("\0") &&
+    !isAbsolute(value) &&
+    !/^[A-Za-z]:[\\/]/.test(value) &&
+    !value.startsWith("\\\\") &&
+    !value.split(/[\\/]/).includes("..")
+  );
+}
+
+function validateWorkLedger(ledger) {
+  const errors = [];
+  if (!ledger || typeof ledger !== "object" || Array.isArray(ledger)) {
+    return ["work ledger must be an object"];
+  }
+  rejectUnknownKeys(
+    errors,
+    ledger,
+    new Set(["schema_version", "updated_at", "items"]),
+    "work ledger",
+  );
+  if (ledger.schema_version !== 1) {
+    errors.push("work ledger schema_version must equal 1");
+  }
+  contractTimestamp(errors, ledger.updated_at, "work ledger updated_at");
+  if (!Array.isArray(ledger.items) || ledger.items.length > 10_000) {
+    errors.push("work ledger items must be an array with at most 10000 entries");
+    return errors;
+  }
+  const ids = new Set();
+  for (const [index, item] of ledger.items.entries()) {
+    const label = `work ledger items[${index}]`;
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      errors.push(`${label} must be an object`);
+      continue;
+    }
+    rejectUnknownKeys(
+      errors,
+      item,
+      new Set([
+        "id",
+        "title",
+        "objective",
+        "status",
+        "priority",
+        "acceptance_criteria",
+        "scope",
+        "depends_on",
+        "evidence_refs",
+        "external_refs",
+        "updated_at",
+      ]),
+      label,
+    );
+    if (!contractIdentifier(item.id)) {
+      errors.push(`${label}.id must be a bounded lowercase identifier`);
+    } else if (ids.has(item.id)) {
+      errors.push(`work ledger contains duplicate item id: ${item.id}`);
+    } else {
+      ids.add(item.id);
+    }
+    contractString(errors, item.title, `${label}.title`, 200);
+    contractString(errors, item.objective, `${label}.objective`, 2_000);
+    if (!WORK_ITEM_STATUSES.has(item.status)) {
+      errors.push(`${label}.status is not canonical`);
+    }
+    if (!WORK_ITEM_PRIORITIES.has(item.priority)) {
+      errors.push(`${label}.priority is not canonical`);
+    }
+    contractStringArray(
+      errors,
+      item.acceptance_criteria,
+      `${label}.acceptance_criteria`,
+      { maximumItems: 50, maximumLength: 1_000 },
+    );
+    if (
+      Array.isArray(item.acceptance_criteria) &&
+      item.acceptance_criteria.length === 0
+    ) {
+      errors.push(`${label}.acceptance_criteria must not be empty`);
+    }
+    if (!item.scope || typeof item.scope !== "object" || Array.isArray(item.scope)) {
+      errors.push(`${label}.scope must be an object`);
+    } else {
+      rejectUnknownKeys(
+        errors,
+        item.scope,
+        new Set(["paths", "out_of_scope"]),
+        `${label}.scope`,
+      );
+      for (const key of ["paths", "out_of_scope"]) {
+        const values = item.scope[key];
+        if (!Array.isArray(values) || values.length > 100) {
+          errors.push(`${label}.scope.${key} must contain at most 100 paths`);
+          continue;
+        }
+        if (key === "paths" && values.length === 0) {
+          errors.push(`${label}.scope.paths must not be empty`);
+        }
+        const seen = new Set();
+        values.forEach((value, pathIndex) => {
+          if (!contractProjectPath(value)) {
+            errors.push(
+              `${label}.scope.${key}[${pathIndex}] must be a bounded project-relative path`,
+            );
+          } else if (seen.has(value)) {
+            errors.push(`${label}.scope.${key} must not contain duplicates`);
+          }
+          seen.add(value);
+        });
+      }
+    }
+    for (const key of ["depends_on", "evidence_refs"]) {
+      const values = item[key];
+      if (!Array.isArray(values) || values.length > 100) {
+        errors.push(`${label}.${key} must contain at most 100 identifiers`);
+        continue;
+      }
+      const seen = new Set();
+      values.forEach((value, valueIndex) => {
+        if (!contractIdentifier(value)) {
+          errors.push(
+            `${label}.${key}[${valueIndex}] must be a bounded lowercase identifier`,
+          );
+        } else if (seen.has(value)) {
+          errors.push(`${label}.${key} must not contain duplicates`);
+        }
+        seen.add(value);
+      });
+    }
+    if (!Array.isArray(item.external_refs) || item.external_refs.length > 50) {
+      errors.push(`${label}.external_refs must contain at most 50 references`);
+    } else {
+      const seen = new Set();
+      item.external_refs.forEach((reference, referenceIndex) => {
+        const referenceLabel = `${label}.external_refs[${referenceIndex}]`;
+        if (
+          !reference ||
+          typeof reference !== "object" ||
+          Array.isArray(reference)
+        ) {
+          errors.push(`${referenceLabel} must be an object`);
+          return;
+        }
+        rejectUnknownKeys(
+          errors,
+          reference,
+          new Set(["provider", "reference"]),
+          referenceLabel,
+        );
+        if (!contractIdentifier(reference.provider)) {
+          errors.push(`${referenceLabel}.provider must be a bounded identifier`);
+        }
+        contractString(
+          errors,
+          reference.reference,
+          `${referenceLabel}.reference`,
+          512,
+        );
+        const key = `${reference.provider}\0${reference.reference}`;
+        if (seen.has(key)) {
+          errors.push(`${label}.external_refs must not contain duplicates`);
+        }
+        seen.add(key);
+      });
+    }
+    contractTimestamp(errors, item.updated_at, `${label}.updated_at`);
+  }
+  for (const [index, item] of ledger.items.entries()) {
+    if (!item || typeof item !== "object" || !Array.isArray(item.depends_on)) {
+      continue;
+    }
+    item.depends_on.forEach((dependency) => {
+      if (dependency === item.id) {
+        errors.push(`work ledger items[${index}] must not depend on itself`);
+      } else if (contractIdentifier(dependency) && !ids.has(dependency)) {
+        errors.push(
+          `work ledger items[${index}] depends on missing item: ${dependency}`,
+        );
+      } else if (
+        ["ready", "in_progress", "in_review", "done"].includes(item.status) &&
+        ledger.items.find((candidate) => candidate?.id === dependency)?.status !==
+          "done"
+      ) {
+        errors.push(
+          `work ledger items[${index}] cannot be ${item.status} until dependency ${dependency} is done`,
+        );
+      }
+    });
+  }
+  const dependencies = new Map(
+    ledger.items
+      .filter(
+        (item) =>
+          item &&
+          typeof item === "object" &&
+          contractIdentifier(item.id) &&
+          Array.isArray(item.depends_on),
+      )
+      .map((item) => [item.id, item.depends_on]),
+  );
+  const visiting = new Set();
+  const visited = new Set();
+  const hasCycle = (id) => {
+    if (visiting.has(id)) {
+      return true;
+    }
+    if (visited.has(id)) {
+      return false;
+    }
+    visiting.add(id);
+    const cyclic = (dependencies.get(id) ?? []).some(
+      (dependency) => dependencies.has(dependency) && hasCycle(dependency),
+    );
+    visiting.delete(id);
+    visited.add(id);
+    return cyclic;
+  };
+  if ([...dependencies.keys()].some((id) => hasCycle(id))) {
+    errors.push("work ledger dependencies must not contain a cycle");
+  }
+  return errors;
+}
+
+function validateEvidenceGraph(graph) {
+  const errors = [];
+  if (!graph || typeof graph !== "object" || Array.isArray(graph)) {
+    return ["evidence graph must be an object"];
+  }
+  rejectUnknownKeys(
+    errors,
+    graph,
+    new Set(["schema_version", "updated_at", "nodes", "edges"]),
+    "evidence graph",
+  );
+  if (graph.schema_version !== 1) {
+    errors.push("evidence graph schema_version must equal 1");
+  }
+  contractTimestamp(errors, graph.updated_at, "evidence graph updated_at");
+  if (!Array.isArray(graph.nodes) || graph.nodes.length > 20_000) {
+    errors.push("evidence graph nodes must be an array with at most 20000 entries");
+    return errors;
+  }
+  if (!Array.isArray(graph.edges) || graph.edges.length > 50_000) {
+    errors.push("evidence graph edges must be an array with at most 50000 entries");
+    return errors;
+  }
+  const nodeIds = new Set();
+  graph.nodes.forEach((node, index) => {
+    const label = `evidence graph nodes[${index}]`;
+    if (!node || typeof node !== "object" || Array.isArray(node)) {
+      errors.push(`${label} must be an object`);
+      return;
+    }
+    rejectUnknownKeys(
+      errors,
+      node,
+      new Set(["id", "kind", "label", "state", "source", "summary"]),
+      label,
+    );
+    if (!contractIdentifier(node.id)) {
+      errors.push(`${label}.id must be a bounded lowercase identifier`);
+    } else if (nodeIds.has(node.id)) {
+      errors.push(`evidence graph contains duplicate node id: ${node.id}`);
+    } else {
+      nodeIds.add(node.id);
+    }
+    if (!EVIDENCE_NODE_KINDS.has(node.kind)) {
+      errors.push(`${label}.kind is not canonical`);
+    }
+    contractString(errors, node.label, `${label}.label`, 200);
+    if (!EVIDENCE_NODE_STATES.has(node.state)) {
+      errors.push(`${label}.state is not canonical`);
+    }
+    if (!node.source || typeof node.source !== "object" || Array.isArray(node.source)) {
+      errors.push(`${label}.source must be an object`);
+    } else {
+      rejectUnknownKeys(
+        errors,
+        node.source,
+        new Set(["provider", "reference"]),
+        `${label}.source`,
+      );
+      if (!contractIdentifier(node.source.provider)) {
+        errors.push(`${label}.source.provider must be a bounded identifier`);
+      }
+      contractString(
+        errors,
+        node.source.reference,
+        `${label}.source.reference`,
+        512,
+      );
+    }
+    contractString(errors, node.summary, `${label}.summary`, 1_000, {
+      empty: true,
+    });
+  });
+  const edgeKeys = new Set();
+  graph.edges.forEach((edge, index) => {
+    const label = `evidence graph edges[${index}]`;
+    if (!edge || typeof edge !== "object" || Array.isArray(edge)) {
+      errors.push(`${label} must be an object`);
+      return;
+    }
+    rejectUnknownKeys(
+      errors,
+      edge,
+      new Set(["from", "to", "relation"]),
+      label,
+    );
+    for (const endpoint of ["from", "to"]) {
+      if (!contractIdentifier(edge[endpoint])) {
+        errors.push(`${label}.${endpoint} must be a bounded lowercase identifier`);
+      } else if (!nodeIds.has(edge[endpoint])) {
+        errors.push(`${label}.${endpoint} references a missing node`);
+      }
+    }
+    if (!EVIDENCE_RELATIONS.has(edge.relation)) {
+      errors.push(`${label}.relation is not canonical`);
+    }
+    if (edge.from === edge.to) {
+      errors.push(`${label} must not connect a node to itself`);
+    }
+    const key = `${edge.from}\0${edge.relation}\0${edge.to}`;
+    if (edgeKeys.has(key)) {
+      errors.push("evidence graph must not contain duplicate edges");
+    }
+    edgeKeys.add(key);
+  });
+  return errors;
+}
+
+function validateWorkEvidenceLinkage(ledger, graph) {
+  if (
+    validateWorkLedger(ledger).length > 0 ||
+    validateEvidenceGraph(graph).length > 0
+  ) {
+    return [];
+  }
+  const errors = [];
+  const items = new Map(ledger.items.map((item) => [item.id, item]));
+  const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
+  const completionLinks = new Set(
+    graph.edges
+      .filter((edge) => COMPLETION_EVIDENCE_RELATIONS.has(edge.relation))
+      .map((edge) => `${edge.from}\0${edge.to}`),
+  );
+  for (const item of ledger.items) {
+    const workNode = nodes.get(item.id);
+    if (!workNode || workNode.kind !== "work_item") {
+      errors.push(
+        `work item ${item.id} requires a matching work_item evidence node`,
+      );
+    }
+    for (const reference of item.evidence_refs) {
+      if (!nodes.has(reference)) {
+        errors.push(
+          `work item ${item.id} references missing evidence node: ${reference}`,
+        );
+      } else if (!completionLinks.has(`${reference}\0${item.id}`)) {
+        errors.push(
+          `work item ${item.id} evidence node ${reference} requires a completion-evidence edge to the work item`,
+        );
+      }
+    }
+    if (item.status === "done") {
+      if (item.evidence_refs.length === 0) {
+        errors.push(`done work item ${item.id} requires evidence_refs`);
+      }
+      for (const reference of item.evidence_refs) {
+        if (nodes.get(reference)?.state !== "verified") {
+          errors.push(
+            `done work item ${item.id} requires verified evidence node: ${reference}`,
+          );
+        }
+      }
+    }
+  }
+  for (const node of graph.nodes) {
+    if (node.kind === "work_item" && !items.has(node.id)) {
+      errors.push(
+        `work_item evidence node ${node.id} has no matching work ledger item`,
+      );
+    }
+  }
+  return errors;
+}
+
+function validateRepositoryContract(target, path, validator, label) {
+  try {
+    const value = readJson(projectFile(target, path, label), label);
+    const errors = validator(value);
+    return {
+      ok: errors.length === 0,
+      path,
+      errors,
+      value,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      path,
+      errors: [error.message],
+      value: null,
+    };
+  }
+}
+
+function commandWorkValidate(target) {
+  const result = validateRepositoryContract(
+    target,
+    WORK_LEDGER_PATH,
+    validateWorkLedger,
+    "work ledger",
+  );
+  const items = Array.isArray(result.value?.items) ? result.value.items : [];
+  return {
+    ok: result.ok,
+    path: result.path,
+    item_count: items.length,
+    status_counts: Object.fromEntries(
+      [...WORK_ITEM_STATUSES].map((status) => [
+        status,
+        items.filter((item) => item?.status === status).length,
+      ]),
+    ),
+    errors: result.errors,
+  };
+}
+
+function commandEvidenceValidate(target) {
+  const result = validateRepositoryContract(
+    target,
+    EVIDENCE_GRAPH_PATH,
+    validateEvidenceGraph,
+    "evidence graph",
+  );
+  const ledger = validateRepositoryContract(
+    target,
+    WORK_LEDGER_PATH,
+    validateWorkLedger,
+    "work ledger",
+  );
+  const linkageErrors =
+    result.ok && ledger.ok
+      ? validateWorkEvidenceLinkage(ledger.value, result.value)
+      : [];
+  const errors = [...result.errors, ...linkageErrors];
+  return {
+    ok: result.ok && ledger.ok && errors.length === 0,
+    path: result.path,
+    node_count: Array.isArray(result.value?.nodes)
+      ? result.value.nodes.length
+      : 0,
+    edge_count: Array.isArray(result.value?.edges)
+      ? result.value.edges.length
+      : 0,
+    errors: [...ledger.errors, ...errors],
+  };
 }
 
 function delegatedCheckDefinition(target, check) {
@@ -2487,6 +3127,16 @@ function commandCapabilities(target) {
           external: false,
           detail:
             "Repository evidence only; Ultimate Agent Stack sends no usage telemetry",
+        },
+      },
+      work: {
+        repository: {
+          available:
+            projectExists(target, WORK_LEDGER_PATH) &&
+            projectExists(target, EVIDENCE_GRAPH_PATH),
+          external: false,
+          detail:
+            "Portable repository work ledger and reference-only evidence graph",
         },
       },
     },
@@ -3288,6 +3938,37 @@ function commandDoctor(target) {
       },
       "warning",
       telemetryProviders.length === 0 ? "not-configured" : "configured",
+    );
+    const work =
+      config.capabilities.work &&
+      typeof config.capabilities.work === "object" &&
+      !Array.isArray(config.capabilities.work)
+        ? config.capabilities.work
+        : {};
+    const workLedger = commandWorkValidate(target);
+    report(
+      "work-ledger",
+      workLedger.ok,
+      workLedger.ok
+        ? {
+            provider: work.provider ?? "invalid",
+            path: workLedger.path,
+            item_count: workLedger.item_count,
+            status_counts: workLedger.status_counts,
+          }
+        : workLedger.errors,
+    );
+    const evidenceGraph = commandEvidenceValidate(target);
+    report(
+      "evidence-graph",
+      evidenceGraph.ok,
+      evidenceGraph.ok
+        ? {
+            path: evidenceGraph.path,
+            node_count: evidenceGraph.node_count,
+            edge_count: evidenceGraph.edge_count,
+          }
+        : evidenceGraph.errors,
     );
     const parallel = config.parallel_delivery;
     const parallelErrors = errors.filter(
@@ -4728,13 +5409,14 @@ function commandStart(target, idea, coordinatorToken = undefined) {
       knowledge: config.capabilities.knowledge.provider,
       knowledge_scope: config.capabilities.knowledge.scope,
       telemetry: telemetryProviders,
+      work: config.capabilities.work.provider,
       execution: config.autonomy.execution,
       merge: config.autonomy.merge,
     },
     checkpoint,
     memory: memoryHealth,
     coordinator,
-    prompt: `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, .agent-stack/config.json, any valid .agent-stack/CHECKPOINT.md, and the installed skills. Use $run-autonomous-delivery for this request: ${request}\n\n${continuity}\n\nInspect the project first. Apply $use-project-knowledge using the configured ${config.capabilities.knowledge.provider} provider at ${config.capabilities.knowledge.scope} scope, with repository evidence as the source of truth and fallback. The start command already tested configured memory; if its result is unhealthy or the checkpoint mirror is stale, continue from the repository and repair the optional adapter without blocking delivery. ${telemetryGuidance} Use $coordinate-parallel-delivery to manage independent subagent work when it is safe and useful; keep it serial otherwise. You are the one Project Steward and integration owner. Do not give the coordinator token to subagents, and do not make the user manage workers.\n\nBuild a living project brief. Research routine answers. Ask only consequential questions, one at a time. Each question must use plain language, recommend one safe choice, provide at most one genuinely useful safe alternative, explain the consequence, and allow "use the recommendation." Own all routine implementation and verification. Write a deterministic checkpoint after verified milestones and release the coordinator lease only at final handoff.`,
+    prompt: `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, .agent-stack/config.json, .agent-stack/work-items.json, .agent-stack/evidence-graph.json, any valid .agent-stack/CHECKPOINT.md, and the installed skills. Use $run-autonomous-delivery for this request: ${request}\n\n${continuity}\n\nInspect the project first. Apply $manage-project-work using the configured ${config.capabilities.work.provider} provider; validate the repository ledger and graph, select only bounded ready work, and keep completion tied to real evidence. Apply $use-project-knowledge using the configured ${config.capabilities.knowledge.provider} provider at ${config.capabilities.knowledge.scope} scope, with repository evidence as the source of truth and fallback. The start command already tested configured memory; if its result is unhealthy or the checkpoint mirror is stale, continue from the repository and repair the optional adapter without blocking delivery. ${telemetryGuidance} Use $coordinate-parallel-delivery to manage independent subagent work when it is safe and useful; keep it serial otherwise. You are the one Project Steward and integration owner. Do not give the coordinator token to subagents, and do not make the user manage workers.\n\nBuild a living project brief. Research routine answers. Ask only consequential questions, one at a time. Each question must use plain language, recommend one safe choice, provide at most one genuinely useful safe alternative, explain the consequence, and allow "use the recommendation." Own all routine implementation and verification. Write a deterministic checkpoint after verified milestones and release the coordinator lease only at final handoff.`,
   };
 }
 
@@ -4826,6 +5508,8 @@ Safe project setup:
   ultimate-agent-stack status [--target DIR]
   ultimate-agent-stack doctor [--target DIR] [--human]
   ultimate-agent-stack capabilities [--target DIR]
+  ultimate-agent-stack work validate [--target DIR]
+  ultimate-agent-stack evidence validate [--target DIR]
   ultimate-agent-stack memory-setup [--target DIR] [--harness NAME]
   ultimate-agent-stack memory-health [--target DIR]
   ultimate-agent-stack start [--target DIR] [--idea TEXT]
@@ -4897,6 +5581,24 @@ function execute(command, args) {
       assertNoUnknownOptions(args, ["--target"]);
       const target = resolveTarget(getOption(args, "--target", "."));
       return commandCapabilities(target);
+    }
+    case "work": {
+      const [subcommand, ...workArgs] = args;
+      if (subcommand !== "validate") {
+        throw new StackError("work subcommand must be validate");
+      }
+      assertNoUnknownOptions(workArgs, ["--target"]);
+      const target = resolveTarget(getOption(workArgs, "--target", "."));
+      return commandWorkValidate(target);
+    }
+    case "evidence": {
+      const [subcommand, ...evidenceArgs] = args;
+      if (subcommand !== "validate") {
+        throw new StackError("evidence subcommand must be validate");
+      }
+      assertNoUnknownOptions(evidenceArgs, ["--target"]);
+      const target = resolveTarget(getOption(evidenceArgs, "--target", "."));
+      return commandEvidenceValidate(target);
     }
     case "memory-setup": {
       assertNoUnknownOptions(args, ["--target", "--harness"]);
@@ -5106,6 +5808,7 @@ export {
   CONFIG_PATH,
   COORDINATOR_PATH,
   CORE_POLICY_PATH,
+  EVIDENCE_GRAPH_PATH,
   INSTALLATION_PATH,
   PACKAGE_NAME,
   PACKAGE_ROOT,
@@ -5115,6 +5818,7 @@ export {
   REVIEW_WORKFLOW_PATH,
   SAFE_ENVIRONMENT_NAMES,
   StackError,
+  WORK_LEDGER_PATH,
   checksHash,
   commandCheckpoint,
   commandCapabilities,
@@ -5125,6 +5829,7 @@ export {
   commandCoordinator,
   commandDetect,
   commandDoctor,
+  commandEvidenceValidate,
   commandLock,
   commandMemoryHealth,
   commandMemorySetup,
@@ -5133,6 +5838,7 @@ export {
   commandUnlock,
   commandUpstreamCheck,
   commandVerify,
+  commandWorkValidate,
   configurationHash,
   defaultConfig,
   detectProject,
@@ -5146,4 +5852,7 @@ export {
   resolveConfigureOptions,
   resolveTarget,
   validateConfig,
+  validateEvidenceGraph,
+  validateWorkEvidenceLinkage,
+  validateWorkLedger,
 };
