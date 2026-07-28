@@ -82,6 +82,15 @@ const LINEAR_WRITE_SOURCE_HASH =
   "147428fb3a0487ba08fa7d0814f0e7eff198963dea5f61c38eaec0a5a662a3ca";
 const LINEAR_CREATE_CREDENTIAL_ENV = "LINEAR_CREATE_API_KEY";
 const LINEAR_COMMENT_CREDENTIAL_ENV = "LINEAR_COMMENT_API_KEY";
+const TELEMETRY_READONLY_PATH =
+  ".agent-stack/bin/telemetry-readonly.mjs";
+const TELEMETRY_READONLY_SOURCE_HASH =
+  "adc0dc4c330e140dd679c24a052ffd7ed1e17cbaa88b64c4f809b238f590d87c";
+const TELEMETRY_CREDENTIAL_ENVIRONMENTS = Object.freeze({
+  posthog: "POSTHOG_PERSONAL_API_KEY",
+  sentry: "SENTRY_AUTH_TOKEN",
+  "new-relic": "NEW_RELIC_USER_KEY",
+});
 const GBRAIN_CHECKPOINT_SLUG = "projects/ultimate-agent-stack/checkpoint";
 const RUNS_PATH = ".agent-stack/runs";
 const PROJECT_CLI_PATH = ".agent-stack/bin/agent-stack.mjs";
@@ -383,7 +392,22 @@ const REVIEW_PROVIDERS = new Set([
 ]);
 const KNOWLEDGE_PROVIDERS = new Set(["repository", "gbrain"]);
 const KNOWLEDGE_SCOPES = new Set(["project", "organization"]);
-const TELEMETRY_PROVIDERS = new Map();
+const TELEMETRY_PROVIDER_ROLES = Object.freeze({
+  posthog: "product",
+  sentry: "errors",
+  "new-relic": "service",
+});
+const TELEMETRY_PROVIDER_REGIONS = Object.freeze({
+  posthog: new Set(["us", "eu"]),
+  sentry: new Set(["global", "us", "de"]),
+  "new-relic": new Set(["us", "eu"]),
+});
+const TELEMETRY_PROVIDERS = new Map(
+  Object.keys(TELEMETRY_PROVIDER_ROLES).map((provider) => [
+    provider,
+    (value, label) => validateTelemetryProvider(value, label, provider),
+  ]),
+);
 const TELEMETRY_ACCESS_MODES = new Set(["read_only"]);
 const TELEMETRY_EVIDENCE_MODES = new Set([
   "bounded_references_only",
@@ -472,6 +496,7 @@ const CONFIGURATION_PRESETS = Object.freeze({
     work: "repository",
     linearTeams: Object.freeze([]),
     linearWrites: Object.freeze([]),
+    telemetrySpecs: Object.freeze([]),
     externalData: "local_only",
     execution: "agent_owned",
     merge: "human_approval_required",
@@ -1718,6 +1743,82 @@ function rejectUnknownKeys(errors, value, allowed, label) {
       errors.push(`${label} contains unsupported key: ${key}`);
     }
   }
+}
+
+function validateTelemetryProvider(value, label, expectedProvider) {
+  const errors = [];
+  rejectUnknownKeys(
+    errors,
+    value,
+    new Set(["provider", "role", "region", "credential_env", "scope"]),
+    label,
+  );
+  if (value.provider !== expectedProvider) {
+    errors.push(`${label}.provider must equal ${expectedProvider}`);
+  }
+  if (value.role !== TELEMETRY_PROVIDER_ROLES[expectedProvider]) {
+    errors.push(
+      `${label}.role must equal ${TELEMETRY_PROVIDER_ROLES[expectedProvider]}`,
+    );
+  }
+  if (!TELEMETRY_PROVIDER_REGIONS[expectedProvider].has(value.region)) {
+    errors.push(
+      `${label}.region is not approved for ${expectedProvider}`,
+    );
+  }
+  if (
+    value.credential_env !==
+    TELEMETRY_CREDENTIAL_ENVIRONMENTS[expectedProvider]
+  ) {
+    errors.push(
+      `${label}.credential_env must equal ${TELEMETRY_CREDENTIAL_ENVIRONMENTS[expectedProvider]}`,
+    );
+  }
+  if (!value.scope || typeof value.scope !== "object" || Array.isArray(value.scope)) {
+    errors.push(`${label}.scope must be an object`);
+    return errors;
+  }
+  if (expectedProvider === "posthog") {
+    rejectUnknownKeys(
+      errors,
+      value.scope,
+      new Set(["project_id"]),
+      `${label}.scope`,
+    );
+    if (
+      !/^[1-9]\d{0,18}$/.test(value.scope.project_id) ||
+      !Number.isSafeInteger(Number(value.scope.project_id))
+    ) {
+      errors.push(`${label}.scope.project_id must be a positive numeric identifier`);
+    }
+  } else if (expectedProvider === "sentry") {
+    rejectUnknownKeys(
+      errors,
+      value.scope,
+      new Set(["organization", "project"]),
+      `${label}.scope`,
+    );
+    if (!/^[a-z0-9][a-z0-9_-]{0,99}$/i.test(value.scope.organization)) {
+      errors.push(`${label}.scope.organization must be a bounded slug`);
+    }
+    if (!/^[a-z0-9][a-z0-9_-]{0,99}$/i.test(value.scope.project)) {
+      errors.push(`${label}.scope.project must be a bounded slug`);
+    }
+  } else {
+    rejectUnknownKeys(
+      errors,
+      value.scope,
+      new Set(["account_id"]),
+      `${label}.scope`,
+    );
+    if (
+      !/^[1-9]\d{0,18}$/.test(value.scope.account_id) ||
+      !Number.isSafeInteger(Number(value.scope.account_id))
+    ) {
+      errors.push(`${label}.scope.account_id must be a positive numeric identifier`);
+    }
+  }
+  return errors;
 }
 
 function validateConfig(config, target = undefined) {
@@ -3947,6 +4048,11 @@ function sourceEntries({ claude = false } = {}) {
     protected: true,
   });
   entries.push({
+    destination: TELEMETRY_READONLY_PATH,
+    source: join(PACKAGE_ROOT, "scripts/telemetry-readonly.mjs"),
+    protected: true,
+  });
+  entries.push({
     destination: PROJECT_CLI_PATH,
     source: CLI_FILE,
     protected: true,
@@ -4284,6 +4390,31 @@ function commandCapabilities(target) {
           detail:
             "Repository evidence only; Ultimate Agent Stack sends no usage telemetry",
         },
+        ...Object.fromEntries(
+          Object.keys(TELEMETRY_PROVIDER_ROLES).map((provider) => {
+            const credential =
+              TELEMETRY_CREDENTIAL_ENVIRONMENTS[provider];
+            return [
+              provider,
+              {
+                available:
+                  projectExists(target, TELEMETRY_READONLY_PATH) &&
+                  typeof process.env[credential] === "string" &&
+                  process.env[credential].length > 0,
+                external: true,
+                access: "read_only",
+                role: TELEMETRY_PROVIDER_ROLES[provider],
+                credential_environment: credential,
+                detail:
+                  provider === "posthog"
+                    ? "Reviewed PostHog project insight-metadata check; no events, recordings, or mutations"
+                    : provider === "sentry"
+                      ? "Reviewed Sentry project-identity check; no events, stack traces, or mutations"
+                      : "Reviewed New Relic account-identity query; no arbitrary NRQL, configuration, or mutations",
+              },
+            ];
+          }),
+        ),
       },
       work: {
         repository: {
@@ -4395,6 +4526,90 @@ function parseProviderJson(result, label) {
       detail: result.stdout,
     };
   }
+}
+
+function telemetryEnvironment(provider) {
+  const environment = {};
+  for (const name of SAFE_ENVIRONMENT_NAMES) {
+    if (typeof process.env[name] === "string") {
+      environment[name] = process.env[name];
+    }
+  }
+  const credentialEnvironment =
+    TELEMETRY_CREDENTIAL_ENVIRONMENTS[provider];
+  if (
+    credentialEnvironment &&
+    typeof process.env[credentialEnvironment] === "string"
+  ) {
+    environment[credentialEnvironment] =
+      process.env[credentialEnvironment];
+  }
+  return {
+    ...environment,
+    NO_COLOR: "1",
+  };
+}
+
+function telemetryHelperArguments(provider) {
+  const args = [
+    "health",
+    "--provider",
+    provider.provider,
+    "--region",
+    provider.region,
+  ];
+  if (provider.provider === "posthog") {
+    args.push("--project", provider.scope.project_id);
+  } else if (provider.provider === "sentry") {
+    args.push(
+      "--organization",
+      provider.scope.organization,
+      "--project",
+      provider.scope.project,
+    );
+  } else {
+    args.push("--account", provider.scope.account_id);
+  }
+  return args;
+}
+
+function runTelemetryReadonly(target, provider, timeout = 20_000) {
+  const helper = projectFile(
+    target,
+    TELEMETRY_READONLY_PATH,
+    "telemetry read-only helper",
+  );
+  if (!existsSync(helper)) {
+    return {
+      ok: false,
+      status: 1,
+      raw_stdout: "",
+      stdout: "",
+      stderr: `missing ${TELEMETRY_READONLY_PATH}`,
+    };
+  }
+  const result = spawnPortable(
+    target,
+    "node",
+    [helper, ...telemetryHelperArguments(provider)],
+    {
+      cwd: target,
+      encoding: "utf8",
+      env: telemetryEnvironment(provider.provider),
+      maxBuffer: 256 * 1024,
+      shell: false,
+      timeout,
+    },
+  );
+  const timedOut = result.error?.code === "ETIMEDOUT";
+  return {
+    ok: result.status === 0 && !timedOut,
+    status: timedOut ? 124 : (result.status ?? 1),
+    ...(timedOut ? { reason: "timeout" } : {}),
+    raw_stdout: result.stdout ?? "",
+    stdout: redact(result.stdout ?? "", 8_000),
+    stderr: redact(result.stderr ?? "", 2_000),
+  };
 }
 
 function linearEnvironment() {
@@ -5054,6 +5269,296 @@ function commandLinearSetup(target) {
         approvedWrites.length === 0
           ? "The CLI proves its own surface is query-only; the user must create the upstream key with Linear's Read permission."
           : "Read, issue-create, and comment credentials remain separate; each must be team-restricted to only its named permission.",
+    },
+  };
+}
+
+function telemetryScopeSummary(provider) {
+  if (!provider || typeof provider !== "object" || Array.isArray(provider)) {
+    return null;
+  }
+  if (provider.provider === "posthog") {
+    return { project_id: provider.scope?.project_id ?? null };
+  }
+  if (provider.provider === "sentry") {
+    return {
+      organization: provider.scope?.organization ?? null,
+      project: provider.scope?.project ?? null,
+    };
+  }
+  if (provider.provider === "new-relic") {
+    return { account_id: provider.scope?.account_id ?? null };
+  }
+  return null;
+}
+
+function sanitizeTelemetryHealthResult(value, provider) {
+  const base = {
+    provider: provider.provider,
+    role: provider.role,
+    region: provider.region,
+    access: "read_only",
+    credential_environment: provider.credential_env,
+    configured_scope: telemetryScopeSummary(provider),
+    fallback: "repository evidence",
+  };
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    value.ok !== true ||
+    value.provider !== provider.provider ||
+    value.role !== provider.role ||
+    value.region !== provider.region ||
+    value.access !== "read_only" ||
+    value.adapter_surface_read_only !== true ||
+    value.credential_scope_verified !== false ||
+    value.scope_verified !== true ||
+    value.raw_payload_retained !== false
+  ) {
+    return {
+      ok: false,
+      ...base,
+      live_check: "failed",
+      error: "telemetry read-only helper returned an invalid result",
+    };
+  }
+  if (
+    provider.provider === "posthog" &&
+    (value.project_id !== provider.scope.project_id ||
+      !Number.isInteger(value.saved_insight_count) ||
+      value.saved_insight_count < 0 ||
+      value.saved_insight_count > Number.MAX_SAFE_INTEGER ||
+      value.live_check !== "project-insight-metadata")
+  ) {
+    return {
+      ok: false,
+      ...base,
+      live_check: "failed",
+      error: "PostHog health result did not match the approved project",
+    };
+  }
+  if (
+    provider.provider === "sentry" &&
+    (value.organization !== provider.scope.organization ||
+      value.project !== provider.scope.project ||
+      value.live_check !== "project-identity" ||
+      typeof value.project_status !== "string" ||
+      !/^[a-z0-9][a-z0-9_-]{0,99}$/i.test(value.project_status))
+  ) {
+    return {
+      ok: false,
+      ...base,
+      live_check: "failed",
+      error: "Sentry health result did not match the approved project",
+    };
+  }
+  if (
+    provider.provider === "new-relic" &&
+    (value.account_id !== provider.scope.account_id ||
+      value.live_check !== "account-identity")
+  ) {
+    return {
+      ok: false,
+      ...base,
+      live_check: "failed",
+      error: "New Relic health result did not match the approved account",
+    };
+  }
+  return {
+    ok: true,
+    ...base,
+    live_check: value.live_check,
+    adapter_surface_read_only: true,
+    credential_scope_verified: false,
+    scope_verified: true,
+    raw_payload_retained: false,
+    ...(provider.provider === "posthog"
+      ? { saved_insight_count: value.saved_insight_count }
+      : {}),
+    ...(provider.provider === "sentry"
+      ? { project_status: value.project_status }
+      : {}),
+  };
+}
+
+function commandTelemetryHealth(target, suppliedConfig = undefined) {
+  const config = suppliedConfig ?? loadConfig(target);
+  const telemetry =
+    config.capabilities?.telemetry &&
+    typeof config.capabilities.telemetry === "object" &&
+    !Array.isArray(config.capabilities.telemetry)
+      ? config.capabilities.telemetry
+      : {};
+  const providers = Array.isArray(telemetry.providers)
+    ? telemetry.providers
+    : [];
+  if (providers.length === 0) {
+    return {
+      ok: true,
+      providers: [],
+      live_check: "not-configured",
+      fallback: "repository evidence",
+    };
+  }
+  const configErrors = validateConfig(config, target);
+  const configurationApproved =
+    config.safety?.approved_configuration_hash === configurationHash(config);
+  if (configErrors.length > 0 || !configurationApproved) {
+    return {
+      ok: false,
+      providers: providers.map((provider) => ({
+        provider: provider?.provider ?? "invalid",
+        live_check: "not-run",
+        error:
+          configErrors.length > 0
+            ? "telemetry connection configuration is invalid"
+            : "telemetry connection configuration is not approved",
+      })),
+      fallback: "repository evidence",
+    };
+  }
+  const protectedFileIssue = protectedProjectFileIssue(
+    target,
+    TELEMETRY_READONLY_PATH,
+  );
+  const results = providers.map((provider) => {
+    const base = {
+      provider: provider.provider,
+      role: provider.role,
+      region: provider.region,
+      access: "read_only",
+      credential_environment: provider.credential_env,
+      configured_scope: telemetryScopeSummary(provider),
+      fallback: "repository evidence",
+    };
+    if (protectedFileIssue) {
+      return {
+        ok: false,
+        ...base,
+        live_check: "not-run",
+        error: protectedFileIssue,
+      };
+    }
+    if (
+      typeof process.env[provider.credential_env] !== "string" ||
+      process.env[provider.credential_env].length === 0
+    ) {
+      return {
+        ok: false,
+        ...base,
+        live_check: "not-run",
+        error: `${provider.credential_env} is not available to this process`,
+      };
+    }
+    const parsed = parseProviderJson(
+      runTelemetryReadonly(target, provider),
+      `${provider.provider} read-only health check`,
+    );
+    if (!parsed.ok) {
+      return {
+        ok: false,
+        ...base,
+        live_check: "failed",
+        error: parsed.error,
+      };
+    }
+    return sanitizeTelemetryHealthResult(parsed.value, provider);
+  });
+  return {
+    ok: results.every((result) => result.ok),
+    providers: results,
+    live_check: "provider-identity",
+    fallback: "repository evidence",
+  };
+}
+
+function commandTelemetrySetup(target) {
+  const config = loadConfig(target);
+  const errors = validateConfig(config, target);
+  if (
+    errors.length > 0 ||
+    config.safety?.approved_configuration_hash !== configurationHash(config)
+  ) {
+    throw new StackError(
+      "Cannot guide telemetry setup until the project configuration is valid and approved.",
+      2,
+      errors,
+    );
+  }
+  const providers = config.capabilities.telemetry.providers;
+  if (providers.length === 0) {
+    throw new StackError(
+      "No telemetry provider is approved for this project. Complete the plain-language telemetry decision and configure an existing provider first.",
+    );
+  }
+  const providerInstructions = {
+    posthog: {
+      url: (provider) =>
+        `https://${provider.region}.posthog.com/settings/user-api-keys`,
+      permission:
+        "Create a personal API key limited to insight:read. Do not grant feature-flag, survey, replay, data-management, or write scopes.",
+    },
+    sentry: {
+      url: () => "https://sentry.io/settings/account/api/auth-tokens/",
+      permission:
+        "Create an authentication token with project:read only and verify that it can access only the intended organization and project.",
+    },
+    "new-relic": {
+      url: () => "https://one.newrelic.com/api-keys",
+      permission:
+        "Create a user key for a user whose role has only the account access this project needs. New Relic user keys are not intrinsically read-only; the protected adapter exposes one fixed account query and no mutation or arbitrary NRQL.",
+    },
+  };
+  return {
+    ok: true,
+    mode: "guided-read-only",
+    providers: providers.map((provider) => ({
+      provider: provider.provider,
+      role: provider.role,
+      region: provider.region,
+      scope: telemetryScopeSummary(provider),
+      credential_environment: provider.credential_env,
+      steps: [
+        {
+          id: "create-scoped-credential",
+          status: "human-action-required",
+          url: providerInstructions[provider.provider].url(provider),
+          instruction:
+            providerInstructions[provider.provider].permission,
+        },
+        {
+          id: "provide-process-environment",
+          status:
+            typeof process.env[provider.credential_env] === "string" &&
+            process.env[provider.credential_env].length > 0
+              ? "available"
+              : "human-action-required",
+          credential_environment: provider.credential_env,
+          instruction:
+            "Store the credential in the shell or coding-harness secret environment, never in the repository, config, checkpoint, report, receipt, or evidence graph.",
+        },
+      ],
+    })),
+    verify: {
+      status: "required",
+      argv: [
+        "node",
+        PROJECT_CLI_PATH,
+        "telemetry-health",
+        "--target",
+        ".",
+      ],
+    },
+    guardrails: {
+      remote_surface:
+        "PostHog basic insight metadata, Sentry project identity, and New Relic account identity only",
+      arbitrary_queries: false,
+      mutations: false,
+      raw_payload_storage: false,
+      credential_scope_verified:
+        "The CLI proves its own fixed read-only surface and project/account identity. It cannot prove that an upstream credential lacks unrelated permissions.",
+      fallback: "repository evidence",
     },
   };
 }
@@ -6008,6 +6513,76 @@ function commandMemorySetup(target, harnessOption = undefined) {
   };
 }
 
+function parseTelemetrySpec(spec) {
+  if (
+    typeof spec !== "string" ||
+    spec.length === 0 ||
+    spec.length > 256 ||
+    /[\r\n\0]/.test(spec)
+  ) {
+    throw new StackError(
+      "--telemetry must use provider@region:scope with a bounded value",
+    );
+  }
+  const match = /^([a-z-]+)@([a-z]+):(.+)$/.exec(spec.trim().toLowerCase());
+  if (!match) {
+    throw new StackError(
+      "--telemetry must use provider@region:scope, for example posthog@us:12345",
+    );
+  }
+  const [, provider, region, scopeValue] = match;
+  if (!TELEMETRY_PROVIDERS.has(provider)) {
+    throw new StackError(
+      "--telemetry provider must be posthog, sentry, or new-relic",
+    );
+  }
+  if (!TELEMETRY_PROVIDER_REGIONS[provider].has(region)) {
+    throw new StackError(
+      `--telemetry region is not approved for ${provider}`,
+    );
+  }
+  let scope;
+  if (provider === "posthog") {
+    if (
+      !/^[1-9]\d{0,18}$/.test(scopeValue) ||
+      !Number.isSafeInteger(Number(scopeValue))
+    ) {
+      throw new StackError(
+        "PostHog telemetry scope must be its positive numeric project ID",
+      );
+    }
+    scope = { project_id: scopeValue };
+  } else if (provider === "sentry") {
+    const parts = scopeValue.split("/");
+    if (
+      parts.length !== 2 ||
+      !parts.every((part) => /^[a-z0-9][a-z0-9_-]{0,99}$/.test(part))
+    ) {
+      throw new StackError(
+        "Sentry telemetry scope must be organization-slug/project-slug",
+      );
+    }
+    scope = { organization: parts[0], project: parts[1] };
+  } else {
+    if (
+      !/^[1-9]\d{0,18}$/.test(scopeValue) ||
+      !Number.isSafeInteger(Number(scopeValue))
+    ) {
+      throw new StackError(
+        "New Relic telemetry scope must be its positive numeric account ID",
+      );
+    }
+    scope = { account_id: scopeValue };
+  }
+  return {
+    provider,
+    role: TELEMETRY_PROVIDER_ROLES[provider],
+    region,
+    credential_env: TELEMETRY_CREDENTIAL_ENVIRONMENTS[provider],
+    scope,
+  };
+}
+
 function resolveConfigureOptions(options) {
   const preset = options.preset;
   if (preset !== undefined) {
@@ -6037,6 +6612,13 @@ function resolveConfigureOptions(options) {
           ? options.linearWrites
           : undefined,
       ],
+      [
+        "--telemetry",
+        Array.isArray(options.telemetrySpecs) &&
+        options.telemetrySpecs.length > 0
+          ? options.telemetrySpecs
+          : undefined,
+      ],
       ["--external-data", options.externalData],
       ["--execution", options.execution],
       ["--merge", options.merge],
@@ -6058,6 +6640,7 @@ function resolveConfigureOptions(options) {
       ...presetOptions,
       reviewers: [...presetOptions.reviewers],
       linearWrites: [...presetOptions.linearWrites],
+      telemetrySpecs: [...presetOptions.telemetrySpecs],
       preset,
       reason: options.reason,
     };
@@ -6068,6 +6651,7 @@ function resolveConfigureOptions(options) {
     work: options.work ?? "repository",
     linearTeams: options.linearTeams ?? [],
     linearWrites: options.linearWrites ?? [],
+    telemetrySpecs: options.telemetrySpecs ?? [],
     execution: options.execution ?? "agent_owned",
     merge: options.merge ?? "human_approval_required",
     reviewers: options.reviewers ?? [],
@@ -6083,6 +6667,7 @@ function commandConfigure(target, options) {
     work,
     linearTeams,
     linearWrites,
+    telemetrySpecs,
     externalData,
     execution,
     merge,
@@ -6115,6 +6700,20 @@ function commandConfigure(target, options) {
   }
   if (!WORK_PROVIDERS.has(work)) {
     throw new StackError("--work must be repository or linear");
+  }
+  const telemetryProviders = telemetrySpecs
+    .map(parseTelemetrySpec)
+    .sort((left, right) => left.provider.localeCompare(right.provider));
+  if (telemetryProviders.length > 3) {
+    throw new StackError("--telemetry supports at most three reviewed providers");
+  }
+  const telemetryProviderNames = telemetryProviders.map(
+    (provider) => provider.provider,
+  );
+  if (new Set(telemetryProviderNames).size !== telemetryProviderNames.length) {
+    throw new StackError(
+      "--telemetry may configure each reviewed provider only once",
+    );
   }
   if (!EXTERNAL_DATA_POLICIES.has(externalData)) {
     throw new StackError(
@@ -6203,6 +6802,14 @@ function commandConfigure(target, options) {
       "Linear is an external provider. Select approved_providers or keep repository work tracking.",
     );
   }
+  if (
+    telemetryProviders.length > 0 &&
+    externalData !== "approved_providers"
+  ) {
+    throw new StackError(
+      "Telemetry uses external providers. Select approved_providers or keep repository evidence only.",
+    );
+  }
 
   const config = loadConfig(target);
   const existingIdempotencyNamespace =
@@ -6250,6 +6857,14 @@ function commandConfigure(target, options) {
     scope: knowledgeScope,
     required: false,
     capture: "verified_proposals_only",
+    repository_fallback: true,
+  };
+  config.capabilities.telemetry = {
+    providers: telemetryProviders,
+    required: false,
+    default_access: "read_only",
+    evidence_capture: "bounded_references_only",
+    raw_payload_storage: false,
     repository_fallback: true,
   };
   config.capabilities.work =
@@ -6455,6 +7070,12 @@ function protectedProjectFileIssue(target, destination) {
   ) {
     return `${destination} does not match the hash pinned in the protected CLI`;
   }
+  if (
+    destination === TELEMETRY_READONLY_PATH &&
+    portableTextSha256(readFileSync(file)) !== TELEMETRY_READONLY_SOURCE_HASH
+  ) {
+    return `${destination} does not match the hash pinned in the protected CLI`;
+  }
   if (existsSync(join(PACKAGE_ROOT, ".codex-plugin/plugin.json"))) {
     const claude = installation.harnesses?.includes("claude") ?? false;
     const source = sourceEntries({ claude }).find(
@@ -6601,18 +7222,29 @@ function commandDoctor(target) {
     const telemetryProviders = Array.isArray(telemetry.providers)
       ? telemetry.providers
       : [];
+    const telemetryHealth = commandTelemetryHealth(target, config);
     report(
       "telemetry-providers",
-      true,
+      telemetryHealth.ok,
       {
-        selected: telemetryProviders.map((provider) => provider.provider),
+        selected: telemetryProviders.map((provider) => ({
+          provider: provider?.provider ?? "invalid",
+          role: provider?.role ?? "invalid",
+          region: provider?.region ?? "invalid",
+          scope: telemetryScopeSummary(provider),
+        })),
         access: telemetry.default_access ?? "invalid",
         evidence_capture: telemetry.evidence_capture ?? "invalid",
         raw_payload_storage: telemetry.raw_payload_storage ?? "invalid",
         fallback: "repository evidence",
+        health: telemetryHealth,
       },
       "warning",
-      telemetryProviders.length === 0 ? "not-configured" : "configured",
+      telemetryProviders.length === 0
+        ? "not-configured"
+        : telemetryHealth.ok
+          ? "available"
+          : "repository-fallback",
     );
     const work =
       config.capabilities.work &&
@@ -8092,6 +8724,7 @@ function commandStart(target, idea, coordinatorToken = undefined) {
     checkpoint,
   );
   const workProviderHealth = commandLinearHealth(target, config);
+  const telemetryHealth = commandTelemetryHealth(target, config);
   const request = idea?.trim() || "[describe what you want to build or change]";
   const configurationApproved =
     config.safety.approved_configuration_hash === configurationHash(config);
@@ -8102,7 +8735,7 @@ function commandStart(target, idea, coordinatorToken = undefined) {
     return {
       ok: true,
       phase: "onboarding",
-      prompt: `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, .agent-stack/config.json, and any valid .agent-stack/CHECKPOINT.md. Inspect the repository and run the capabilities command. Complete Ultimate Agent Stack onboarding before material implementation.\n\nAsk only consequential setup decisions, one at a time. For each decision use plain language, state one recommended choice, provide at most one genuinely safe alternative, explain the practical consequence, and accept "use the recommendation" as an answer. Never invent an unsafe alternative. Prefer repository evidence and safe defaults over questions.\n\nAsk this memory decision in plain language: "Should this project remember progress only in its repository files, or also use a private local searchable memory for easier continuation across conversations?" Recommend repository memory for a short or simple project. Recommend project-scoped local GBrain for a long-running build likely to span conversations. Explain that GBrain is optional, repository checkpoints remain the source of truth, and work still resumes when GBrain is unavailable. If GBrain is approved, configure it, run memory-setup for the detected harness, perform the approved setup, and verify it with doctor.\n\nAsk this work-tracking decision in plain language: "Should this project keep its task list only in the repository, or also read approved work from Linear while keeping a portable repository copy?" Recommend repository work tracking for a solo, short, or early project. Offer Linear only when the team already uses it and can create a Read-permission API key for the approved team keys. Explain that Linear remains optional, read-only in this release, and never becomes proof of completion or grants delivery authority. If Linear is approved, configure it, run linear-setup, complete the human credential step, and verify it with doctor.\n\nTelemetry remains repository-only until a reviewed provider adapter is installed. Do not ask the user to select or connect an unavailable provider.\n\nConfigure the approved project profile, review provider, knowledge provider, work provider, external-data policy, and authority mode with the non-interactive configure command. Then run doctor and continue with this request: ${request}`,
+      prompt: `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, .agent-stack/config.json, and any valid .agent-stack/CHECKPOINT.md. Inspect the repository and run the capabilities command. Complete Ultimate Agent Stack onboarding before material implementation.\n\nAsk only consequential setup decisions, one at a time. For each decision use plain language, state one recommended choice, provide at most one genuinely safe alternative, explain the practical consequence, and accept "use the recommendation" as an answer. Never invent an unsafe alternative. Prefer repository evidence and safe defaults over questions.\n\nAsk this memory decision in plain language: "Should this project remember progress only in its repository files, or also use a private local searchable memory for easier continuation across conversations?" Recommend repository memory for a short or simple project. Recommend project-scoped local GBrain for a long-running build likely to span conversations. Explain that GBrain is optional, repository checkpoints remain the source of truth, and work still resumes when GBrain is unavailable. If GBrain is approved, configure it, run memory-setup for the detected harness, perform the approved setup, and verify it with doctor.\n\nAsk this work-tracking decision in plain language: "Should this project keep its task list only in the repository, or also read approved work from Linear while keeping a portable repository copy?" Recommend repository work tracking for a solo, short, or early project. Offer Linear only when the team already uses it and can create a Read-permission API key for the approved team keys. Explain that Linear remains optional, read-only in this release, and never becomes proof of completion or grants delivery authority. If Linear is approved, configure it, run linear-setup, complete the human credential step, and verify it with doctor.\n\nAsk this telemetry decision in plain language: "Does this deployed project already use PostHog, Sentry, or New Relic for a concrete product, error, or service question, or should we rely only on repository and deployment evidence?" Recommend no telemetry provider for an early or undeployed project. Offer only an existing reviewed provider whose project or account scope is known. Explain that the adapter performs a fixed read-only identity check, stores no raw provider payload, cannot prove the upstream credential has no other permissions, never installs instrumentation, and never authorizes a change. If a provider is approved, configure it with --telemetry, run telemetry-setup, complete the human credential step, and verify it with doctor.\n\nConfigure the approved project profile, review provider, knowledge provider, work provider, telemetry providers, external-data policy, and authority mode with the non-interactive configure command. Then run doctor and continue with this request: ${request}`,
       pending: {
         onboarding_status: config.onboarding.status,
         configuration_approved: configurationApproved,
@@ -8110,6 +8743,7 @@ function commandStart(target, idea, coordinatorToken = undefined) {
       checkpoint,
       memory: memoryHealth,
       work_provider: workProviderHealth,
+      telemetry: telemetryHealth,
       coordinator,
     };
   }
@@ -8139,8 +8773,9 @@ function commandStart(target, idea, coordinatorToken = undefined) {
     checkpoint,
     memory: memoryHealth,
     work_provider: workProviderHealth,
+    telemetry: telemetryHealth,
     coordinator,
-    prompt: `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, .agent-stack/config.json, .agent-stack/work-items.json, .agent-stack/evidence-graph.json, any valid .agent-stack/CHECKPOINT.md, and the installed skills. Use $run-autonomous-delivery for this request: ${request}\n\n${continuity}\n\nInspect the project first. Apply $manage-project-work using the configured ${config.capabilities.work.provider} provider; validate the repository ledger and graph, select only bounded ready work, and keep completion tied to real evidence. The start command already tested the configured work provider. If it is unavailable or unhealthy, continue from the repository ledger and record synchronization as pending; never block safe local delivery or infer remote state. Apply $use-project-knowledge using the configured ${config.capabilities.knowledge.provider} provider at ${config.capabilities.knowledge.scope} scope, with repository evidence as the source of truth and fallback. The start command already tested configured memory; if its result is unhealthy or the checkpoint mirror is stale, continue from the repository and repair the optional adapter without blocking delivery. ${telemetryGuidance} Use $coordinate-parallel-delivery to manage independent subagent work when it is safe and useful; keep it serial otherwise. You are the one Project Steward and integration owner. Do not give the coordinator token to subagents, and do not make the user manage workers.\n\nBuild a living project brief. Research routine answers. Ask only consequential questions, one at a time. Each question must use plain language, recommend one safe choice, provide at most one genuinely useful safe alternative, explain the consequence, and allow "use the recommendation." Own all routine implementation and verification. Write a deterministic checkpoint after verified milestones and release the coordinator lease only at final handoff.`,
+    prompt: `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, .agent-stack/config.json, .agent-stack/work-items.json, .agent-stack/evidence-graph.json, any valid .agent-stack/CHECKPOINT.md, and the installed skills. Use $run-autonomous-delivery for this request: ${request}\n\n${continuity}\n\nInspect the project first. Apply $manage-project-work using the configured ${config.capabilities.work.provider} provider; validate the repository ledger and graph, select only bounded ready work, and keep completion tied to real evidence. The start command already tested the configured work provider. If it is unavailable or unhealthy, continue from the repository ledger and record synchronization as pending; never block safe local delivery or infer remote state. Apply $use-project-knowledge using the configured ${config.capabilities.knowledge.provider} provider at ${config.capabilities.knowledge.scope} scope, with repository evidence as the source of truth and fallback. The start command already tested configured memory; if its result is unhealthy or the checkpoint mirror is stale, continue from the repository and repair the optional adapter without blocking delivery. The start command also tested configured telemetry identity and scope; if it is unavailable or unhealthy, use repository evidence and do not broaden provider scope. ${telemetryGuidance} Use $coordinate-parallel-delivery to manage independent subagent work when it is safe and useful; keep it serial otherwise. You are the one Project Steward and integration owner. Do not give the coordinator token to subagents, and do not make the user manage workers.\n\nBuild a living project brief. Research routine answers. Ask only consequential questions, one at a time. Each question must use plain language, recommend one safe choice, provide at most one genuinely useful safe alternative, explain the consequence, and allow "use the recommendation." Own all routine implementation and verification. Write a deterministic checkpoint after verified milestones and release the coordinator lease only at final handoff.`,
   };
 }
 
@@ -8247,6 +8882,8 @@ Safe project setup:
   ultimate-agent-stack memory-health [--target DIR]
   ultimate-agent-stack linear-setup [--target DIR]
   ultimate-agent-stack linear-health [--target DIR]
+  ultimate-agent-stack telemetry-setup [--target DIR]
+  ultimate-agent-stack telemetry-health [--target DIR]
   ultimate-agent-stack linear-write issue-create --work-item ID --team KEY
     --authority-source TEXT --coordinator-token TOKEN
     --confirm-external-write [--target DIR]
@@ -8263,6 +8900,7 @@ Agent-operated quality controls:
     --knowledge PROVIDER [--knowledge-scope SCOPE] --external-data POLICY
     [--work repository|linear] [--linear-team KEY ...]
     [--linear-write issue_create|evidence_comment ...]
+    [--telemetry PROVIDER@REGION:SCOPE ...]
     --reason TEXT [--reviewer LOGIN ...]
     [--execution MODE] [--merge MODE] [--target DIR]
   ultimate-agent-stack approve-checks --reason TEXT [--target DIR]
@@ -8293,8 +8931,9 @@ the approved choices. The simple preset selects standard, local-only, repository
 backed defaults with built-in review and human-controlled merge authority.
 Repository checkpoints remain authoritative. Optional GBrain memory is project-
 scoped and falls back safely. Optional project telemetry is read-only, disabled by
-default, and falls back to repository evidence; Ultimate Agent Stack does not phone
-home. Linear is read-only by default; the only optional writes are receipted issue
+default, supports reviewed PostHog, Sentry, and New Relic identity checks, and
+falls back to repository evidence; Ultimate Agent Stack does not phone home.
+Linear is read-only by default; the only optional writes are receipted issue
 and evidence-comment creation with explicit authority. Campaigns select one
 repository item at a time and stop at their configured bound. One active Project
 Steward owns a checkout at a time.`;
@@ -8431,6 +9070,16 @@ function execute(command, args) {
       const target = resolveTarget(getOption(args, "--target", "."));
       return commandLinearHealth(target);
     }
+    case "telemetry-setup": {
+      assertNoUnknownOptions(args, ["--target"]);
+      const target = resolveTarget(getOption(args, "--target", "."));
+      return commandTelemetrySetup(target);
+    }
+    case "telemetry-health": {
+      assertNoUnknownOptions(args, ["--target"]);
+      const target = resolveTarget(getOption(args, "--target", "."));
+      return commandTelemetryHealth(target);
+    }
     case "linear-write": {
       const [operation, ...writeArgs] = args;
       if (!["issue-create", "evidence-comment"].includes(operation)) {
@@ -8481,6 +9130,7 @@ function execute(command, args) {
         "--work",
         "--linear-team",
         "--linear-write",
+        "--telemetry",
         "--external-data",
         "--execution",
         "--merge",
@@ -8497,6 +9147,7 @@ function execute(command, args) {
         work: getOption(args, "--work"),
         linearTeams: getRepeatedOption(args, "--linear-team"),
         linearWrites: getRepeatedOption(args, "--linear-write"),
+        telemetrySpecs: getRepeatedOption(args, "--telemetry"),
         externalData: getOption(args, "--external-data"),
         execution: getOption(args, "--execution"),
         merge: getOption(args, "--merge"),
@@ -8686,6 +9337,7 @@ export {
   REVIEW_WORKFLOW_PATH,
   SAFE_ENVIRONMENT_NAMES,
   StackError,
+  TELEMETRY_READONLY_PATH,
   WORK_LEDGER_PATH,
   checksHash,
   commandCheckpoint,
@@ -8713,6 +9365,8 @@ export {
   commandReceiptsValidate,
   commandStart,
   commandStatus,
+  commandTelemetryHealth,
+  commandTelemetrySetup,
   commandUnlock,
   commandUpstreamCheck,
   commandVerify,

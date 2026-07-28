@@ -11,14 +11,22 @@ tests, review, and release evidence remain authoritative.
 ## Workflow
 
 1. Read `.agent-stack/config.json` and
-   [references/telemetry-contract.md](references/telemetry-contract.md).
+   [references/telemetry-contract.md](references/telemetry-contract.md). For a
+   configured PostHog, Sentry, or New Relic connection, also read
+   [references/telemetry-providers.md](references/telemetry-providers.md).
 2. Use only providers listed in `capabilities.telemetry.providers`. If none are
    configured, continue with repository evidence and explain that no project
    telemetry was queried.
-3. Confirm provider identity, project scope, read-only access, and the requested
-   time window before retrieving data. Stop on an identity or scope mismatch.
+3. Run `node .agent-stack/bin/agent-stack.mjs telemetry-health --target .`.
+   Confirm provider identity, configured scope, fixed read-only adapter surface,
+   and the requested time window before retrieving data. Stop on an identity or
+   scope mismatch.
 4. Ask a bounded question. Prefer a saved query, issue, trace, release, or
    aggregate comparison over unrestricted events, sessions, logs, or prompts.
+   The shipped CLI health adapter does not expose a general query language.
+   Use a material observation only through a separately reviewed read-only
+   provider operation, an approved harness connection, or a human-supplied
+   saved-provider reference.
 5. Minimize returned fields and rows. Do not retrieve raw personal data,
    credentials, request bodies, prompts, recordings, or complete session
    payloads when a count, reference, or redacted excerpt answers the question.

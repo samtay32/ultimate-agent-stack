@@ -23,7 +23,7 @@ sandbox and the Markdown skills are not executable security controls.
 | Reject a second active Project Steward in the same checkout | Have the primary agent manage every subagent |
 | Integrity-check bounded repository checkpoints and reject common secret shapes | Write checkpoints after verified milestones |
 | Verify project-local GBrain path containment, health, and identity | Treat optional memory as advisory |
-| Validate that only reviewed telemetry providers can enter configuration | Treat read-only project telemetry as advisory evidence |
+| Restrict reviewed telemetry to fixed endpoints, bounded responses, source-hash-protected health operations, and configured project/account identity | Treat read-only project telemetry as advisory evidence |
 | Validate repository work and evidence vocabulary, bounds, dependencies, and graph endpoints | Keep external work synchronized and require real acceptance evidence |
 | Restrict Linear reads to fixed queries and writes to issue/comment creation with explicit authority, idempotency, and receipts | Create separate upstream Linear keys with only their documented permissions |
 | Limit campaigns to one eligible repository item and at most 25 iterations | Stop for consequential decisions and verify each selected item normally |
@@ -67,7 +67,12 @@ merge choices are fingerprinted. A change invalidates configuration approval.
 The telemetry contract is mechanically fixed to optional, read-only providers,
 bounded evidence references, no raw-payload storage, and repository fallback.
 The CLI rejects unregistered provider names and configuration that relaxes
-those invariants. Provider authentication, remote authorization, query
+those invariants. The reviewed PostHog, Sentry, and New Relic helper selects
+only fixed official endpoints, rejects redirects, bounds responses, performs
+only named identity/availability checks, discards raw payloads, and is
+source-hash protected before execution. It verifies successful access to the
+configured project or account, but cannot prove that the upstream credential
+has no unrelated permissions. Broader provider authorization, observation
 correctness, and agent obedience remain outside the CLI's enforcement boundary.
 
 The work ledger and evidence graph use strict top-level and entry vocabularies,
@@ -174,9 +179,9 @@ boundary, and MCP client configuration still relies on the coding harness.
 
 Configured telemetry is project data, not Ultimate Agent Stack product
 analytics. The package has no default phone-home path. The CLI validates the
-provider registry and safety invariants, while the coding agent remains
-responsible for identity checks, narrow queries, redaction, and validation
-against current repository evidence.
+provider registry and safety invariants and tests configured provider identity.
+The coding agent remains responsible for keeping later observations narrow,
+redacting summaries, and validating them against current repository evidence.
 
 ### Package release
 

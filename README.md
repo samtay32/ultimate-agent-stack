@@ -203,6 +203,40 @@ references; it does not copy raw events, recordings, sessions, logs, prompts,
 or credentials into the repository. Every observation remains a hypothesis
 until repository and deployment evidence validates it.
 
+Three reviewed connection adapters are available:
+
+| Adapter | Role | Health check | Credential environment |
+|---|---|---|---|
+| PostHog | Product | Basic saved-insight metadata for one project | `POSTHOG_PERSONAL_API_KEY` |
+| Sentry | Errors | Exact organization/project identity and access | `SENTRY_AUTH_TOKEN` |
+| New Relic | Service | Exact account identity through one fixed NerdGraph query | `NEW_RELIC_USER_KEY` |
+
+Configure only providers the project already uses. For example:
+
+```bash
+ultimate-agent-stack configure \
+  --profile standard --review builtin --knowledge repository \
+  --external-data approved_providers \
+  --telemetry posthog@us:12345 \
+  --telemetry sentry@us:my-org/my-app \
+  --reason "Approved existing read-only project telemetry connections"
+
+ultimate-agent-stack telemetry-setup
+ultimate-agent-stack telemetry-health
+```
+
+The helper uses fixed official cloud endpoints, rejects custom hosts, bounds
+responses, returns only normalized identity/availability fields, and is
+protected by the installation manifest plus a CLI-pinned source hash. It does
+not expose arbitrary HogQL, NRQL, GraphQL, event, session, recording, log,
+stack-trace, prompt, configuration, or mutation access. OpenTelemetry remains
+an optional vendor-neutral instrumentation and transport boundary; this package
+does not install or reconfigure instrumentation.
+
+Provider-native agent sessions, automatic agent/session telemetry capture, and
+telemetry-specific Agent Auth are deliberately deferred until real adoption
+shows a concrete need that these bounded adapters cannot meet.
+
 Telemetry cannot authorize a code change, feature-flag change, merge, deploy,
 rollback, or other production mutation. Provider failure falls back to
 repository evidence.

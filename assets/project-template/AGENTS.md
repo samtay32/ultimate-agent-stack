@@ -86,6 +86,9 @@ requires representative evaluations and a reviewed change.
 Apply `$use-project-telemetry` only when the project has a configured scoped
 provider and the request needs relevant production or operational evidence.
 Treat product, error, service, and AI telemetry as advisory sensor data.
+Run the protected `telemetry-health` command before using a configured PostHog,
+Sentry, or New Relic connection. A failed identity or scope check falls back to
+repository evidence; never broaden scope or switch providers silently.
 Validate every material observation against current repository and deployment
 evidence.
 

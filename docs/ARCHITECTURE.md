@@ -182,6 +182,14 @@ identity, scope, bounded references, time windows, limitations, and repository
 validation—not credentials or raw remote payloads. No telemetry provider may
 expand authority or become a mandatory delivery dependency.
 
+The initial provider registry contains PostHog for product telemetry, Sentry
+for error telemetry, and New Relic for service telemetry. A source-hash-pinned
+project helper performs only fixed project/account health checks against
+reviewed official endpoints. It rejects redirects and custom hosts, bounds
+responses, and discards provider payloads. OpenTelemetry may carry project
+signals to any approved backend, but instrumentation and routing remain outside
+this adapter layer.
+
 Work tracking uses one normalized contract regardless of provider. The
 repository ledger contains bounded objectives, acceptance criteria, scope,
 dependencies, status, and external references. The evidence graph connects

@@ -154,6 +154,10 @@ const linearWriteHelper = readFileSync(
   join(PACKAGE_ROOT, "scripts/linear-write.mjs"),
   "utf8",
 );
+const telemetryReadonlyHelper = readFileSync(
+  join(PACKAGE_ROOT, "scripts/telemetry-readonly.mjs"),
+  "utf8",
+);
 const linearReceiptedWrites = readFileSync(
   join(
     PACKAGE_ROOT,
@@ -464,6 +468,7 @@ test("package has no install hooks and guards publication with prepublishOnly", 
       "scripts/gbrain-project.mjs",
       "scripts/linear-readonly.mjs",
       "scripts/linear-write.mjs",
+      "scripts/telemetry-readonly.mjs",
       "scripts/check-portable-bundle.mjs",
       "scripts/packed-smoke.mjs",
       "scripts/release-preflight.mjs",
@@ -554,6 +559,13 @@ test("telemetry remains optional, bounded, read-only, and provider-neutral", () 
   assert.match(telemetryContract, /OpenTelemetry is a vendor-neutral/);
   assert.match(adaptersGuide, /sends no usage telemetry/);
   assert.match(adaptersGuide, /multi-provider|more than one provider/i);
+  for (const provider of ["PostHog", "Sentry", "New Relic"]) {
+    assert.match(adaptersGuide, new RegExp(provider, "i"));
+  }
+  assert.doesNotMatch(telemetryReadonlyHelper, /\bmutation\b/i);
+  assert.match(telemetryReadonlyHelper, /redirect:\s*"error"/);
+  assert.match(telemetryReadonlyHelper, /MAX_RESPONSE_BYTES/);
+  assert.match(telemetryReadonlyHelper, /raw_payload_retained:\s*false/);
   assert.doesNotMatch(
     telemetryContract,
     /api[_ -]?key|access[_ -]?token|client[_ -]?secret/i,
