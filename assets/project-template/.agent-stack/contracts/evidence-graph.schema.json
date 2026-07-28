@@ -27,6 +27,7 @@
     "edges": {
       "type": "array",
       "maxItems": 50000,
+      "uniqueItems": true,
       "items": {
         "$ref": "#/$defs/edge"
       }
@@ -46,7 +47,7 @@
         {
           "type": "string",
           "format": "date-time",
-          "pattern": "Z$"
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?Z$"
         }
       ]
     },

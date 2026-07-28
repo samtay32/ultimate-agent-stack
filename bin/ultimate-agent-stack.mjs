@@ -54,6 +54,11 @@ const COMPLETION_EVIDENCE_RELATIONS = new Set([
   "releases",
   "observes",
 ]);
+const DEPENDENCY_EVIDENCE_RELATIONS = new Set([
+  "depends_on",
+  "requires",
+  "blocks",
+]);
 const CHECK_OUTPUT_LIMIT_BYTES = 4 * 1024 * 1024;
 const CONFIG_PATH = ".agent-stack/config.json";
 const INSTALLATION_PATH = ".agent-stack/installation.json";
@@ -2158,9 +2163,51 @@ function contractProjectPath(value) {
     !value.includes("\0") &&
     !isAbsolute(value) &&
     !/^[A-Za-z]:[\\/]/.test(value) &&
-    !value.startsWith("\\\\") &&
+    !/^[\\/]/.test(value) &&
     !value.split(/[\\/]/).includes("..")
   );
+}
+
+function directedGraphHasCycle(adjacency) {
+  const visiting = new Set();
+  const visited = new Set();
+  for (const root of adjacency.keys()) {
+    if (visited.has(root)) {
+      continue;
+    }
+    visiting.add(root);
+    const stack = [
+      {
+        id: root,
+        cursor: 0,
+        neighbors: adjacency.get(root) ?? [],
+      },
+    ];
+    while (stack.length > 0) {
+      const frame = stack[stack.length - 1];
+      if (frame.cursor >= frame.neighbors.length) {
+        visiting.delete(frame.id);
+        visited.add(frame.id);
+        stack.pop();
+        continue;
+      }
+      const neighbor = frame.neighbors[frame.cursor];
+      frame.cursor += 1;
+      if (!adjacency.has(neighbor) || visited.has(neighbor)) {
+        continue;
+      }
+      if (visiting.has(neighbor)) {
+        return true;
+      }
+      visiting.add(neighbor);
+      stack.push({
+        id: neighbor,
+        cursor: 0,
+        neighbors: adjacency.get(neighbor) ?? [],
+      });
+    }
+  }
+  return false;
 }
 
 function validateWorkLedger(ledger) {
@@ -2183,6 +2230,14 @@ function validateWorkLedger(ledger) {
     return errors;
   }
   const ids = new Set();
+  const itemsById = new Map(
+    ledger.items
+      .filter(
+        (item) =>
+          item && typeof item === "object" && !Array.isArray(item),
+      )
+      .map((item) => [item.id, item]),
+  );
   for (const [index, item] of ledger.items.entries()) {
     const label = `work ledger items[${index}]`;
     if (!item || typeof item !== "object" || Array.isArray(item)) {
@@ -2334,8 +2389,7 @@ function validateWorkLedger(ledger) {
         );
       } else if (
         ["ready", "in_progress", "in_review", "done"].includes(item.status) &&
-        ledger.items.find((candidate) => candidate?.id === dependency)?.status !==
-          "done"
+        itemsById.get(dependency)?.status !== "done"
       ) {
         errors.push(
           `work ledger items[${index}] cannot be ${item.status} until dependency ${dependency} is done`,
@@ -2354,24 +2408,7 @@ function validateWorkLedger(ledger) {
       )
       .map((item) => [item.id, item.depends_on]),
   );
-  const visiting = new Set();
-  const visited = new Set();
-  const hasCycle = (id) => {
-    if (visiting.has(id)) {
-      return true;
-    }
-    if (visited.has(id)) {
-      return false;
-    }
-    visiting.add(id);
-    const cyclic = (dependencies.get(id) ?? []).some(
-      (dependency) => dependencies.has(dependency) && hasCycle(dependency),
-    );
-    visiting.delete(id);
-    visited.add(id);
-    return cyclic;
-  };
-  if ([...dependencies.keys()].some((id) => hasCycle(id))) {
+  if (directedGraphHasCycle(dependencies)) {
     errors.push("work ledger dependencies must not contain a cycle");
   }
   return errors;
@@ -2451,6 +2488,9 @@ function validateEvidenceGraph(graph) {
     });
   });
   const edgeKeys = new Set();
+  const dependencies = new Map(
+    [...nodeIds].map((nodeId) => [nodeId, []]),
+  );
   graph.edges.forEach((edge, index) => {
     const label = `evidence graph edges[${index}]`;
     if (!edge || typeof edge !== "object" || Array.isArray(edge)) {
@@ -2481,7 +2521,19 @@ function validateEvidenceGraph(graph) {
       errors.push("evidence graph must not contain duplicate edges");
     }
     edgeKeys.add(key);
+    if (
+      DEPENDENCY_EVIDENCE_RELATIONS.has(edge.relation) &&
+      nodeIds.has(edge.from) &&
+      nodeIds.has(edge.to)
+    ) {
+      dependencies.get(edge.from).push(edge.to);
+    }
   });
+  if (directedGraphHasCycle(dependencies)) {
+    errors.push(
+      "evidence graph dependency relations must not contain a cycle",
+    );
+  }
   return errors;
 }
 
@@ -2502,7 +2554,10 @@ function validateWorkEvidenceLinkage(ledger, graph) {
   );
   for (const item of ledger.items) {
     const workNode = nodes.get(item.id);
-    if (!workNode || workNode.kind !== "work_item") {
+    if (
+      item.status !== "backlog" &&
+      (!workNode || workNode.kind !== "work_item")
+    ) {
       errors.push(
         `work item ${item.id} requires a matching work_item evidence node`,
       );
@@ -2604,13 +2659,17 @@ function commandEvidenceValidate(target) {
   return {
     ok: result.ok && ledger.ok && errors.length === 0,
     path: result.path,
+    work_ledger: {
+      ok: ledger.ok,
+      path: ledger.path,
+    },
     node_count: Array.isArray(result.value?.nodes)
       ? result.value.nodes.length
       : 0,
     edge_count: Array.isArray(result.value?.edges)
       ? result.value.edges.length
       : 0,
-    errors: [...ledger.errors, ...errors],
+    errors,
   };
 }
 

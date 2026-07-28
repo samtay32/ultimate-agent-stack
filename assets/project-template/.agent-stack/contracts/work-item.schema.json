@@ -38,7 +38,7 @@
         {
           "type": "string",
           "format": "date-time",
-          "pattern": "Z$"
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?Z$"
         }
       ]
     },
@@ -175,6 +175,7 @@
         "external_refs": {
           "type": "array",
           "maxItems": 50,
+          "uniqueItems": true,
           "items": {
             "$ref": "#/$defs/reference"
           }

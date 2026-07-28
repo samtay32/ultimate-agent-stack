@@ -23,7 +23,9 @@ work, but it does not expand execution, merge, deployment, or release authority.
    Stop and repair malformed repository state before relying on it.
 3. Convert the current intent into the smallest work item that has a bounded
    objective, explicit acceptance criteria, path scope, exclusions,
-   dependencies, and canonical status.
+   dependencies, and canonical status. A backlog item may remain ledger-only
+   while it is being shaped; add its matching `work_item` evidence node before
+   advancing it beyond `backlog`.
 4. Reuse stable work and evidence identifiers. Never create a second item for
    the same objective merely because an external provider uses another ID.
 5. Choose work only from `ready` items whose dependencies are `done`. If no

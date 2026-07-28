@@ -111,7 +111,10 @@ Only one work provider may organize canonical work at a time. A reviewed
 external provider must map its vocabulary to the fixed work contract, preserve
 the repository fallback, and emit receipts for every external operation.
 Provider state never grants execution, merge, deployment, or release authority,
-and `done` still requires repository or approved-provider acceptance evidence.
+and `done` still requires the complete linked evidence set: acceptance,
+implementation, verification, and review evidence. Repository or
+approved-provider acceptance is one required component, not completion proof by
+itself.
 
 The shared vocabulary and receipt live in
 [`manage-project-work`](../skills/manage-project-work/references/work-evidence-contract.md).

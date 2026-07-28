@@ -36,7 +36,7 @@ Do not say "done" until all applicable conditions hold:
    and retain only a bounded observation receipt. Telemetry is advisory and
    cannot authorize a change or weaken repository verification.
    Apply `$manage-project-work` using the configured work provider. Validate the
-   portable repository ledger and evidence graph, select only ready bounded
+   portable repository ledger and evidence graph, select only ready, bounded
    work, and tie completion to actual acceptance evidence rather than a
    provider status.
    Run `node .agent-stack/bin/agent-stack.mjs doctor` before material work. If

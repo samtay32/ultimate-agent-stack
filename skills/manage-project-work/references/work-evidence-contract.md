@@ -72,7 +72,10 @@ Completion evidence points toward the work item it supports:
 - bounded production evidence `observes` the work item.
 
 Every `evidence_refs` entry must have one of those edges to its work item.
-Dependency edges and `depends_on` identifiers must remain acyclic.
+Backlog items may remain ledger-only while they are being shaped. Every item
+beyond `backlog` requires a matching `work_item` node. Dependency edges
+(`depends_on`, `requires`, and `blocks`) and work-item `depends_on` identifiers
+are machine-checked and must remain acyclic.
 
 ## Completion Rule
 

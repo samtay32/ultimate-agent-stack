@@ -1466,6 +1466,14 @@ test("work ledger and evidence graph reject unsafe or broken repository state", 
   assert.deepEqual(validateEvidenceGraph(graph), []);
   assert.deepEqual(validateWorkEvidenceLinkage(ledger, graph), []);
 
+  const backlogLedger = structuredClone(ledger);
+  const backlogItem = structuredClone(backlogLedger.items[0]);
+  backlogItem.id = "future-backlog";
+  backlogItem.status = "backlog";
+  backlogItem.evidence_refs = [];
+  backlogLedger.items.push(backlogItem);
+  assert.deepEqual(validateWorkEvidenceLinkage(backlogLedger, graph), []);
+
   const unlinkedLedger = structuredClone(ledger);
   unlinkedLedger.items[0].evidence_refs = ["missing-evidence"];
   assert.match(
@@ -1483,6 +1491,7 @@ test("work ledger and evidence graph reject unsafe or broken repository state", 
   const unsafeLedger = structuredClone(ledger);
   unsafeLedger.items[0].scope.paths = [
     "../outside",
+    "\\root-relative",
     "\\\\server\\share\\outside",
     "C:\\outside",
   ];
@@ -1523,7 +1532,87 @@ test("work ledger and evidence graph reject unsafe or broken repository state", 
   assert.match(graphErrors, /credential-like text/);
   assert.match(graphErrors, /references a missing node/);
   assert.match(graphErrors, /duplicate edges/);
+
+  const cyclicGraph = structuredClone(graph);
+  cyclicGraph.edges.push(
+    {
+      from: "work-contract",
+      to: "test-work-contract",
+      relation: "requires",
+    },
+    {
+      from: "test-work-contract",
+      to: "work-contract",
+      relation: "depends_on",
+    },
+  );
+  assert.match(
+    validateEvidenceGraph(cyclicGraph).join("\n"),
+    /dependency relations must not contain a cycle/,
+  );
+
+  const fixture = temporaryProject();
+  try {
+    const invalidLedger = structuredClone(ledger);
+    invalidLedger.updated_at = "not-a-timestamp";
+    writeJson(join(fixture.directory, WORK_LEDGER_PATH), invalidLedger);
+    writeJson(join(fixture.directory, EVIDENCE_GRAPH_PATH), graph);
+    const evidenceResult = commandEvidenceValidate(fixture.directory);
+    assert.equal(evidenceResult.ok, false);
+    assert.deepEqual(evidenceResult.work_ledger, {
+      ok: false,
+      path: WORK_LEDGER_PATH,
+    });
+    assert.deepEqual(
+      evidenceResult.errors,
+      [],
+      "the evidence result must not duplicate work-ledger errors",
+    );
+  } finally {
+    fixture.cleanup();
+  }
+
   assert.equal(EVIDENCE_GRAPH_PATH, ".agent-stack/evidence-graph.json");
+});
+
+test("work ledger validates schema-maximum dependency depth without recursion", () => {
+  const itemCount = 10_000;
+  const ledger = {
+    schema_version: 1,
+    updated_at: null,
+    items: Array.from({ length: itemCount }, (_, index) => {
+      const id = `work-${String(index).padStart(5, "0")}`;
+      const dependency =
+        index === 0
+          ? []
+          : [`work-${String(index - 1).padStart(5, "0")}`];
+      return {
+        id,
+        title: `Work ${index}`,
+        objective: "Validate a bounded dependency chain.",
+        status: "backlog",
+        priority: "normal",
+        acceptance_criteria: ["The ledger validator completes."],
+        scope: {
+          paths: [`src/${id}.mjs`],
+          out_of_scope: [],
+        },
+        depends_on: dependency,
+        evidence_refs: [],
+        external_refs: [],
+        updated_at: null,
+      };
+    }),
+  };
+
+  assert.deepEqual(validateWorkLedger(ledger), []);
+  ledger.items[0].depends_on = [
+    `work-${String(itemCount - 1).padStart(5, "0")}`,
+  ];
+  assert.match(
+    validateWorkLedger(ledger).join("\n"),
+    /dependencies must not contain a cycle/,
+  );
 });
 
 test("provider or authority changes invalidate configuration approval", () => {
