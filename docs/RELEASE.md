@@ -35,9 +35,10 @@ Before the owner step, the agent must:
 3. confirm the bootstrap machine has Node.js 22+ and npm 10.8+;
 4. run every release, skill, plugin, Markdown, packed-install, archive, secret,
    adversarial safety, and behavioral-scenario contract check;
-5. when the behavior-surface hash changed, run the behavioral scenarios through
-   at least one real supported harness and attach the evaluated report with the
-   exact harness and model identity;
+5. when no accepted evaluated report exists or the behavior-surface hash
+   changed, run the behavioral scenarios through at least one real supported
+   harness and attach the evaluated report with the exact harness and model
+   identity;
 6. inspect the exact `0.1.0` tarball and confirm the MIT license and repository
    metadata;
 7. stop and report the exact hash and remaining owner step.
@@ -87,10 +88,11 @@ The agent:
    documentation versions;
 2. runs the complete release and adversarial gate, including behavioral
    scenario contracts;
-3. compares `npm run eval:contracts` with the previous release evidence. If the
-   behavior-surface hash changed, runs the exact scenarios through at least one
-   real supported harness and attaches the output from
-   `npm run eval:behavior -- --input RUN_RECORD.json` to the pull request;
+3. compares `npm run eval:contracts` with the previous release evidence. If no
+   accepted evaluated report exists or the behavior-surface hash changed, runs
+   the exact scenarios through at least one real supported harness and attaches
+   the output from `npm run eval:behavior -- --input RUN_RECORD.json` to the
+   pull request;
 4. commits and pushes the reviewed source to `main`;
 5. starts **Publish npm package** with the exact
    `ultimate-agent-stack@VERSION` input.

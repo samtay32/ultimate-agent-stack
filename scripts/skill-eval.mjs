@@ -8,7 +8,7 @@ import {
   realpathSync,
   statSync,
 } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SCRIPT_FILE = fileURLToPath(import.meta.url);
@@ -25,6 +25,14 @@ const REQUIRED_CATEGORIES = new Set([
   "authority",
   "continuity",
   "existing-project",
+]);
+const TEXT_SURFACE_EXTENSIONS = new Set([
+  ".json",
+  ".md",
+  ".mdc",
+  ".toml",
+  ".yaml",
+  ".yml",
 ]);
 
 function readJson(path) {
@@ -134,11 +142,18 @@ function hashBehaviorEntries(entries) {
   const hash = createHash("sha256");
   for (const [path, content] of entries) {
     hash.update(`${path}\0`);
-    hash.update(
-      Buffer.isBuffer(content)
-        ? content.toString("utf8").replace(/\r\n/g, "\n")
-        : String(content).replace(/\r\n/g, "\n"),
-    );
+    if (!Buffer.isBuffer(content)) {
+      hash.update(String(content).replace(/\r\n/g, "\n"));
+    } else if (TEXT_SURFACE_EXTENSIONS.has(extname(path).toLowerCase())) {
+      hash.update(
+        Buffer.from(
+          content.toString("latin1").replace(/\r\n/g, "\n"),
+          "latin1",
+        ),
+      );
+    } else {
+      hash.update(content);
+    }
     hash.update("\0");
   }
   return `sha256:${hash.digest("hex")}`;

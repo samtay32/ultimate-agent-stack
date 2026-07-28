@@ -164,6 +164,10 @@ test("skill metadata and surface hashes are stable across line endings", () => {
     hashBehaviorEntries([["skill.md", Buffer.from(crlf)]]),
     hashBehaviorEntries([["skill.md", Buffer.from(lf)]]),
   );
+  assert.notEqual(
+    hashBehaviorEntries([["asset.bin", Buffer.from([0x80])]]),
+    hashBehaviorEntries([["asset.bin", Buffer.from([0x81])]]),
+  );
   assert.deepEqual(
     parseSkillMetadata(
       `---\nname:${" ".repeat(100_000)}example\ndescription: Example skill.\n---\n`,
@@ -257,6 +261,38 @@ test("stale or incomplete run evidence fails closed", () => {
   assert.equal(result.ok, false);
   assert.match(JSON.stringify(result), /surface_hash must equal/);
   assert.match(JSON.stringify(result), /missing run result/);
+});
+
+test("duplicate and unknown run scenarios fail closed", () => {
+  const duplicated = passingRecord();
+  duplicated.cases.push(structuredClone(duplicated.cases[0]));
+  let result = validateRunRecord(duplicated, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    result.errors.join("\n"),
+    /run record duplicates scenario direct-setup/,
+  );
+
+  const unknown = passingRecord();
+  unknown.cases.push({
+    scenario_id: "not-a-real-scenario",
+    observed: {
+      activated_skills: [],
+      asked_clarifying_question: false,
+      performed_actions: [],
+      outcome_tags: [],
+    },
+    evidence: {
+      summary: "Observed an unknown scenario in the test harness.",
+      source: "test-run:not-a-real-scenario",
+    },
+  });
+  result = validateRunRecord(unknown, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    result.errors.join("\n"),
+    /run record contains unknown scenario not-a-real-scenario/,
+  );
 });
 
 test("malformed run arrays fail closed with structured findings", () => {

@@ -328,6 +328,7 @@ test("CI covers minimum Node and Windows before the required verify job", () => 
   assert.match(ciWorkflow, /name: windows-node-minimum/);
   assert.match(ciWorkflow, /name: windows-node-current/);
   assert.equal([...ciWorkflow.matchAll(/node: 22\b/g)].length, 2);
+  assert.equal([...ciWorkflow.matchAll(/node: 26\b/g)].length, 1);
   assert.doesNotMatch(ciWorkflow, /20\.12/);
   assert.match(ciWorkflow, /os: windows-latest/);
   assert.match(ciWorkflow, /verify:\s+needs: compatibility/);
@@ -416,8 +417,18 @@ test("release docs separate deterministic contracts from live model evidence", (
     /They cannot prove that a model activates\s+the right skill/,
   );
   assert.match(behavioralEvals, /false activation/);
+  assert.match(behavioralEvals, /`must_activate` is empty/);
+  assert.match(behavioralEvals, /names every skill currently in the catalog/);
   assert.match(behavioralEvals, /surface.hash/i);
   assert.match(releaseGuide, /real supported harness/);
+  assert.equal(
+    [
+      ...releaseGuide.matchAll(
+        /no\s+accepted evaluated report exists or the behavior-surface hash\s+changed/g,
+      ),
+    ].length,
+    2,
+  );
   assert.match(
     releaseGuide,
     /must not be generalized\s+to\s+untested providers/,
