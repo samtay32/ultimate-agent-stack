@@ -129,6 +129,10 @@ function main() {
         "knowledge skill",
       ],
       [
+        [".agents", "skills", "use-project-telemetry", "SKILL.md"],
+        "telemetry skill",
+      ],
+      [
         [".codex", "agents", "uas_researcher.toml"],
         "Codex worker adapter",
       ],
@@ -171,11 +175,19 @@ function main() {
       readFileSync(join(project, ".agent-stack", "config.json"), "utf8"),
     );
     if (
-      config.schema_version !== 2 ||
+      config.schema_version !== 3 ||
       config.onboarding?.status !== "pending" ||
       config.capabilities?.review?.provider !== "builtin" ||
       config.capabilities?.knowledge?.provider !== "repository" ||
       config.capabilities?.knowledge?.scope !== "project" ||
+      !Array.isArray(config.capabilities?.telemetry?.providers) ||
+      config.capabilities.telemetry.providers.length !== 0 ||
+      config.capabilities.telemetry.required !== false ||
+      config.capabilities.telemetry.default_access !== "read_only" ||
+      config.capabilities.telemetry.evidence_capture !==
+        "bounded_references_only" ||
+      config.capabilities.telemetry.raw_payload_storage !== false ||
+      config.capabilities.telemetry.repository_fallback !== true ||
       !Array.isArray(config.quality?.environment?.allow) ||
       config.quality.environment.allow.length !== 0
     ) {

@@ -112,6 +112,21 @@ const releaseGuide = readFileSync(
   join(PACKAGE_ROOT, "docs/RELEASE.md"),
   "utf8",
 );
+const telemetrySkill = readFileSync(
+  join(PACKAGE_ROOT, "skills/use-project-telemetry/SKILL.md"),
+  "utf8",
+);
+const telemetryContract = readFileSync(
+  join(
+    PACKAGE_ROOT,
+    "skills/use-project-telemetry/references/telemetry-contract.md",
+  ),
+  "utf8",
+);
+const adaptersGuide = readFileSync(
+  join(PACKAGE_ROOT, "docs/ADAPTERS.md"),
+  "utf8",
+);
 
 function assertCheckoutCredentialsDisabled(workflow) {
   const lines = workflow.split("\n");
@@ -432,6 +447,31 @@ test("release docs separate deterministic contracts from live model evidence", (
   assert.match(
     releaseGuide,
     /must not be generalized\s+to\s+untested providers/,
+  );
+});
+
+test("telemetry remains optional, bounded, read-only, and provider-neutral", () => {
+  for (const source of [
+    telemetrySkill,
+    telemetryContract,
+    adaptersGuide,
+    operatingManual,
+    projectAgents,
+    readme,
+  ]) {
+    assert.match(source, /read[- ]only/i);
+    assert.match(source, /repository evidence/i);
+  }
+  assert.match(telemetrySkill, /Never send Ultimate Agent Stack usage data/);
+  assert.match(telemetrySkill, /Never mutate provider data/);
+  assert.match(telemetryContract, /Do not place authentication material/);
+  assert.match(telemetryContract, /OpenTelemetry is a vendor-neutral/);
+  assert.match(adaptersGuide, /sends no usage telemetry/);
+  assert.match(adaptersGuide, /multi-provider|more than one provider/i);
+  assert.doesNotMatch(
+    telemetryContract,
+    /api[_ -]?key|access[_ -]?token|client[_ -]?secret/i,
+    "the provider-neutral contract must not introduce credential fields",
   );
 });
 

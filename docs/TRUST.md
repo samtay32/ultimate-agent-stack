@@ -23,6 +23,7 @@ sandbox and the Markdown skills are not executable security controls.
 | Reject a second active Project Steward in the same checkout | Have the primary agent manage every subagent |
 | Integrity-check bounded repository checkpoints and reject common secret shapes | Write checkpoints after verified milestones |
 | Verify project-local GBrain path containment, health, and identity | Treat optional memory as advisory |
+| Validate that only reviewed telemetry providers can enter configuration | Treat read-only project telemetry as advisory evidence |
 | Keep package publishing behind the protected release workflow | Stop after bounded non-improving repair loops and report the blocker |
 
 The left column is code. A conversation cannot persuade those checks to pass.
@@ -56,6 +57,12 @@ bytes valid.
 
 Project profile, provider, data, interaction, parallel-work, execution, and
 merge choices are fingerprinted. A change invalidates configuration approval.
+
+The telemetry contract is mechanically fixed to optional, read-only providers,
+bounded evidence references, no raw-payload storage, and repository fallback.
+The CLI rejects unregistered provider names and configuration that relaxes
+those invariants. Provider authentication, remote authorization, query
+correctness, and agent obedience remain outside the CLI's enforcement boundary.
 
 Quality checks use command arrays rather than shell strings. Direct shell
 interpreters, known destructive programs, unsafe package-manager operations,
@@ -136,6 +143,12 @@ restricted `serve` launcher, a scrubbed environment, and live path, doctor, and
 identity checks. Checkpoint mirroring falls back to the authoritative repository
 checkpoint. A local check does not prove a remote organization's authorization
 boundary, and MCP client configuration still relies on the coding harness.
+
+Configured telemetry is project data, not Ultimate Agent Stack product
+analytics. The package has no default phone-home path. The CLI validates the
+provider registry and safety invariants, while the coding agent remains
+responsible for identity checks, narrow queries, redaction, and validation
+against current repository evidence.
 
 ### Package release
 

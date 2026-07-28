@@ -1,0 +1,6 @@
+interface:
+  display_name: "Use Project Telemetry"
+  short_description: "Turn telemetry into bounded evidence"
+  default_prompt: "Use $use-project-telemetry to inspect configured project telemetry and produce a scoped evidence-backed observation."
+policy:
+  allow_implicit_invocation: false

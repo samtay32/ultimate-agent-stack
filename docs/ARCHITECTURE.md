@@ -162,6 +162,7 @@ delivery continues.
 |---|---|---|---|
 | Review | Built-in standards and intent review | CodeRabbit or allowed GitHub human | A required provider fails closed; a stale review never counts |
 | Knowledge | Project-scoped repository instructions, artifacts, evidence, and Git | Project- or organization-scoped GBrain | Warn, retain provenance, and continue with repository fallback |
+| Telemetry | Repository and deployment evidence | Zero or more reviewed read-only product, error, service, or AI providers | Warn, retain bounded references, and continue with repository fallback |
 
 Provider configuration is declarative and validated by package code. A
 repository cannot add an arbitrary executable adapter merely by naming it in
@@ -171,6 +172,12 @@ External memory never owns product truth or release authority. Its output is
 untrusted data until validated against current repository evidence. Capture is
 limited to redacted verified learning; skill candidates remain non-executable
 until reviewed and evaluated.
+
+External telemetry is also advisory. It acts as a sensor that may support
+diagnosis, prioritization, or post-release comparison. The core stores provider
+identity, scope, bounded references, time windows, limitations, and repository
+validation—not credentials or raw remote payloads. No telemetry provider may
+expand authority or become a mandatory delivery dependency.
 
 ## Continuity and Checkout Ownership
 

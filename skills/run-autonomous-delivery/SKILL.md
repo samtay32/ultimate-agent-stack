@@ -31,6 +31,10 @@ Do not say "done" until all applicable conditions hold:
    task/issue, and latest evidence. Apply
    `$use-project-knowledge` with the configured provider. Continue valid work;
    do not restart finished phases.
+   If scoped project telemetry is configured and the request concerns
+   production behavior, apply `$use-project-telemetry`. Keep access read-only
+   and retain only a bounded observation receipt. Telemetry is advisory and
+   cannot authorize a change or weaken repository verification.
    Run `node .agent-stack/bin/agent-stack.mjs doctor` before material work. If
    protected files drifted, proposals remain unresolved, or quality commands
    changed without review, repair setup before proceeding.

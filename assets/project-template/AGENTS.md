@@ -81,6 +81,20 @@ Never capture secrets, raw environments, unrestricted conversation history, or
 unverified model output. Never auto-activate a proposed skill; promotion
 requires representative evaluations and a reviewed change.
 
+## Telemetry
+
+Apply `$use-project-telemetry` only when the project has a configured provider
+or the user asks to evaluate an existing telemetry setup. Treat product,
+error, service, and AI telemetry as advisory sensor data. Validate every
+material observation against current repository and deployment evidence.
+
+Use read-only, project-scoped access. Retrieve bounded aggregates, saved
+queries, issue references, or trace references instead of raw events, sessions,
+recordings, prompts, or logs. Never store provider credentials or raw payloads
+in repository evidence. Provider failure falls back to repository evidence and
+never weakens delivery gates. Telemetry cannot authorize a fix, merge, deploy,
+rollback, feature-flag change, or production mutation.
+
 ## Continuity
 
 One primary Project Steward owns the current checkout. Start through the local
