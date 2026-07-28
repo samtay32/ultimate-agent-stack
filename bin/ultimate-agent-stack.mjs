@@ -1091,18 +1091,25 @@ function migrateConfig(config, target = undefined) {
   config.capabilities.knowledge.required ??= false;
   config.capabilities.knowledge.capture ??= "verified_proposals_only";
   config.capabilities.knowledge.repository_fallback ??= true;
-  config.capabilities.telemetry ??= {};
-  config.capabilities.telemetry.providers = Array.isArray(
-    config.capabilities.telemetry.providers,
-  )
-    ? config.capabilities.telemetry.providers
-    : [];
-  config.capabilities.telemetry.required ??= false;
-  config.capabilities.telemetry.default_access ??= "read_only";
-  config.capabilities.telemetry.evidence_capture ??=
-    "bounded_references_only";
-  config.capabilities.telemetry.raw_payload_storage ??= false;
-  config.capabilities.telemetry.repository_fallback ??= true;
+  if (config.capabilities.telemetry == null) {
+    config.capabilities.telemetry = {};
+  }
+  if (
+    typeof config.capabilities.telemetry === "object" &&
+    !Array.isArray(config.capabilities.telemetry)
+  ) {
+    config.capabilities.telemetry.providers = Array.isArray(
+      config.capabilities.telemetry.providers,
+    )
+      ? config.capabilities.telemetry.providers
+      : [];
+    config.capabilities.telemetry.required ??= false;
+    config.capabilities.telemetry.default_access ??= "read_only";
+    config.capabilities.telemetry.evidence_capture ??=
+      "bounded_references_only";
+    config.capabilities.telemetry.raw_payload_storage ??= false;
+    config.capabilities.telemetry.repository_fallback ??= true;
+  }
   config.learning ??= {};
   config.learning.auto_activate_skills ??= false;
   config.learning.verified_candidates_only ??= true;
@@ -3260,17 +3267,23 @@ function commandDoctor(target) {
       },
       "warning",
     );
-    const telemetryProviders = config.capabilities.telemetry.providers;
+    const telemetry =
+      config.capabilities.telemetry &&
+      typeof config.capabilities.telemetry === "object" &&
+      !Array.isArray(config.capabilities.telemetry)
+        ? config.capabilities.telemetry
+        : {};
+    const telemetryProviders = Array.isArray(telemetry.providers)
+      ? telemetry.providers
+      : [];
     report(
       "telemetry-providers",
       true,
       {
         selected: telemetryProviders.map((provider) => provider.provider),
-        access: config.capabilities.telemetry.default_access,
-        evidence_capture:
-          config.capabilities.telemetry.evidence_capture,
-        raw_payload_storage:
-          config.capabilities.telemetry.raw_payload_storage,
+        access: telemetry.default_access ?? "invalid",
+        evidence_capture: telemetry.evidence_capture ?? "invalid",
+        raw_payload_storage: telemetry.raw_payload_storage ?? "invalid",
         fallback: "repository evidence",
       },
       "warning",
@@ -4686,7 +4699,7 @@ function commandStart(target, idea, coordinatorToken = undefined) {
     return {
       ok: true,
       phase: "onboarding",
-      prompt: `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, .agent-stack/config.json, and any valid .agent-stack/CHECKPOINT.md. Inspect the repository and run the capabilities command. Complete Ultimate Agent Stack onboarding before material implementation.\n\nAsk only consequential setup decisions, one at a time. For each decision use plain language, state one recommended choice, provide at most one genuinely safe alternative, explain the practical consequence, and accept "use the recommendation" as an answer. Never invent an unsafe alternative. Prefer repository evidence and safe defaults over questions.\n\nAsk this memory decision in plain language: "Should this project remember progress only in its repository files, or also use a private local searchable memory for easier continuation across conversations?" Recommend repository memory for a short or simple project. Recommend project-scoped local GBrain for a long-running build likely to span conversations. Explain that GBrain is optional, repository checkpoints remain the source of truth, and work still resumes when GBrain is unavailable. If GBrain is approved, configure it, run memory-setup for the detected harness, perform the approved setup, and verify it with doctor.\n\nFor an existing or deployed project, ask whether it already collects product usage, production errors, service health, or AI traces that should be used as read-only evidence. Recommend no telemetry provider for an undeployed project or when none is already in use. Explain that telemetry is optional external data, repository evidence remains authoritative, and telemetry never grants production mutation authority.\n\nConfigure the approved project profile, review provider, knowledge provider, external-data policy, and authority mode with the non-interactive configure command. Then run doctor and continue with this request: ${request}`,
+      prompt: `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, .agent-stack/config.json, and any valid .agent-stack/CHECKPOINT.md. Inspect the repository and run the capabilities command. Complete Ultimate Agent Stack onboarding before material implementation.\n\nAsk only consequential setup decisions, one at a time. For each decision use plain language, state one recommended choice, provide at most one genuinely safe alternative, explain the practical consequence, and accept "use the recommendation" as an answer. Never invent an unsafe alternative. Prefer repository evidence and safe defaults over questions.\n\nAsk this memory decision in plain language: "Should this project remember progress only in its repository files, or also use a private local searchable memory for easier continuation across conversations?" Recommend repository memory for a short or simple project. Recommend project-scoped local GBrain for a long-running build likely to span conversations. Explain that GBrain is optional, repository checkpoints remain the source of truth, and work still resumes when GBrain is unavailable. If GBrain is approved, configure it, run memory-setup for the detected harness, perform the approved setup, and verify it with doctor.\n\nTelemetry remains repository-only until a reviewed provider adapter is installed. Do not ask the user to select or connect an unavailable provider.\n\nConfigure the approved project profile, review provider, knowledge provider, external-data policy, and authority mode with the non-interactive configure command. Then run doctor and continue with this request: ${request}`,
       pending: {
         onboarding_status: config.onboarding.status,
         configuration_approved: configurationApproved,

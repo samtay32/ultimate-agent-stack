@@ -172,18 +172,11 @@ global GBrain CLI still requires explicit installation approval. `doctor`
 verifies the active database path, GBrain health, and brain identity; `start`
 also checks retrieval of the mirrored repository checkpoint.
 
-For an existing or deployed project, the agent may also ask:
-
-> Does this project already collect product usage, production errors, service
-> health, or AI traces that the Project Steward should use as read-only
-> evidence?
-
-The default for a new or undeployed project is no telemetry provider. Connecting
-an existing provider requires external-data approval and verified project
-scope. The agent retrieves bounded aggregates or provider references, validates
-material observations against current repository and deployment evidence, and
-falls back to repository evidence when the provider is unavailable. Ultimate
-Agent Stack sends no usage telemetry of its own.
+The neutral telemetry contract does not make an unavailable provider
+selectable. Until a reviewed provider adapter is installed, onboarding remains
+repository-only and does not ask the user to connect telemetry. Ultimate Agent
+Stack sends no usage telemetry of its own. Any future provider starts with
+read-only project scope and bounded evidence references.
 
 ## What Happens With Subagents
 

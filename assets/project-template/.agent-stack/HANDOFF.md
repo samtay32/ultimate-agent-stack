@@ -65,8 +65,9 @@ This repository uses Ultimate Agent Stack.
    isolated workspaces; otherwise keep write work serial.
 8. Apply `$use-project-knowledge` with the configured provider and repository
    fallback.
-9. Apply `$use-project-telemetry` only when scoped telemetry is configured or
-   the request requires operational evidence. Keep access read-only, retain
+9. Apply `$use-project-telemetry` only when scoped telemetry is configured and
+   the request requires relevant production or operational evidence. Keep
+   access read-only, retain
    bounded references instead of raw payloads, and fall back to repository
    evidence when a provider is unavailable.
 10. For a new or ambiguous project, inspect first and then ask one consequential

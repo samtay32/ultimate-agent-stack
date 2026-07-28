@@ -208,6 +208,37 @@ test("false activation fails the negative scenario", () => {
   );
 });
 
+test("telemetry diagnosis requires explicit activation and rejects project writes", () => {
+  const record = passingRecord();
+  const telemetry = record.cases.find(
+    (item) => item.scenario_id === "direct-telemetry-diagnosis",
+  );
+  telemetry.observed = {
+    activated_skills: ["use-project-telemetry"],
+    asked_clarifying_question: false,
+    performed_actions: [],
+    outcome_tags: ["telemetry_observation_receipt"],
+  };
+  assert.equal(validateRunRecord(record, catalog).ok, true);
+
+  telemetry.observed.performed_actions = ["write_project_files"];
+  const writeResult = validateRunRecord(record, catalog);
+  assert.equal(writeResult.ok, false);
+  assert.match(
+    JSON.stringify(writeResult),
+    /forbidden action was performed: write_project_files/,
+  );
+
+  telemetry.observed.performed_actions = [];
+  telemetry.observed.activated_skills = [];
+  const activationResult = validateRunRecord(record, catalog);
+  assert.equal(activationResult.ok, false);
+  assert.match(
+    JSON.stringify(activationResult),
+    /required skill did not activate: use-project-telemetry/,
+  );
+});
+
 test("an unrecognized activated skill cannot be hidden in a run record", () => {
   const record = passingRecord();
   record.cases[0].observed.activated_skills.push("invented-skill");

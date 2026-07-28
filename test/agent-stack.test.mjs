@@ -514,7 +514,10 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
     assert.equal(onboardingStart.phase, "onboarding");
     assert.match(onboardingStart.prompt, /at most one genuinely safe alternative/);
     assert.match(onboardingStart.prompt, /private local searchable memory/);
-    assert.match(onboardingStart.prompt, /read-only evidence/);
+    assert.match(
+      onboardingStart.prompt,
+      /Do not ask the user to select or connect an unavailable provider/,
+    );
 
     const capabilities = commandCapabilities(fixture.directory);
     assert.equal(capabilities.available.review.builtin.available, true);
@@ -1350,6 +1353,37 @@ test("telemetry defaults to no provider and rejects unreviewed or weakened adapt
   assert.match(errors.join("\n"), /default_access must be read_only/);
   assert.match(errors.join("\n"), /raw_payload_storage must remain false/);
   assert.match(errors.join("\n"), /repository_fallback must remain true/);
+});
+
+test("doctor reports malformed telemetry configuration without crashing", () => {
+  const fixture = temporaryProject();
+  try {
+    const config = safeConfig();
+    config.capabilities.telemetry = "malformed";
+    writeJson(join(fixture.directory, CONFIG_PATH), config);
+
+    const doctor = commandDoctor(fixture.directory);
+    assert.equal(doctor.ok, false);
+    assert.ok(
+      doctor.reports.some(
+        (report) =>
+          report.name === "config" &&
+          report.ok === false &&
+          JSON.stringify(report.detail).includes(
+            "capabilities.telemetry must be an object",
+          ),
+      ),
+    );
+    assert.ok(
+      doctor.reports.some(
+        (report) =>
+          report.name === "telemetry-providers" &&
+          report.detail.access === "invalid",
+      ),
+    );
+  } finally {
+    fixture.cleanup();
+  }
 });
 
 test("provider or authority changes invalidate configuration approval", () => {
