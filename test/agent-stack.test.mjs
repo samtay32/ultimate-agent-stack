@@ -51,6 +51,7 @@ import {
   execute,
   installOrUpgrade,
   loadInstallation,
+  normalizeWindowsExtensions,
   pathInside,
   resolveTarget,
   validateConfig,
@@ -178,6 +179,17 @@ function fillLockArtifacts(directory) {
     "utf8",
   );
 }
+
+test("Windows executable extensions ignore empty PATHEXT entries", () => {
+  assert.deepEqual(
+    normalizeWindowsExtensions(".EXE;; .CMD ;.exe;"),
+    [".exe", ".cmd"],
+  );
+  assert.deepEqual(
+    normalizeWindowsExtensions(";;;"),
+    [".exe", ".cmd", ".bat", ".com"],
+  );
+});
 
 function configureFixture(directory, knowledge = "repository") {
   initializeGit(directory);

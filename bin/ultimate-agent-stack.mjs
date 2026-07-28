@@ -644,13 +644,11 @@ function resolveExecutable(target, executable) {
       return null;
     }
   }
-  const windowsExtensions = (
-    process.env.PATHEXT ?? ".EXE;.CMD;.BAT;.COM"
-  ).split(";");
+  const windowsExtensions = normalizeWindowsExtensions(process.env.PATHEXT);
   const hasWindowsExtension =
     platform() === "win32" &&
     windowsExtensions.some((extension) =>
-      executable.toLowerCase().endsWith(extension.toLowerCase()),
+      executable.toLowerCase().endsWith(extension),
     );
   const extensions = platform() === "win32"
     ? (hasWindowsExtension ? [""] : windowsExtensions)
@@ -670,6 +668,22 @@ function resolveExecutable(target, executable) {
     }
   }
   return null;
+}
+
+function normalizeWindowsExtensions(value) {
+  const fallback = [".exe", ".cmd", ".bat", ".com"];
+  if (typeof value !== "string") {
+    return fallback;
+  }
+  const extensions = [
+    ...new Set(
+      value
+        .split(";")
+        .map((extension) => extension.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ];
+  return extensions.length > 0 ? extensions : fallback;
 }
 
 function executableExists(target, executable) {
@@ -4975,6 +4989,7 @@ export {
   installOrUpgrade,
   loadInstallation,
   main,
+  normalizeWindowsExtensions,
   pathInside,
   resolveConfigureOptions,
   resolveTarget,

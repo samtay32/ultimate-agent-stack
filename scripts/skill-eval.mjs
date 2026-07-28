@@ -31,6 +31,14 @@ function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
 
+function readBehaviorSurfacePath(projectPath) {
+  const absolute = join(PACKAGE_ROOT, projectPath);
+  if (!existsSync(absolute) || !statSync(absolute).isFile()) {
+    throw new Error(`behavior surface path not found: ${projectPath}`);
+  }
+  return readFileSync(absolute);
+}
+
 function listFiles(root) {
   const files = [];
   for (const entry of readdirSync(root, { withFileTypes: true })) {
@@ -106,10 +114,10 @@ function behaviorSurfaceEntries() {
     "assets/project-template/GEMINI.md",
     "evals/scenarios.json",
   ]) {
-    const absolute = join(PACKAGE_ROOT, projectPath);
-    entries.push([projectPath, readFileSync(absolute)]);
+    entries.push([projectPath, readBehaviorSurfacePath(projectPath)]);
   }
-  const plugin = readJson(join(PACKAGE_ROOT, ".codex-plugin", "plugin.json"));
+  const pluginPath = ".codex-plugin/plugin.json";
+  const plugin = JSON.parse(readBehaviorSurfacePath(pluginPath).toString("utf8"));
   delete plugin.version;
   entries.push([
     ".codex-plugin/plugin.behavior.json",
@@ -156,6 +164,10 @@ function stringArray(value) {
   );
 }
 
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
 function validateScenarioCatalog(catalog = readJson(SCENARIOS_FILE)) {
   const errors = [];
   const skills = skillCatalog();
@@ -165,7 +177,7 @@ function validateScenarioCatalog(catalog = readJson(SCENARIOS_FILE)) {
   if (!stringArray(catalog?.required_categories)) {
     errors.push("required_categories must be a unique non-empty string array");
   }
-  const declaredCategories = new Set(catalog?.required_categories ?? []);
+  const declaredCategories = new Set(asArray(catalog?.required_categories));
   for (const category of REQUIRED_CATEGORIES) {
     if (!declaredCategories.has(category)) {
       errors.push(`required_categories is missing ${category}`);
@@ -178,7 +190,7 @@ function validateScenarioCatalog(catalog = readJson(SCENARIOS_FILE)) {
   const ids = new Set();
   const coveredCategories = new Set();
   let falseActivationCases = 0;
-  for (const [index, scenario] of (catalog?.scenarios ?? []).entries()) {
+  for (const [index, scenario] of asArray(catalog?.scenarios).entries()) {
     const location = `scenarios[${index}]`;
     if (!isNonEmptyString(scenario?.id)) {
       errors.push(`${location}.id must be a non-empty string`);
@@ -217,16 +229,15 @@ function validateScenarioCatalog(catalog = readJson(SCENARIOS_FILE)) {
         errors.push(`${location}.expected.${field} must be a unique string array`);
       }
     }
-    for (const name of [
-      ...(expected.must_activate ?? []),
-      ...(expected.must_not_activate ?? []),
-    ]) {
+    const mustActivateNames = asArray(expected.must_activate);
+    const mustNotActivateNames = asArray(expected.must_not_activate);
+    for (const name of [...mustActivateNames, ...mustNotActivateNames]) {
       if (!skills.has(name)) {
         errors.push(`${location} references unknown skill ${name}`);
       }
     }
-    const mustActivate = new Set(expected.must_activate ?? []);
-    for (const name of expected.must_not_activate ?? []) {
+    const mustActivate = new Set(mustActivateNames);
+    for (const name of mustNotActivateNames) {
       if (mustActivate.has(name)) {
         errors.push(`${location} both requires and forbids ${name}`);
       }
@@ -237,8 +248,8 @@ function validateScenarioCatalog(catalog = readJson(SCENARIOS_FILE)) {
       );
     }
     if (
-      (expected.must_activate ?? []).length === 0 &&
-      new Set(expected.must_not_activate ?? []).size === skills.size
+      mustActivateNames.length === 0 &&
+      new Set(mustNotActivateNames).size === skills.size
     ) {
       falseActivationCases += 1;
     }
@@ -303,8 +314,9 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
     errors.push("run record cases must be an array");
   }
 
+  const cases = asArray(record?.cases);
   const caseMap = new Map();
-  for (const [index, item] of (record?.cases ?? []).entries()) {
+  for (const [index, item] of cases.entries()) {
     if (!isNonEmptyString(item?.scenario_id)) {
       errors.push(`cases[${index}].scenario_id must be a non-empty string`);
       continue;
@@ -316,7 +328,8 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
     caseMap.set(item.scenario_id, item);
   }
 
-  for (const scenario of catalog.scenarios ?? []) {
+  const scenarios = asArray(catalog?.scenarios);
+  for (const scenario of scenarios) {
     const item = caseMap.get(scenario.id);
     const findings = [];
     if (!item) {
@@ -338,18 +351,18 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
         if (typeof observed.asked_clarifying_question !== "boolean") {
           findings.push("asked_clarifying_question must be boolean");
         }
-        const activated = new Set(observed.activated_skills ?? []);
+        const activated = new Set(asArray(observed.activated_skills));
         for (const name of activated) {
           if (!skills.has(name)) {
             findings.push(`unknown skill was reported as active: ${name}`);
           }
         }
-        for (const name of scenario.expected.must_activate) {
+        for (const name of asArray(scenario?.expected?.must_activate)) {
           if (!activated.has(name)) {
             findings.push(`required skill did not activate: ${name}`);
           }
         }
-        for (const name of scenario.expected.must_not_activate) {
+        for (const name of asArray(scenario?.expected?.must_not_activate)) {
           if (activated.has(name)) {
             findings.push(`forbidden skill activated: ${name}`);
           }
@@ -366,14 +379,14 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
         ) {
           findings.push("a clarifying question was forbidden");
         }
-        const actions = new Set(observed.performed_actions ?? []);
-        for (const action of scenario.expected.forbidden_actions) {
+        const actions = new Set(asArray(observed.performed_actions));
+        for (const action of asArray(scenario?.expected?.forbidden_actions)) {
           if (actions.has(action)) {
             findings.push(`forbidden action was performed: ${action}`);
           }
         }
-        const outcomes = new Set(observed.outcome_tags ?? []);
-        for (const outcome of scenario.expected.required_outcomes) {
+        const outcomes = new Set(asArray(observed.outcome_tags));
+        for (const outcome of asArray(scenario?.expected?.required_outcomes)) {
           if (!outcomes.has(outcome)) {
             findings.push(`required outcome was not observed: ${outcome}`);
           }
@@ -395,7 +408,7 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
     });
   }
   for (const scenarioId of caseMap.keys()) {
-    if (!(catalog.scenarios ?? []).some((item) => item.id === scenarioId)) {
+    if (!scenarios.some((item) => item.id === scenarioId)) {
       errors.push(`run record contains unknown scenario ${scenarioId}`);
     }
   }
@@ -424,7 +437,7 @@ function buildScaffold(catalog = readJson(SCENARIOS_FILE)) {
       model: "replace-with-model",
     },
     recorded_at: new Date().toISOString(),
-    cases: catalog.scenarios.map((scenario) => ({
+    cases: asArray(catalog?.scenarios).map((scenario) => ({
       scenario_id: scenario.id,
       observed: {
         activated_skills: [],
@@ -501,6 +514,7 @@ export {
   buildScaffold,
   hashBehaviorEntries,
   parseSkillMetadata,
+  readBehaviorSurfacePath,
   validateRunRecord,
   validateScenarioCatalog,
 };

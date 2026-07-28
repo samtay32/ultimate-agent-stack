@@ -9,6 +9,7 @@ import {
   buildScaffold,
   hashBehaviorEntries,
   parseSkillMetadata,
+  readBehaviorSurfacePath,
   validateRunRecord,
   validateScenarioCatalog,
 } from "../scripts/skill-eval.mjs";
@@ -65,6 +66,90 @@ test("behavioral scenario contracts cover activation and false activation", () =
     result.skill_count,
   );
   assert.match(result.surface_hash, /^sha256:[a-f0-9]{64}$/);
+});
+
+test("scenario catalog rejects malformed activation contracts without throwing", () => {
+  const broken = structuredClone(catalog);
+  broken.scenarios[0].expected.must_activate = {};
+  const result = validateScenarioCatalog(broken);
+  assert.equal(result.ok, false);
+  assert.match(
+    result.errors.join("\n"),
+    /expected\.must_activate must be a unique string array/,
+  );
+});
+
+test("scenario catalog validation exercises its negative paths", () => {
+  const checks = [
+    {
+      message: /id duplicates/,
+      mutate(broken) {
+        broken.scenarios.push(structuredClone(broken.scenarios[0]));
+      },
+    },
+    {
+      message: /category must be declared/,
+      mutate(broken) {
+        broken.scenarios[0].category = "undeclared-category";
+      },
+    },
+    {
+      message: /no scenario covers required category direct/,
+      mutate(broken) {
+        broken.scenarios = broken.scenarios.filter(
+          (scenario) => scenario.category !== "direct",
+        );
+      },
+    },
+    {
+      message: /references unknown skill invented-skill/,
+      mutate(broken) {
+        broken.scenarios[0].expected.must_activate.push("invented-skill");
+      },
+    },
+    {
+      message: /both requires and forbids/,
+      mutate(broken) {
+        const required = broken.scenarios[0].expected.must_activate[0];
+        broken.scenarios[0].expected.must_not_activate.push(required);
+      },
+    },
+    {
+      message: /request must not disclose the expected skill command/,
+      mutate(broken) {
+        broken.scenarios[0].request = "$setup-autonomous-project";
+      },
+    },
+    {
+      message: /at least one scenario must test false activation/,
+      mutate(broken) {
+        const scenario = broken.scenarios.find(
+          (item) => item.id === "negative-explanation-only",
+        );
+        const activated = scenario.expected.must_not_activate[0];
+        scenario.expected.must_activate = [activated];
+        scenario.expected.must_not_activate =
+          scenario.expected.must_not_activate.filter(
+            (name) => name !== activated,
+          );
+      },
+    },
+  ];
+
+  for (const { message, mutate } of checks) {
+    const broken = structuredClone(catalog);
+    mutate(broken);
+    const result = validateScenarioCatalog(broken);
+    assert.equal(result.ok, false);
+    assert.match(result.errors.join("\n"), message);
+  }
+});
+
+test("behavior surface paths fail with a clear missing-path error", () => {
+  assert.throws(
+    () => readBehaviorSurfacePath("missing/behavior-surface.md"),
+    /behavior surface path not found: missing\/behavior-surface\.md/,
+  );
 });
 
 test("skill metadata and surface hashes are stable across line endings", () => {
@@ -172,6 +257,33 @@ test("stale or incomplete run evidence fails closed", () => {
   assert.equal(result.ok, false);
   assert.match(JSON.stringify(result), /surface_hash must equal/);
   assert.match(JSON.stringify(result), /missing run result/);
+});
+
+test("malformed run arrays fail closed with structured findings", () => {
+  const malformedCases = passingRecord();
+  malformedCases.cases = {};
+  let result = validateRunRecord(malformedCases, catalog);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join("\n"), /run record cases must be an array/);
+
+  const malformedObserved = passingRecord();
+  malformedObserved.cases[0].observed.activated_skills = {};
+  malformedObserved.cases[0].observed.performed_actions = {};
+  malformedObserved.cases[0].observed.outcome_tags = {};
+  result = validateRunRecord(malformedObserved, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /activated_skills must be a unique string array/,
+  );
+  assert.match(
+    JSON.stringify(result),
+    /performed_actions must be a unique string array/,
+  );
+  assert.match(
+    JSON.stringify(result),
+    /outcome_tags must be a unique string array/,
+  );
 });
 
 test("the generated scaffold is not accepted as live evidence", () => {
