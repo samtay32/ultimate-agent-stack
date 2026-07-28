@@ -87,12 +87,14 @@ A work item may become `done` only when:
 4. any unresolved decision or blocker is represented honestly;
 5. provider state does not contradict repository evidence.
 
-## Provider Receipt
+## Provider Write Receipt
 
-Every external read or write produces a bounded receipt:
+Every enabled external write attempt produces a bounded repository receipt:
 
 ```json
 {
+  "schema_version": 1,
+  "receipt_id": "sha256 digest",
   "provider": "reviewed-provider",
   "operation": "bounded-operation",
   "work_item_id": "stable-work-id",
@@ -100,7 +102,8 @@ Every external read or write produces a bounded receipt:
   "before": "redacted state or null",
   "after": "redacted state or null",
   "authority_source": "repository policy or explicit approval reference",
-  "idempotency_key": "stable retry key",
+  "idempotency_key": "sha256:stable retry digest",
+  "revision": "full Git commit or null",
   "performed_at": "ISO-8601 UTC timestamp",
   "result": "succeeded | not-needed | failed | decision-needed"
 }

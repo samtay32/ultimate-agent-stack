@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/samtay32/ultimate-agent-stack/schemas/provider-receipt.schema.json",
+  "title": "Ultimate Agent Stack provider write receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "receipt_id",
+    "provider",
+    "operation",
+    "work_item_id",
+    "provider_reference",
+    "before",
+    "after",
+    "authority_source",
+    "idempotency_key",
+    "revision",
+    "performed_at",
+    "result"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "receipt_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "provider": {
+      "$ref": "#/$defs/identifier"
+    },
+    "operation": {
+      "$ref": "#/$defs/identifier"
+    },
+    "work_item_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "provider_reference": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      ]
+    },
+    "before": {
+      "$ref": "#/$defs/state"
+    },
+    "after": {
+      "$ref": "#/$defs/state"
+    },
+    "authority_source": {
+      "type": "string",
+      "minLength": 12,
+      "maxLength": 1000
+    },
+    "idempotency_key": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "revision": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        }
+      ]
+    },
+    "performed_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "result": {
+      "enum": [
+        "succeeded",
+        "not-needed",
+        "failed",
+        "decision-needed"
+      ]
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "maxLength": 96,
+      "pattern": "^[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*$"
+    },
+    "state": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      ]
+    }
+  }
+}

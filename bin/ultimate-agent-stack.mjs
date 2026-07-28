@@ -44,9 +44,11 @@ const PACKAGE_JSON = existsSync(join(PACKAGE_ROOT, "package.json"))
     };
 const PACKAGE_NAME = PACKAGE_JSON.name;
 const PACKAGE_VERSION = PACKAGE_JSON.version;
-const CONFIG_SCHEMA_VERSION = 5;
+const CONFIG_SCHEMA_VERSION = 6;
 const WORK_LEDGER_PATH = ".agent-stack/work-items.json";
 const EVIDENCE_GRAPH_PATH = ".agent-stack/evidence-graph.json";
+const PROVIDER_RECEIPTS_PATH = ".agent-stack/provider-receipts";
+const CAMPAIGN_PATH = ".agent-stack/campaign.json";
 const COMPLETION_EVIDENCE_RELATIONS = new Set([
   "implements",
   "verifies",
@@ -71,8 +73,13 @@ const GBRAIN_HOME_PATH = ".agent-stack/gbrain-home";
 const GBRAIN_LAUNCHER_PATH = ".agent-stack/bin/gbrain-project.mjs";
 const LINEAR_READONLY_PATH = ".agent-stack/bin/linear-readonly.mjs";
 const LINEAR_READONLY_SOURCE_HASH =
-  "96906e7d5c9c3cf11d4e135f9d0c5688b890635a0a26d445c62f89d087899937";
+  "368de8295aa8126ad98429d761591447f37a07a7a2c2d38a2637d06a80d0a571";
 const LINEAR_CREDENTIAL_ENV = "LINEAR_API_KEY";
+const LINEAR_WRITE_PATH = ".agent-stack/bin/linear-write.mjs";
+const LINEAR_WRITE_SOURCE_HASH =
+  "16fcb660fb3b885fe76f96ab155b31d405518de16e0f3c9840693be69568ad9a";
+const LINEAR_CREATE_CREDENTIAL_ENV = "LINEAR_CREATE_API_KEY";
+const LINEAR_COMMENT_CREDENTIAL_ENV = "LINEAR_COMMENT_API_KEY";
 const GBRAIN_CHECKPOINT_SLUG = "projects/ultimate-agent-stack/checkpoint";
 const RUNS_PATH = ".agent-stack/runs";
 const PROJECT_CLI_PATH = ".agent-stack/bin/agent-stack.mjs";
@@ -89,12 +96,26 @@ const DEFAULT_ARTIFACTS = [
   ".agent-stack/artifacts/SECURITY.md",
 ];
 const PLACEHOLDER = /\[\[[A-Z0-9_ -]+\]\]/g;
+const PROVIDER_UUID =
+  /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const SECRET_ASSIGNMENT =
   /\b(api[_-]?key|access[_-]?token|auth[_-]?token|password|secret)(\s*[=:]\s*)([^\s,;]+)/gi;
 const SECRET_LIKE_TEXT =
   /(-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(?:gh[pousr]|npm|sk)-?[A-Za-z0-9_]{20,}\b|\beyJ[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,})/i;
 const COORDINATOR_TTL_SECONDS = 2 * 60 * 60;
 const COORDINATOR_MUTEX_STALE_MS = 30_000;
+const CAMPAIGN_STATUSES = new Set([
+  "active",
+  "complete",
+  "decision-needed",
+  "stopped",
+]);
+const WORK_PRIORITY_ORDER = new Map([
+  ["urgent", 0],
+  ["high", 1],
+  ["normal", 2],
+  ["low", 3],
+]);
 const FORBIDDEN_EXECUTABLES = new Set([
   "bash",
   "cmd",
@@ -367,7 +388,22 @@ const TELEMETRY_EVIDENCE_MODES = new Set([
 ]);
 const WORK_PROVIDERS = new Set(["repository", "linear"]);
 const WORK_SYNC_MODES = new Set(["repository_only", "read_only_mirror"]);
-const WORK_WRITE_POLICIES = new Set(["repository_only", "read_only"]);
+const WORK_WRITE_POLICIES = new Set([
+  "repository_only",
+  "read_only",
+  "receipted_create",
+  "receipted_create_and_comment",
+]);
+const LINEAR_WRITE_OPERATIONS = new Set([
+  "issue_create",
+  "evidence_comment",
+]);
+const PROVIDER_RECEIPT_RESULTS = new Set([
+  "succeeded",
+  "not-needed",
+  "failed",
+  "decision-needed",
+]);
 const WORK_ITEM_STATUSES = new Set([
   "backlog",
   "ready",
@@ -433,6 +469,7 @@ const CONFIGURATION_PRESETS = Object.freeze({
     knowledgeScope: "project",
     work: "repository",
     linearTeams: Object.freeze([]),
+    linearWrites: Object.freeze([]),
     externalData: "local_only",
     execution: "agent_owned",
     merge: "human_approval_required",
@@ -1206,6 +1243,13 @@ function migrateConfig(config, target = undefined) {
     config.capabilities.work.write_policy ??= "repository_only";
     config.capabilities.work.repository_fallback ??= true;
     config.capabilities.work.connection ??= null;
+    if (
+      config.capabilities.work.connection &&
+      typeof config.capabilities.work.connection === "object" &&
+      !Array.isArray(config.capabilities.work.connection)
+    ) {
+      config.capabilities.work.connection.writes ??= null;
+    }
   }
   config.learning ??= {};
   config.learning.auto_activate_skills ??= false;
@@ -1934,7 +1978,7 @@ function validateConfig(config, target = undefined) {
     }
     if (!WORK_WRITE_POLICIES.has(work.write_policy)) {
       errors.push(
-        "capabilities.work.write_policy must be repository_only or read_only",
+        "capabilities.work.write_policy must be repository_only, read_only, receipted_create, or receipted_create_and_comment",
       );
     }
     if (work.repository_fallback !== true) {
@@ -1956,10 +2000,14 @@ function validateConfig(config, target = undefined) {
     if (work.provider === "linear") {
       if (
         work.sync_mode !== "read_only_mirror" ||
-        work.write_policy !== "read_only"
+        ![
+          "read_only",
+          "receipted_create",
+          "receipted_create_and_comment",
+        ].includes(work.write_policy)
       ) {
         errors.push(
-          "linear work must begin with read_only_mirror sync and read_only provider access",
+          "linear work requires read_only_mirror sync and an approved bounded write policy",
         );
       }
       if (
@@ -1972,7 +2020,7 @@ function validateConfig(config, target = undefined) {
         rejectUnknownKeys(
           errors,
           work.connection,
-          new Set(["kind", "credential_env", "team_keys"]),
+          new Set(["kind", "credential_env", "team_keys", "writes"]),
           "capabilities.work.connection",
         );
         if (work.connection.kind !== "linear_api_key") {
@@ -2000,6 +2048,92 @@ function validateConfig(config, target = undefined) {
           errors.push(
             "capabilities.work.connection.team_keys must contain 1-20 unique uppercase Linear team keys",
           );
+        }
+        const writes = work.connection.writes;
+        if (work.write_policy === "read_only") {
+          if (writes !== null) {
+            errors.push(
+              "read_only Linear work requires capabilities.work.connection.writes null",
+            );
+          }
+        } else if (
+          !writes ||
+          typeof writes !== "object" ||
+          Array.isArray(writes)
+        ) {
+          errors.push(
+            "receipted Linear writes require a bounded writes configuration",
+          );
+        } else {
+          rejectUnknownKeys(
+            errors,
+            writes,
+            new Set([
+              "operations",
+              "create_credential_env",
+              "comment_credential_env",
+              "idempotency_namespace",
+            ]),
+            "capabilities.work.connection.writes",
+          );
+          if (
+            !Array.isArray(writes.operations) ||
+            writes.operations.length === 0 ||
+            writes.operations.length > LINEAR_WRITE_OPERATIONS.size ||
+            writes.operations.some(
+              (operation) => !LINEAR_WRITE_OPERATIONS.has(operation),
+            ) ||
+            new Set(writes.operations).size !== writes.operations.length
+          ) {
+            errors.push(
+              "capabilities.work.connection.writes.operations contains unsupported or duplicate operations",
+            );
+          }
+          const expectedOperations =
+            work.write_policy === "receipted_create"
+              ? ["issue_create"]
+              : work.write_policy === "receipted_create_and_comment"
+                ? ["issue_create", "evidence_comment"]
+                : [];
+          if (
+            writes.operations?.length !== expectedOperations.length ||
+            expectedOperations.some(
+              (operation) => !writes.operations?.includes(operation),
+            )
+          ) {
+            errors.push(
+              "Linear write policy and approved operations must match exactly",
+            );
+          }
+          if (
+            writes.create_credential_env !== LINEAR_CREATE_CREDENTIAL_ENV
+          ) {
+            errors.push(
+              `capabilities.work.connection.writes.create_credential_env must be ${LINEAR_CREATE_CREDENTIAL_ENV}`,
+            );
+          }
+          if (
+            expectedOperations.includes("evidence_comment")
+              ? writes.comment_credential_env !==
+                LINEAR_COMMENT_CREDENTIAL_ENV
+              : writes.comment_credential_env !== null
+          ) {
+            errors.push(
+              `capabilities.work.connection.writes.comment_credential_env must be ${
+                expectedOperations.includes("evidence_comment")
+                  ? LINEAR_COMMENT_CREDENTIAL_ENV
+                  : "null"
+              }`,
+            );
+          }
+          if (
+            typeof writes.idempotency_namespace !== "string" ||
+            !/^[a-f0-9]{64}$/.test(writes.idempotency_namespace)
+          ) {
+            errors.push(
+              "capabilities.work.connection.writes.idempotency_namespace must be a non-secret 64-character hex namespace",
+            );
+          }
         }
       }
       if (
@@ -2678,6 +2812,590 @@ function validateWorkEvidenceLinkage(ledger, graph) {
   return errors;
 }
 
+function validateProviderReceipt(receipt) {
+  const errors = [];
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
+    return ["provider receipt must be an object"];
+  }
+  rejectUnknownKeys(
+    errors,
+    receipt,
+    new Set([
+      "schema_version",
+      "receipt_id",
+      "provider",
+      "operation",
+      "work_item_id",
+      "provider_reference",
+      "before",
+      "after",
+      "authority_source",
+      "idempotency_key",
+      "revision",
+      "performed_at",
+      "result",
+    ]),
+    "provider receipt",
+  );
+  if (receipt.schema_version !== 1) {
+    errors.push("provider receipt schema_version must equal 1");
+  }
+  if (
+    typeof receipt.receipt_id !== "string" ||
+    !/^[a-f0-9]{64}$/.test(receipt.receipt_id)
+  ) {
+    errors.push("provider receipt receipt_id must be a sha256 hex digest");
+  }
+  if (!contractIdentifier(receipt.provider)) {
+    errors.push("provider receipt provider must be a bounded identifier");
+  }
+  if (!contractIdentifier(receipt.operation)) {
+    errors.push("provider receipt operation must be a bounded identifier");
+  }
+  if (!contractIdentifier(receipt.work_item_id)) {
+    errors.push("provider receipt work_item_id must be a bounded identifier");
+  }
+  for (const key of ["provider_reference", "before", "after"]) {
+    if (receipt[key] !== null) {
+      contractString(
+        errors,
+        receipt[key],
+        `provider receipt ${key}`,
+        key === "provider_reference" ? 512 : 200,
+      );
+    }
+  }
+  contractString(
+    errors,
+    receipt.authority_source,
+    "provider receipt authority_source",
+    1_000,
+  );
+  if (
+    typeof receipt.authority_source === "string" &&
+    receipt.authority_source.trim().length < 12
+  ) {
+    errors.push(
+      "provider receipt authority_source must contain at least 12 characters",
+    );
+  }
+  if (
+    typeof receipt.idempotency_key !== "string" ||
+    !/^sha256:[a-f0-9]{64}$/.test(receipt.idempotency_key)
+  ) {
+    errors.push(
+      "provider receipt idempotency_key must be a prefixed sha256 digest",
+    );
+  }
+  if (
+    receipt.revision !== null &&
+    (typeof receipt.revision !== "string" ||
+      !/^[a-f0-9]{40}$/.test(receipt.revision))
+  ) {
+    errors.push("provider receipt revision must be a full Git commit or null");
+  }
+  if (
+    typeof receipt.performed_at !== "string" ||
+    !Number.isFinite(Date.parse(receipt.performed_at)) ||
+    !receipt.performed_at.endsWith("Z")
+  ) {
+    errors.push("provider receipt performed_at must be a UTC timestamp");
+  }
+  if (!PROVIDER_RECEIPT_RESULTS.has(receipt.result)) {
+    errors.push("provider receipt result is not canonical");
+  }
+  return errors;
+}
+
+function validateCampaignState(campaign) {
+  const errors = [];
+  if (!campaign || typeof campaign !== "object" || Array.isArray(campaign)) {
+    return ["campaign state must be an object"];
+  }
+  rejectUnknownKeys(
+    errors,
+    campaign,
+    new Set([
+      "schema_version",
+      "campaign_id",
+      "objective",
+      "max_iterations",
+      "iterations_completed",
+      "active_work_item",
+      "status",
+      "reason",
+      "created_at",
+      "updated_at",
+    ]),
+    "campaign state",
+  );
+  if (campaign.schema_version !== 1) {
+    errors.push("campaign state schema_version must equal 1");
+  }
+  if (
+    typeof campaign.campaign_id !== "string" ||
+    !/^[a-f0-9]{64}$/.test(campaign.campaign_id)
+  ) {
+    errors.push("campaign state campaign_id must be a sha256 hex digest");
+  }
+  contractString(errors, campaign.objective, "campaign state objective", 2_000);
+  if (
+    !Number.isInteger(campaign.max_iterations) ||
+    campaign.max_iterations < 1 ||
+    campaign.max_iterations > 25
+  ) {
+    errors.push("campaign state max_iterations must be between 1 and 25");
+  }
+  if (
+    !Number.isInteger(campaign.iterations_completed) ||
+    campaign.iterations_completed < 0 ||
+    campaign.iterations_completed > 25 ||
+    (Number.isInteger(campaign.max_iterations) &&
+      campaign.iterations_completed > campaign.max_iterations)
+  ) {
+    errors.push(
+      "campaign state iterations_completed must be within the campaign bound",
+    );
+  }
+  if (
+    campaign.active_work_item !== null &&
+    !contractIdentifier(campaign.active_work_item)
+  ) {
+    errors.push(
+      "campaign state active_work_item must be a bounded identifier or null",
+    );
+  }
+  if (!CAMPAIGN_STATUSES.has(campaign.status)) {
+    errors.push("campaign state status is not canonical");
+  }
+  if (campaign.reason !== null) {
+    contractString(errors, campaign.reason, "campaign state reason", 1_000);
+  }
+  if (campaign.status === "active" && campaign.reason !== null) {
+    errors.push("active campaign state reason must be null");
+  }
+  if (campaign.status !== "active" && campaign.reason === null) {
+    errors.push("inactive campaign state requires a reason");
+  }
+  for (const key of ["created_at", "updated_at"]) {
+    if (
+      typeof campaign[key] !== "string" ||
+      !Number.isFinite(Date.parse(campaign[key])) ||
+      !campaign[key].endsWith("Z")
+    ) {
+      errors.push(`campaign state ${key} must be a UTC timestamp`);
+    }
+  }
+  if (
+    campaign.status !== "active" &&
+    campaign.active_work_item !== null
+  ) {
+    errors.push(
+      "campaign state active_work_item must be null unless status is active",
+    );
+  }
+  return errors;
+}
+
+function writeProviderReceipt(target, receipt) {
+  const errors = validateProviderReceipt(receipt);
+  if (errors.length > 0) {
+    throw new StackError("Refusing to write an invalid provider receipt", 2, errors);
+  }
+  const path = `${PROVIDER_RECEIPTS_PATH}/${receipt.receipt_id}.json`;
+  atomicProjectJson(target, path, receipt, "provider receipt");
+  return path;
+}
+
+function commandReceiptsValidate(target) {
+  const directory = projectFile(
+    target,
+    PROVIDER_RECEIPTS_PATH,
+    "provider receipts directory",
+  );
+  if (!existsSync(directory)) {
+    return {
+      ok: false,
+      path: PROVIDER_RECEIPTS_PATH,
+      receipt_count: 0,
+      errors: [`missing ${PROVIDER_RECEIPTS_PATH}`],
+    };
+  }
+  if (lstatSync(directory).isSymbolicLink() || !statSync(directory).isDirectory()) {
+    return {
+      ok: false,
+      path: PROVIDER_RECEIPTS_PATH,
+      receipt_count: 0,
+      errors: [`${PROVIDER_RECEIPTS_PATH} must be a real project directory`],
+    };
+  }
+  const entries = readdirSync(directory).sort();
+  const receiptEntries = entries.filter((name) => name !== ".gitkeep");
+  const errors = [];
+  if (receiptEntries.length > 1_000) {
+    errors.push("provider receipt directory exceeds the 1,000 receipt limit");
+  }
+  let receiptCount = 0;
+  for (const name of receiptEntries.slice(0, 1_001)) {
+    if (!/^[a-f0-9]{64}\.json$/.test(name)) {
+      errors.push(`provider receipt has an invalid file name: ${name}`);
+      continue;
+    }
+    receiptCount += 1;
+    const relativePath = `${PROVIDER_RECEIPTS_PATH}/${name}`;
+    try {
+      const file = projectFile(target, relativePath, "provider receipt");
+      if (lstatSync(file).isSymbolicLink() || !statSync(file).isFile()) {
+        errors.push(`${relativePath} must be a real project file`);
+        continue;
+      }
+      const receipt = readJson(file, "provider receipt");
+      const receiptErrors = validateProviderReceipt(receipt);
+      if (receipt.receipt_id !== name.slice(0, -5)) {
+        receiptErrors.push(
+          "provider receipt file name must match receipt_id",
+        );
+      }
+      for (const error of receiptErrors) {
+        errors.push(`${relativePath}: ${error}`);
+      }
+    } catch (error) {
+      errors.push(`${relativePath}: ${error.message}`);
+    }
+  }
+  return {
+    ok: errors.length === 0,
+    path: PROVIDER_RECEIPTS_PATH,
+    receipt_count: receiptCount,
+    errors,
+  };
+}
+
+function loadCampaign(target) {
+  const file = projectFile(target, CAMPAIGN_PATH, "campaign state");
+  if (!existsSync(file)) {
+    return null;
+  }
+  const campaign = readJson(file, "campaign state");
+  const errors = validateCampaignState(campaign);
+  if (errors.length > 0) {
+    throw new StackError("Campaign state is invalid", 2, errors);
+  }
+  return campaign;
+}
+
+function writeCampaign(target, campaign) {
+  const errors = validateCampaignState(campaign);
+  if (errors.length > 0) {
+    throw new StackError("Refusing to write invalid campaign state", 2, errors);
+  }
+  atomicProjectJson(target, CAMPAIGN_PATH, campaign, "campaign state");
+}
+
+function commandCampaignStatus(target) {
+  const campaign = loadCampaign(target);
+  return {
+    ok: true,
+    path: CAMPAIGN_PATH,
+    campaign,
+  };
+}
+
+function requireApprovedCampaignConfiguration(target) {
+  const config = loadConfig(target);
+  const errors = validateConfig(config, target);
+  if (
+    errors.length > 0 ||
+    config.onboarding?.status !== "complete" ||
+    config.safety?.approved_configuration_hash !== configurationHash(config)
+  ) {
+    throw new StackError(
+      "Campaigns require valid, complete, currently approved project configuration.",
+      3,
+      errors,
+    );
+  }
+}
+
+function commandCampaignStart(target, options) {
+  requireCoordinator(target, options.coordinatorToken);
+  requireApprovedCampaignConfiguration(target);
+  const current = loadCampaign(target);
+  if (current?.status === "active") {
+    throw new StackError(
+      "An active campaign already exists. Continue or stop it before starting another.",
+      3,
+    );
+  }
+  const objective = validateCheckpointText(
+    options.objective,
+    "campaign objective",
+    { required: true },
+  );
+  const maxIterations = Number(options.maxIterations);
+  if (
+    !Number.isInteger(maxIterations) ||
+    maxIterations < 1 ||
+    maxIterations > 25
+  ) {
+    throw new StackError(
+      "Campaign max iterations must be an integer between 1 and 25.",
+      3,
+    );
+  }
+  const work = commandWorkValidate(target);
+  const evidence = commandEvidenceValidate(target);
+  if (!work.ok || !evidence.ok) {
+    throw new StackError(
+      "Campaigns require valid repository work and evidence contracts.",
+      3,
+      [...work.errors, ...evidence.errors],
+    );
+  }
+  const createdAt = utcTimestamp();
+  const campaign = {
+    schema_version: 1,
+    campaign_id: sha256(
+      stableJson({
+        objective,
+        max_iterations: maxIterations,
+        created_at: createdAt,
+        nonce: randomBytes(16).toString("hex"),
+      }),
+    ),
+    objective,
+    max_iterations: maxIterations,
+    iterations_completed: 0,
+    active_work_item: null,
+    status: "active",
+    reason: null,
+    created_at: createdAt,
+    updated_at: createdAt,
+  };
+  writeCampaign(target, campaign);
+  return {
+    ok: true,
+    action: "started",
+    campaign,
+    next:
+      "Run campaign next with the same active coordinator token to select one eligible repository work item.",
+  };
+}
+
+function campaignDecision(campaign, status, reason) {
+  return {
+    ...campaign,
+    active_work_item: null,
+    status,
+    reason,
+    updated_at: utcTimestamp(),
+  };
+}
+
+function commandCampaignNext(target, options) {
+  requireCoordinator(target, options.coordinatorToken);
+  requireApprovedCampaignConfiguration(target);
+  const campaign = loadCampaign(target);
+  if (!campaign || campaign.status !== "active") {
+    throw new StackError(
+      "No active campaign exists. Start one before requesting the next iteration.",
+      3,
+    );
+  }
+  const workValidation = commandWorkValidate(target);
+  const evidenceValidation = commandEvidenceValidate(target);
+  if (!workValidation.ok || !evidenceValidation.ok) {
+    throw new StackError(
+      "Campaign iteration refused because repository work or evidence is invalid.",
+      3,
+      [...workValidation.errors, ...evidenceValidation.errors],
+    );
+  }
+  const ledger = readJson(
+    projectFile(target, WORK_LEDGER_PATH, "work ledger"),
+    "work ledger",
+  );
+  const items = new Map(ledger.items.map((item) => [item.id, item]));
+  if (campaign.active_work_item !== null) {
+    const active = items.get(campaign.active_work_item);
+    if (!active) {
+      const stopped = campaignDecision(
+        campaign,
+        "decision-needed",
+        "The active repository work item is missing.",
+      );
+      writeCampaign(target, stopped);
+      return { ok: false, action: "decision-needed", campaign: stopped };
+    }
+    if (["ready", "in_progress", "in_review"].includes(active.status)) {
+      if (active.status === "ready") {
+        const now = utcTimestamp();
+        active.status = "in_progress";
+        active.updated_at = now;
+        ledger.updated_at = now;
+        const repairedErrors = validateWorkLedger(ledger);
+        if (repairedErrors.length > 0) {
+          throw new StackError(
+            "Refusing to repair campaign selection because the ledger is invalid.",
+            3,
+            repairedErrors,
+          );
+        }
+        atomicProjectJson(target, WORK_LEDGER_PATH, ledger, "work ledger");
+      }
+      return {
+        ok: true,
+        action: "continue",
+        campaign,
+        work_item: active,
+        next:
+          "Complete, cancel, or explicitly block this repository work item before another iteration can start.",
+      };
+    }
+    if (active.status === "blocked") {
+      const stopped = campaignDecision(
+        campaign,
+        "decision-needed",
+        `Active work item ${active.id} is blocked.`,
+      );
+      writeCampaign(target, stopped);
+      return {
+        ok: false,
+        action: "decision-needed",
+        campaign: stopped,
+        work_item: active,
+      };
+    }
+    if (!["done", "cancelled"].includes(active.status)) {
+      const stopped = campaignDecision(
+        campaign,
+        "decision-needed",
+        `Active work item ${active.id} moved to unsupported campaign status ${active.status}.`,
+      );
+      writeCampaign(target, stopped);
+      return {
+        ok: false,
+        action: "decision-needed",
+        campaign: stopped,
+        work_item: active,
+      };
+    }
+    campaign.iterations_completed += 1;
+    campaign.active_work_item = null;
+    campaign.updated_at = utcTimestamp();
+  }
+  if (campaign.iterations_completed >= campaign.max_iterations) {
+    const complete = campaignDecision(
+      campaign,
+      "complete",
+      "The configured iteration bound was reached.",
+    );
+    writeCampaign(target, complete);
+    return { ok: true, action: "complete", campaign: complete };
+  }
+  const pending = ledger.items.filter((item) =>
+    ["backlog", "ready", "in_progress", "in_review", "blocked"].includes(
+      item.status,
+    ),
+  );
+  if (pending.length === 0) {
+    const complete = campaignDecision(
+      campaign,
+      "complete",
+      "No unfinished repository work items remain.",
+    );
+    writeCampaign(target, complete);
+    return { ok: true, action: "complete", campaign: complete };
+  }
+  const unownedActive = pending.filter((item) =>
+    ["in_progress", "in_review"].includes(item.status),
+  );
+  if (unownedActive.length > 0) {
+    const stopped = campaignDecision(
+      campaign,
+      "decision-needed",
+      "Repository work is already active outside this campaign.",
+    );
+    writeCampaign(target, stopped);
+    return {
+      ok: false,
+      action: "decision-needed",
+      campaign: stopped,
+      pending_work_items: unownedActive.map((item) => item.id).sort(),
+    };
+  }
+  const eligible = ledger.items
+    .filter(
+      (item) =>
+        item.status === "ready" &&
+        item.depends_on.every(
+          (dependency) => items.get(dependency)?.status === "done",
+        ),
+    )
+    .sort(
+      (left, right) =>
+        (WORK_PRIORITY_ORDER.get(left.priority) ?? 99) -
+          (WORK_PRIORITY_ORDER.get(right.priority) ?? 99) ||
+        left.id.localeCompare(right.id),
+    );
+  if (eligible.length === 0) {
+    const stopped = campaignDecision(
+      campaign,
+      "decision-needed",
+      "No ready work item has all dependencies completed.",
+    );
+    writeCampaign(target, stopped);
+    return {
+      ok: false,
+      action: "decision-needed",
+      campaign: stopped,
+      pending_work_items: pending.map((item) => item.id).sort(),
+    };
+  }
+  const selected = eligible[0];
+  const now = utcTimestamp();
+  selected.status = "in_progress";
+  selected.updated_at = now;
+  ledger.updated_at = now;
+  const ledgerErrors = validateWorkLedger(ledger);
+  if (ledgerErrors.length > 0) {
+    throw new StackError(
+      "Refusing to select a work item because the updated ledger is invalid.",
+      3,
+      ledgerErrors,
+    );
+  }
+  campaign.active_work_item = selected.id;
+  campaign.updated_at = now;
+  writeCampaign(target, campaign);
+  atomicProjectJson(target, WORK_LEDGER_PATH, ledger, "work ledger");
+  return {
+    ok: true,
+    action: "selected",
+    campaign,
+    work_item: selected,
+    guardrails: {
+      one_item_at_a_time: true,
+      provider_sync: "explicit-only",
+      completion_source: "repository evidence contract",
+    },
+  };
+}
+
+function commandCampaignStop(target, options) {
+  requireCoordinator(target, options.coordinatorToken);
+  const campaign = loadCampaign(target);
+  if (!campaign || campaign.status !== "active") {
+    throw new StackError("No active campaign exists to stop.", 3);
+  }
+  const reason = validateCheckpointText(options.reason, "campaign stop reason", {
+    required: true,
+  });
+  const stopped = campaignDecision(campaign, "stopped", reason);
+  writeCampaign(target, stopped);
+  return { ok: true, action: "stopped", campaign: stopped };
+}
+
 function validateRepositoryContract(target, path, validator, label) {
   try {
     const value = readJson(projectFile(target, path, label), label);
@@ -2940,6 +3658,11 @@ function sourceEntries({ claude = false } = {}) {
   entries.push({
     destination: LINEAR_READONLY_PATH,
     source: join(PACKAGE_ROOT, "scripts/linear-readonly.mjs"),
+    protected: true,
+  });
+  entries.push({
+    destination: LINEAR_WRITE_PATH,
+    source: join(PACKAGE_ROOT, "scripts/linear-write.mjs"),
     protected: true,
   });
   entries.push({
@@ -3290,10 +4013,38 @@ function commandCapabilities(target) {
             typeof process.env[LINEAR_CREDENTIAL_ENV] === "string" &&
             process.env[LINEAR_CREDENTIAL_ENV].length > 0,
           external: true,
-          access: "read_only",
+          access:
+            config?.capabilities?.work?.connection?.writes?.operations
+              ?.length > 0
+              ? "read_only_with_receipted_writes"
+              : "read_only",
           credential_environment: LINEAR_CREDENTIAL_ENV,
+          writes:
+            config?.capabilities?.work?.connection?.writes?.operations?.map(
+              (operation) => ({
+                operation,
+                credential_environment:
+                  operation === "issue_create"
+                    ? LINEAR_CREATE_CREDENTIAL_ENV
+                    : LINEAR_COMMENT_CREDENTIAL_ENV,
+                available:
+                  typeof process.env[
+                    operation === "issue_create"
+                      ? LINEAR_CREATE_CREDENTIAL_ENV
+                      : LINEAR_COMMENT_CREDENTIAL_ENV
+                  ] === "string" &&
+                  process.env[
+                    operation === "issue_create"
+                      ? LINEAR_CREATE_CREDENTIAL_ENV
+                      : LINEAR_COMMENT_CREDENTIAL_ENV
+                  ].length > 0,
+              }),
+            ) ?? [],
           detail:
-            "Reviewed Linear GraphQL reader with repository fallback; no mutation operation is exposed",
+            config?.capabilities?.work?.connection?.writes?.operations
+              ?.length > 0
+              ? "Reviewed Linear reader plus explicitly approved issue/comment creation; repository work and receipts remain authoritative"
+              : "Reviewed Linear GraphQL reader with repository fallback; no mutation operation is exposed",
         },
       },
     },
@@ -3383,6 +4134,28 @@ function linearEnvironment() {
   };
 }
 
+function linearWriteEnvironment(command) {
+  const environment = {};
+  for (const name of SAFE_ENVIRONMENT_NAMES) {
+    if (typeof process.env[name] === "string") {
+      environment[name] = process.env[name];
+    }
+  }
+  const credential =
+    command === "issue-create"
+      ? LINEAR_CREATE_CREDENTIAL_ENV
+      : command === "evidence-comment"
+        ? LINEAR_COMMENT_CREDENTIAL_ENV
+        : null;
+  if (credential && typeof process.env[credential] === "string") {
+    environment[credential] = process.env[credential];
+  }
+  return {
+    ...environment,
+    NO_COLOR: "1",
+  };
+}
+
 function runLinearReadonly(target, args, timeout = 20_000) {
   const helper = projectFile(
     target,
@@ -3415,6 +4188,54 @@ function runLinearReadonly(target, args, timeout = 20_000) {
     stdout: redact(result.stdout ?? "", 24_000),
     stderr: redact(result.stderr ?? "", 4_000),
   };
+}
+
+function runLinearWrite(target, command, input, timeout = 20_000) {
+  const helper = projectFile(target, LINEAR_WRITE_PATH, "Linear write helper");
+  if (!existsSync(helper)) {
+    return {
+      ok: false,
+      status: 1,
+      raw_stdout: "",
+      stdout: "",
+      stderr: `missing ${LINEAR_WRITE_PATH}`,
+    };
+  }
+  const result = spawnPortable(target, "node", [helper, command], {
+    cwd: target,
+    encoding: "utf8",
+    env: linearWriteEnvironment(command),
+    input: stableJson(input),
+    maxBuffer: 256 * 1024,
+    shell: false,
+    timeout,
+  });
+  const timedOut = result.error?.code === "ETIMEDOUT";
+  return {
+    ok: result.status === 0 && !timedOut,
+    status: timedOut ? 124 : (result.status ?? 1),
+    ...(timedOut ? { reason: "timeout" } : {}),
+    raw_stdout: result.stdout ?? "",
+    stdout: redact(result.stdout ?? "", 8_000),
+    stderr: redact(result.stderr ?? "", 2_000),
+  };
+}
+
+function deterministicUuid(digest) {
+  if (typeof digest !== "string" || !/^[a-f0-9]{64}$/.test(digest)) {
+    throw new StackError("Cannot derive provider UUID from an invalid digest");
+  }
+  const bytes = Buffer.from(digest.slice(0, 32), "hex");
+  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20),
+  ].join("-");
 }
 
 const LINEAR_HEALTH_ERRORS = new Set([
@@ -3532,6 +4353,169 @@ function sanitizeLinearHealthResult(value, teamKeys) {
   };
 }
 
+function linearLookup(target, args, operation) {
+  const parsed = parseProviderJson(
+    runLinearReadonly(target, args),
+    `Linear ${operation} lookup`,
+  );
+  if (
+    !parsed.ok ||
+    !parsed.value ||
+    typeof parsed.value !== "object" ||
+    Array.isArray(parsed.value) ||
+    parsed.value.provider !== "linear" ||
+    parsed.value.operation !== operation ||
+    typeof parsed.value.ok !== "boolean"
+  ) {
+    return {
+      ok: false,
+      provider: "linear",
+      operation,
+      error: `Linear ${operation} lookup failed`,
+    };
+  }
+  const value = parsed.value;
+  if (!value.ok) {
+    return {
+      ok: false,
+      provider: "linear",
+      operation,
+      error: `Linear ${operation} lookup failed`,
+    };
+  }
+  if (
+    operation === "resolve-team" &&
+    typeof value.team_key === "string" &&
+    /^[A-Z][A-Z0-9]{0,9}$/.test(value.team_key) &&
+    typeof value.provider_id === "string" &&
+    PROVIDER_UUID.test(value.provider_id)
+  ) {
+    return {
+      ok: true,
+      provider: "linear",
+      operation,
+      team_key: value.team_key,
+      provider_id: value.provider_id,
+    };
+  }
+  if (
+    operation === "resolve-issue" &&
+    typeof value.found === "boolean" &&
+    typeof value.provider_id === "string" &&
+    PROVIDER_UUID.test(value.provider_id)
+  ) {
+    if (!value.found) {
+      return {
+        ok: true,
+        provider: "linear",
+        operation,
+        found: false,
+        provider_id: value.provider_id,
+      };
+    }
+    if (
+      typeof value.provider_identifier === "string" &&
+      /^[A-Z][A-Z0-9]{0,9}-\d{1,10}$/.test(value.provider_identifier) &&
+      typeof value.team_key === "string" &&
+      /^[A-Z][A-Z0-9]{0,9}$/.test(value.team_key)
+    ) {
+      return {
+        ok: true,
+        provider: "linear",
+        operation,
+        found: true,
+        provider_id: value.provider_id,
+        provider_identifier: value.provider_identifier,
+        team_key: value.team_key,
+      };
+    }
+  }
+  if (
+    operation === "resolve-comment" &&
+    typeof value.found === "boolean" &&
+    PROVIDER_UUID.test(value.provider_id)
+  ) {
+    if (!value.found) {
+      return {
+        ok: true,
+        provider: "linear",
+        operation,
+        found: false,
+        provider_id: value.provider_id,
+      };
+    }
+    if (PROVIDER_UUID.test(value.issue_id)) {
+      return {
+        ok: true,
+        provider: "linear",
+        operation,
+        found: true,
+        provider_id: value.provider_id,
+        issue_id: value.issue_id,
+      };
+    }
+  }
+  return {
+    ok: false,
+    provider: "linear",
+    operation,
+    error: `Linear ${operation} lookup returned an invalid result`,
+  };
+}
+
+function linearMutation(target, command, input) {
+  const parsed = parseProviderJson(
+    runLinearWrite(target, command, input),
+    `Linear ${command}`,
+  );
+  if (
+    !parsed.ok ||
+    !parsed.value ||
+    typeof parsed.value !== "object" ||
+    Array.isArray(parsed.value) ||
+    parsed.value.provider !== "linear" ||
+    parsed.value.operation !== command ||
+    typeof parsed.value.ok !== "boolean"
+  ) {
+    return {
+      ok: false,
+      provider: "linear",
+      operation: command,
+      error: `Linear ${command} failed`,
+    };
+  }
+  const value = parsed.value;
+  if (!value.ok || !PROVIDER_UUID.test(value.provider_id)) {
+    return {
+      ok: false,
+      provider: "linear",
+      operation: command,
+      error: `Linear ${command} failed`,
+    };
+  }
+  if (
+    command === "issue-create" &&
+    (typeof value.provider_identifier !== "string" ||
+      !/^[A-Z][A-Z0-9]{0,9}-\d{1,10}$/.test(value.provider_identifier))
+  ) {
+    return {
+      ok: false,
+      provider: "linear",
+      operation: command,
+      error: "Linear issue-create returned an invalid result",
+    };
+  }
+  return {
+    ok: true,
+    provider: "linear",
+    operation: command,
+    provider_id: value.provider_id,
+    ...(command === "issue-create"
+      ? { provider_identifier: value.provider_identifier }
+      : {}),
+  };
+}
+
 function commandLinearHealth(target, suppliedConfig = undefined) {
   const config = suppliedConfig ?? loadConfig(target);
   const work =
@@ -3639,6 +4623,49 @@ function commandLinearHealth(target, suppliedConfig = undefined) {
   };
 }
 
+function linearWriteReadiness(target, config) {
+  const work =
+    config.capabilities.work &&
+    typeof config.capabilities.work === "object" &&
+    !Array.isArray(config.capabilities.work)
+      ? config.capabilities.work
+      : {};
+  const operations = Array.isArray(work.connection?.writes?.operations)
+    ? work.connection.writes.operations
+    : [];
+  if (work.provider !== "linear" || operations.length === 0) {
+    return {
+      ok: true,
+      enabled_operations: [],
+      checks: [],
+      live_mutation: "not-run",
+    };
+  }
+  const protectedIssue = protectedProjectFileIssue(target, LINEAR_WRITE_PATH);
+  const checks = operations.map((operation) => {
+    const environment =
+      operation === "issue_create"
+        ? LINEAR_CREATE_CREDENTIAL_ENV
+        : LINEAR_COMMENT_CREDENTIAL_ENV;
+    return {
+      operation,
+      credential_environment: environment,
+      available:
+        typeof process.env[environment] === "string" &&
+        process.env[environment].length > 0,
+    };
+  });
+  return {
+    ok: protectedIssue === null && checks.every((check) => check.available),
+    enabled_operations: operations,
+    protected_helper: protectedIssue ?? "intact",
+    checks,
+    live_mutation: "not-run",
+    detail:
+      "Readiness checks credentials and protected code only; doctor never performs a provider write.",
+  };
+}
+
 function commandLinearSetup(target) {
   const config = loadConfig(target);
   const errors = validateConfig(config, target);
@@ -3658,10 +4685,46 @@ function commandLinearSetup(target) {
       "Linear is not approved for this project. Complete the plain-language work-tracking decision and configure linear first.",
     );
   }
+  const approvedWrites = work.connection.writes?.operations ?? [];
+  const writeCredentialSteps = [
+    ...(approvedWrites.includes("issue_create")
+      ? [
+          {
+            id: "create-issue-create-key",
+            status:
+              typeof process.env[LINEAR_CREATE_CREDENTIAL_ENV] === "string" &&
+              process.env[LINEAR_CREATE_CREDENTIAL_ENV].length > 0
+                ? "available"
+                : "human-action-required",
+            credential_environment: LINEAR_CREATE_CREDENTIAL_ENV,
+            instruction:
+              "Create a separate team-restricted personal API key with only Create issues permission.",
+          },
+        ]
+      : []),
+    ...(approvedWrites.includes("evidence_comment")
+      ? [
+          {
+            id: "create-comment-key",
+            status:
+              typeof process.env[LINEAR_COMMENT_CREDENTIAL_ENV] === "string" &&
+              process.env[LINEAR_COMMENT_CREDENTIAL_ENV].length > 0
+                ? "available"
+                : "human-action-required",
+            credential_environment: LINEAR_COMMENT_CREDENTIAL_ENV,
+            instruction:
+              "Create a separate team-restricted personal API key with only Create comments permission.",
+          },
+        ]
+      : []),
+  ];
   return {
     ok: true,
     provider: "linear",
-    mode: "guided-read-only",
+    mode:
+      approvedWrites.length === 0
+        ? "guided-read-only"
+        : "guided-read-only-with-receipted-writes",
     configured_team_keys: work.connection.team_keys,
     repository_fallback: true,
     steps: [
@@ -3675,7 +4738,8 @@ function commandLinearSetup(target) {
       {
         id: "provide-process-environment",
         status:
-          typeof process.env[LINEAR_CREDENTIAL_ENV] === "string"
+          typeof process.env[LINEAR_CREDENTIAL_ENV] === "string" &&
+          process.env[LINEAR_CREDENTIAL_ENV].length > 0
             ? "available"
             : "human-action-required",
         credential_environment: LINEAR_CREDENTIAL_ENV,
@@ -3689,6 +4753,7 @@ function commandLinearSetup(target) {
         instruction:
           "If the coding harness supports remote MCP, connect Linear's official read-only endpoint. Keep this project configuration read-only even if another connection exists.",
       },
+      ...writeCredentialSteps,
       {
         id: "verify",
         status: "required",
@@ -3703,10 +4768,631 @@ function commandLinearSetup(target) {
     ],
     guardrails: {
       exposed_remote_operations: ["GraphQL query"],
-      exposed_remote_mutations: [],
+      exposed_remote_mutations: approvedWrites,
       credential_scope:
-        "The CLI proves its own surface is query-only; the user must create the upstream key with Linear's Read permission.",
+        approvedWrites.length === 0
+          ? "The CLI proves its own surface is query-only; the user must create the upstream key with Linear's Read permission."
+          : "Read, issue-create, and comment credentials remain separate; each must be team-restricted to only its named permission.",
     },
+  };
+}
+
+function providerReceipt({
+  provider,
+  operation,
+  workItemId,
+  providerReference,
+  before,
+  after,
+  authoritySource,
+  idempotencyKey,
+  revision,
+  result,
+}) {
+  const performedAt = utcTimestamp();
+  return {
+    schema_version: 1,
+    receipt_id: sha256(
+      stableJson({
+        provider,
+        operation,
+        work_item_id: workItemId,
+        idempotency_key: idempotencyKey,
+        performed_at: performedAt,
+        nonce: randomBytes(16).toString("hex"),
+      }),
+    ),
+    provider,
+    operation,
+    work_item_id: workItemId,
+    provider_reference: providerReference,
+    before,
+    after,
+    authority_source: authoritySource,
+    idempotency_key: idempotencyKey,
+    revision,
+    performed_at: performedAt,
+    result,
+  };
+}
+
+function validatedLinearWriteContext(target, operation, options) {
+  if (options.confirmExternalWrite !== true) {
+    throw new StackError(
+      "Linear writes require --confirm-external-write after the human approves the exact operation.",
+      3,
+    );
+  }
+  const authoritySource = validateCheckpointText(
+    options.authoritySource,
+    "Linear write authority source",
+    { required: true },
+  );
+  if (authoritySource.length < 12) {
+    throw new StackError(
+      "Linear write authority source must identify the approval or policy in at least 12 characters.",
+      3,
+    );
+  }
+  const config = loadConfig(target);
+  const configErrors = validateConfig(config, target);
+  if (
+    configErrors.length > 0 ||
+    config.safety?.approved_configuration_hash !== configurationHash(config)
+  ) {
+    throw new StackError(
+      "Linear writes require valid, currently approved project configuration.",
+      3,
+      configErrors,
+    );
+  }
+  const work = config.capabilities.work;
+  const writes = work.connection?.writes;
+  if (
+    work.provider !== "linear" ||
+    !writes ||
+    !Array.isArray(writes.operations) ||
+    !writes.operations.includes(operation)
+  ) {
+    throw new StackError(
+      `Linear operation ${operation} is not approved in project configuration.`,
+      3,
+    );
+  }
+  requireCoordinator(target, options.coordinatorToken);
+  const readonlyIssue = protectedProjectFileIssue(
+    target,
+    LINEAR_READONLY_PATH,
+  );
+  const writeIssue = protectedProjectFileIssue(target, LINEAR_WRITE_PATH);
+  if (readonlyIssue || writeIssue) {
+    throw new StackError(
+      "Refusing Linear write because a protected provider helper is not intact.",
+      3,
+      [readonlyIssue, writeIssue].filter(Boolean),
+    );
+  }
+  const workValidation = commandWorkValidate(target);
+  const evidenceValidation = commandEvidenceValidate(target);
+  if (!workValidation.ok || !evidenceValidation.ok) {
+    throw new StackError(
+      "Refusing Linear write until repository work and evidence validate.",
+      3,
+      [...workValidation.errors, ...evidenceValidation.errors],
+    );
+  }
+  const ledger = readJson(
+    projectFile(target, WORK_LEDGER_PATH, "work ledger"),
+    "work ledger",
+  );
+  const graph = readJson(
+    projectFile(target, EVIDENCE_GRAPH_PATH, "evidence graph"),
+    "evidence graph",
+  );
+  const item = ledger.items.find(
+    (candidate) => candidate.id === options.workItemId,
+  );
+  if (!item) {
+    throw new StackError(
+      `Repository work item not found: ${options.workItemId ?? "missing"}`,
+      3,
+    );
+  }
+  const git = gitSnapshot(target);
+  return {
+    authoritySource,
+    config,
+    work,
+    writes,
+    ledger,
+    graph,
+    item,
+    revision: git.head && /^[a-f0-9]{40}$/.test(git.head) ? git.head : null,
+  };
+}
+
+function linearIssueDescription(item) {
+  const lines = [
+    `Repository work item: ${item.id}`,
+    "",
+    "## Objective",
+    "",
+    item.objective,
+    "",
+    "## Acceptance criteria",
+    "",
+    ...item.acceptance_criteria.map((criterion) => `- ${criterion}`),
+    "",
+    "## Included paths",
+    "",
+    ...item.scope.paths.map((path) => `- \`${path}\``),
+    "",
+    "## Out of scope",
+    "",
+    ...(item.scope.out_of_scope.length > 0
+      ? item.scope.out_of_scope.map((path) => `- \`${path}\``)
+      : ["- None recorded."]),
+    "",
+    "Managed through the Ultimate Agent Stack provider-neutral work contract.",
+  ];
+  const description = lines.join("\n");
+  if (description.length > 12_000) {
+    throw new StackError(
+      "The repository work item is too large for the bounded Linear issue adapter. Split it into smaller work.",
+      3,
+    );
+  }
+  return description;
+}
+
+function linearEvidenceComment(item, graph, revision) {
+  if (
+    !["in_review", "done"].includes(item.status) ||
+    item.evidence_refs.length === 0
+  ) {
+    throw new StackError(
+      "Evidence comments require an in_review or done work item with linked evidence.",
+      3,
+    );
+  }
+  const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
+  const lines = [
+    `Repository evidence update for \`${item.id}\``,
+    "",
+    `Canonical status: \`${item.status}\``,
+    `Repository revision: \`${revision ?? "uncommitted"}\``,
+    "",
+    "Evidence references:",
+    "",
+    ...item.evidence_refs.flatMap((reference) => {
+      const node = nodes.get(reference);
+      return [
+        `- **${node.label}** — ${node.kind}, ${node.state}`,
+        `  - ${node.source.provider}: \`${node.source.reference}\``,
+        ...(node.summary ? [`  - ${node.summary}`] : []),
+      ];
+    }),
+    "",
+    "Linear status is advisory. Repository evidence remains authoritative.",
+  ];
+  const body = lines.join("\n");
+  if (body.length > 8_000) {
+    throw new StackError(
+      "The evidence summary exceeds the bounded Linear comment limit. Reduce or split the work evidence.",
+      3,
+    );
+  }
+  return body;
+}
+
+function addLinearIssueReference(target, ledger, item, issueId) {
+  const existing = item.external_refs.filter(
+    (reference) => reference.provider === "linear",
+  );
+  if (
+    existing.some((reference) => reference.reference !== issueId) ||
+    existing.length > 1
+  ) {
+    throw new StackError(
+      "The work item has a conflicting Linear reference. Resolve it before synchronizing.",
+      3,
+    );
+  }
+  if (existing.length === 0) {
+    item.external_refs.push({
+      provider: "linear",
+      reference: issueId,
+    });
+    const now = utcTimestamp();
+    item.updated_at = now;
+    ledger.updated_at = now;
+    const errors = validateWorkLedger(ledger);
+    if (errors.length > 0) {
+      throw new StackError(
+        "Refusing to record an invalid Linear issue reference.",
+        3,
+        errors,
+      );
+    }
+    atomicProjectJson(target, WORK_LEDGER_PATH, ledger, "work ledger");
+  }
+}
+
+function commandLinearIssueCreate(
+  target,
+  options,
+  provider = { lookup: linearLookup, mutate: linearMutation },
+) {
+  const context = validatedLinearWriteContext(
+    target,
+    "issue_create",
+    options,
+  );
+  if (["done", "cancelled"].includes(context.item.status)) {
+    throw new StackError(
+      "Do not create a new Linear issue for done or cancelled repository work.",
+      3,
+    );
+  }
+  const teamKey = String(options.teamKey ?? "").trim().toUpperCase();
+  if (!context.work.connection.team_keys.includes(teamKey)) {
+    throw new StackError(
+      "Linear issue creation requires one configured --team key.",
+      3,
+    );
+  }
+  const digest = sha256(
+    `${context.writes.idempotency_namespace}\0issue_create\0${context.item.id}`,
+  );
+  const idempotencyKey = `sha256:${digest}`;
+  const issueId = deterministicUuid(digest);
+  const existingReference = context.item.external_refs.filter(
+    (reference) => reference.provider === "linear",
+  );
+  if (
+    existingReference.some((reference) => reference.reference !== issueId) ||
+    existingReference.length > 1
+  ) {
+    const receipt = providerReceipt({
+      provider: "linear",
+      operation: "issue_create",
+      workItemId: context.item.id,
+      providerReference: issueId,
+      before: "conflicting repository reference",
+      after: null,
+      authoritySource: context.authoritySource,
+      idempotencyKey,
+      revision: context.revision,
+      result: "decision-needed",
+    });
+    const receiptPath = writeProviderReceipt(target, receipt);
+    return {
+      ok: false,
+      provider: "linear",
+      operation: "issue_create",
+      result: "decision-needed",
+      receipt: receiptPath,
+      error:
+        "The work item already has a different Linear reference. No remote write was attempted.",
+    };
+  }
+  const team = provider.lookup(
+    target,
+    ["resolve-team", "--team", teamKey],
+    "resolve-team",
+  );
+  if (!team.ok || team.team_key !== teamKey) {
+    const receipt = providerReceipt({
+      provider: "linear",
+      operation: "issue_create",
+      workItemId: context.item.id,
+      providerReference: issueId,
+      before: "team lookup failed",
+      after: null,
+      authoritySource: context.authoritySource,
+      idempotencyKey,
+      revision: context.revision,
+      result: "failed",
+    });
+    return {
+      ok: false,
+      provider: "linear",
+      operation: "issue_create",
+      result: "failed",
+      receipt: writeProviderReceipt(target, receipt),
+      error: "Configured Linear team could not be verified. No write occurred.",
+    };
+  }
+  let issue = provider.lookup(
+    target,
+    ["resolve-issue", "--id", issueId],
+    "resolve-issue",
+  );
+  let result = "not-needed";
+  let before = "existing provider issue";
+  if (!issue.ok) {
+    const receipt = providerReceipt({
+      provider: "linear",
+      operation: "issue_create",
+      workItemId: context.item.id,
+      providerReference: issueId,
+      before: "issue lookup failed",
+      after: null,
+      authoritySource: context.authoritySource,
+      idempotencyKey,
+      revision: context.revision,
+      result: "failed",
+    });
+    return {
+      ok: false,
+      provider: "linear",
+      operation: "issue_create",
+      result: "failed",
+      receipt: writeProviderReceipt(target, receipt),
+      error: "Linear issue preflight failed. No write occurred.",
+    };
+  }
+  if (!issue.found) {
+    before = "provider issue not found";
+    const mutation = provider.mutate(target, "issue-create", {
+      issue_id: issueId,
+      team_id: team.provider_id,
+      title: context.item.title,
+      description: linearIssueDescription(context.item),
+    });
+    if (mutation.ok) {
+      issue = {
+        ok: true,
+        found: true,
+        provider_id: mutation.provider_id,
+        provider_identifier: mutation.provider_identifier,
+        team_key: teamKey,
+      };
+      result = "succeeded";
+    } else {
+      issue = provider.lookup(
+        target,
+        ["resolve-issue", "--id", issueId],
+        "resolve-issue",
+      );
+      if (!issue.ok || !issue.found) {
+        const receipt = providerReceipt({
+          provider: "linear",
+          operation: "issue_create",
+          workItemId: context.item.id,
+          providerReference: issueId,
+          before,
+          after: "write failed or outcome is unknown",
+          authoritySource: context.authoritySource,
+          idempotencyKey,
+          revision: context.revision,
+          result: "failed",
+        });
+        return {
+          ok: false,
+          provider: "linear",
+          operation: "issue_create",
+          result: "failed",
+          receipt: writeProviderReceipt(target, receipt),
+          error:
+            "Linear issue creation failed and reconciliation found no issue.",
+        };
+      }
+      result = "succeeded";
+    }
+  }
+  if (issue.team_key !== teamKey || issue.provider_id !== issueId) {
+    const receipt = providerReceipt({
+      provider: "linear",
+      operation: "issue_create",
+      workItemId: context.item.id,
+      providerReference: issueId,
+      before,
+      after: "provider identity mismatch",
+      authoritySource: context.authoritySource,
+      idempotencyKey,
+      revision: context.revision,
+      result: "decision-needed",
+    });
+    return {
+      ok: false,
+      provider: "linear",
+      operation: "issue_create",
+      result: "decision-needed",
+      receipt: writeProviderReceipt(target, receipt),
+      error: "The resolved Linear issue does not match the approved team and id.",
+    };
+  }
+  const receipt = providerReceipt({
+    provider: "linear",
+    operation: "issue_create",
+    workItemId: context.item.id,
+    providerReference: issueId,
+    before,
+    after: `linked ${issue.provider_identifier}`,
+    authoritySource: context.authoritySource,
+    idempotencyKey,
+    revision: context.revision,
+    result,
+  });
+  const receiptPath = writeProviderReceipt(target, receipt);
+  addLinearIssueReference(
+    target,
+    context.ledger,
+    context.item,
+    issueId,
+  );
+  return {
+    ok: true,
+    provider: "linear",
+    operation: "issue_create",
+    result,
+    provider_reference: issueId,
+    provider_identifier: issue.provider_identifier,
+    receipt: receiptPath,
+  };
+}
+
+function commandLinearEvidenceComment(
+  target,
+  options,
+  provider = { lookup: linearLookup, mutate: linearMutation },
+) {
+  const context = validatedLinearWriteContext(
+    target,
+    "evidence_comment",
+    options,
+  );
+  const issueDigest = sha256(
+    `${context.writes.idempotency_namespace}\0issue_create\0${context.item.id}`,
+  );
+  const issueId = deterministicUuid(issueDigest);
+  if (
+    !context.item.external_refs.some(
+      (reference) =>
+        reference.provider === "linear" && reference.reference === issueId,
+    )
+  ) {
+    throw new StackError(
+      "Evidence comments require the work item's receipted Linear issue link.",
+      3,
+    );
+  }
+  const issue = provider.lookup(
+    target,
+    ["resolve-issue", "--id", issueId],
+    "resolve-issue",
+  );
+  if (
+    !issue.ok ||
+    !issue.found ||
+    !context.work.connection.team_keys.includes(issue.team_key)
+  ) {
+    throw new StackError(
+      "The linked Linear issue could not be verified in an approved team.",
+      3,
+    );
+  }
+  const body = linearEvidenceComment(
+    context.item,
+    context.graph,
+    context.revision,
+  );
+  const evidenceSnapshot = sha256(
+    stableJson({
+      work_item_id: context.item.id,
+      status: context.item.status,
+      evidence_refs: context.item.evidence_refs,
+      body,
+    }),
+  );
+  const digest = sha256(
+    `${context.writes.idempotency_namespace}\0evidence_comment\0${context.item.id}\0${evidenceSnapshot}`,
+  );
+  const idempotencyKey = `sha256:${digest}`;
+  const commentId = deterministicUuid(digest);
+  let comment = provider.lookup(
+    target,
+    ["resolve-comment", "--id", commentId],
+    "resolve-comment",
+  );
+  if (!comment.ok) {
+    throw new StackError(
+      "Linear comment preflight failed. No write occurred.",
+      3,
+    );
+  }
+  let result = "not-needed";
+  let before = "existing provider comment";
+  if (!comment.found) {
+    before = "provider comment not found";
+    const mutation = provider.mutate(target, "evidence-comment", {
+      comment_id: commentId,
+      issue_id: issueId,
+      body,
+    });
+    if (mutation.ok) {
+      comment = {
+        ok: true,
+        found: true,
+        provider_id: mutation.provider_id,
+        issue_id: issueId,
+      };
+      result = "succeeded";
+    } else {
+      comment = provider.lookup(
+        target,
+        ["resolve-comment", "--id", commentId],
+        "resolve-comment",
+      );
+      if (!comment.ok || !comment.found) {
+        const receipt = providerReceipt({
+          provider: "linear",
+          operation: "evidence_comment",
+          workItemId: context.item.id,
+          providerReference: commentId,
+          before,
+          after: "write failed or outcome is unknown",
+          authoritySource: context.authoritySource,
+          idempotencyKey,
+          revision: context.revision,
+          result: "failed",
+        });
+        return {
+          ok: false,
+          provider: "linear",
+          operation: "evidence_comment",
+          result: "failed",
+          receipt: writeProviderReceipt(target, receipt),
+          error:
+            "Linear evidence comment failed and reconciliation found no comment.",
+        };
+      }
+      result = "succeeded";
+    }
+  }
+  if (comment.issue_id !== issueId || comment.provider_id !== commentId) {
+    const receipt = providerReceipt({
+      provider: "linear",
+      operation: "evidence_comment",
+      workItemId: context.item.id,
+      providerReference: commentId,
+      before,
+      after: "provider identity mismatch",
+      authoritySource: context.authoritySource,
+      idempotencyKey,
+      revision: context.revision,
+      result: "decision-needed",
+    });
+    return {
+      ok: false,
+      provider: "linear",
+      operation: "evidence_comment",
+      result: "decision-needed",
+      receipt: writeProviderReceipt(target, receipt),
+      error: "The resolved Linear comment does not match the linked issue.",
+    };
+  }
+  const receipt = providerReceipt({
+    provider: "linear",
+    operation: "evidence_comment",
+    workItemId: context.item.id,
+    providerReference: commentId,
+    before,
+    after: "evidence comment present",
+    authoritySource: context.authoritySource,
+    idempotencyKey,
+    revision: context.revision,
+    result,
+  });
+  return {
+    ok: true,
+    provider: "linear",
+    operation: "evidence_comment",
+    result,
+    provider_reference: commentId,
+    issue_reference: issueId,
+    receipt: writeProviderReceipt(target, receipt),
   };
 }
 
@@ -4031,6 +5717,12 @@ function resolveConfigureOptions(options) {
           ? options.linearTeams
           : undefined,
       ],
+      [
+        "--linear-write",
+        Array.isArray(options.linearWrites) && options.linearWrites.length > 0
+          ? options.linearWrites
+          : undefined,
+      ],
       ["--external-data", options.externalData],
       ["--execution", options.execution],
       ["--merge", options.merge],
@@ -4051,6 +5743,7 @@ function resolveConfigureOptions(options) {
     return {
       ...presetOptions,
       reviewers: [...presetOptions.reviewers],
+      linearWrites: [...presetOptions.linearWrites],
       preset,
       reason: options.reason,
     };
@@ -4060,6 +5753,7 @@ function resolveConfigureOptions(options) {
     knowledgeScope: options.knowledgeScope ?? "project",
     work: options.work ?? "repository",
     linearTeams: options.linearTeams ?? [],
+    linearWrites: options.linearWrites ?? [],
     execution: options.execution ?? "agent_owned",
     merge: options.merge ?? "human_approval_required",
     reviewers: options.reviewers ?? [],
@@ -4074,6 +5768,7 @@ function commandConfigure(target, options) {
     knowledgeScope,
     work,
     linearTeams,
+    linearWrites,
     externalData,
     execution,
     merge,
@@ -4142,6 +5837,13 @@ function commandConfigure(target, options) {
         .filter(Boolean),
     ),
   ];
+  const normalizedLinearWrites = [
+    ...new Set(
+      linearWrites
+        .map((operation) => String(operation).trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ].sort();
   if (
     normalizedLinearTeams.length > 20 ||
     !normalizedLinearTeams.every((key) => /^[A-Z][A-Z0-9]{0,9}$/.test(key))
@@ -4160,6 +5862,28 @@ function commandConfigure(target, options) {
       "--linear-team can only be used with --work linear",
     );
   }
+  if (
+    normalizedLinearWrites.some(
+      (operation) => !LINEAR_WRITE_OPERATIONS.has(operation),
+    )
+  ) {
+    throw new StackError(
+      "--linear-write must be issue_create or evidence_comment",
+    );
+  }
+  if (
+    normalizedLinearWrites.includes("evidence_comment") &&
+    !normalizedLinearWrites.includes("issue_create")
+  ) {
+    throw new StackError(
+      "evidence_comment requires issue_create so comments have a receipted issue link",
+    );
+  }
+  if (work !== "linear" && normalizedLinearWrites.length > 0) {
+    throw new StackError(
+      "--linear-write can only be used with --work linear",
+    );
+  }
   if (work === "linear" && externalData !== "approved_providers") {
     throw new StackError(
       "Linear is an external provider. Select approved_providers or keep repository work tracking.",
@@ -4167,6 +5891,15 @@ function commandConfigure(target, options) {
   }
 
   const config = loadConfig(target);
+  const existingIdempotencyNamespace =
+    config.capabilities.work?.provider === "linear" &&
+    typeof config.capabilities.work.connection?.writes
+      ?.idempotency_namespace === "string" &&
+    /^[a-f0-9]{64}$/.test(
+      config.capabilities.work.connection.writes.idempotency_namespace,
+    )
+      ? config.capabilities.work.connection.writes.idempotency_namespace
+      : randomBytes(32).toString("hex");
   const normalizedReviewers = [
     ...new Set(
       reviewers
@@ -4212,12 +5945,30 @@ function commandConfigure(target, options) {
           provider: "linear",
           required: false,
           sync_mode: "read_only_mirror",
-          write_policy: "read_only",
+          write_policy:
+            normalizedLinearWrites.length === 0
+              ? "read_only"
+              : normalizedLinearWrites.includes("evidence_comment")
+                ? "receipted_create_and_comment"
+                : "receipted_create",
           repository_fallback: true,
           connection: {
             kind: "linear_api_key",
             credential_env: LINEAR_CREDENTIAL_ENV,
             team_keys: normalizedLinearTeams,
+            writes:
+              normalizedLinearWrites.length === 0
+                ? null
+                : {
+                    operations: normalizedLinearWrites,
+                    create_credential_env: LINEAR_CREATE_CREDENTIAL_ENV,
+                    comment_credential_env: normalizedLinearWrites.includes(
+                      "evidence_comment",
+                    )
+                      ? LINEAR_COMMENT_CREDENTIAL_ENV
+                      : null,
+                    idempotency_namespace: existingIdempotencyNamespace,
+                  },
           },
         }
       : {
@@ -4381,6 +6132,12 @@ function protectedProjectFileIssue(target, destination) {
   if (
     destination === LINEAR_READONLY_PATH &&
     portableTextSha256(readFileSync(file)) !== LINEAR_READONLY_SOURCE_HASH
+  ) {
+    return `${destination} does not match the hash pinned in the protected CLI`;
+  }
+  if (
+    destination === LINEAR_WRITE_PATH &&
+    portableTextSha256(readFileSync(file)) !== LINEAR_WRITE_SOURCE_HASH
   ) {
     return `${destination} does not match the hash pinned in the protected CLI`;
   }
@@ -4560,6 +6317,18 @@ function commandDoctor(target) {
       "warning",
       workProviderHealth.ok ? "available" : "repository-fallback",
     );
+    const workWriteReadiness = linearWriteReadiness(target, config);
+    report(
+      "work-provider-writes",
+      workWriteReadiness.ok,
+      workWriteReadiness,
+      "warning",
+      workWriteReadiness.enabled_operations.length === 0
+        ? "disabled"
+        : workWriteReadiness.ok
+          ? "ready"
+          : "not-ready",
+    );
     const workLedger = commandWorkValidate(target);
     report(
       "work-ledger",
@@ -4585,6 +6354,29 @@ function commandDoctor(target) {
           }
         : evidenceGraph.errors,
     );
+    const providerReceipts = commandReceiptsValidate(target);
+    report(
+      "provider-receipts",
+      providerReceipts.ok,
+      providerReceipts.ok
+        ? {
+            path: providerReceipts.path,
+            receipt_count: providerReceipts.receipt_count,
+          }
+        : providerReceipts.errors,
+    );
+    try {
+      const campaign = commandCampaignStatus(target).campaign;
+      report(
+        "campaign",
+        true,
+        campaign ?? "not started",
+        "warning",
+        campaign?.status ?? "not-started",
+      );
+    } catch (error) {
+      report("campaign", false, error.message, "required", "invalid");
+    }
     const parallel = config.parallel_delivery;
     const parallelErrors = errors.filter(
       (error) =>
@@ -6128,10 +7920,23 @@ Safe project setup:
   ultimate-agent-stack capabilities [--target DIR]
   ultimate-agent-stack work validate [--target DIR]
   ultimate-agent-stack evidence validate [--target DIR]
+  ultimate-agent-stack receipts validate [--target DIR]
+  ultimate-agent-stack campaign status [--target DIR]
+  ultimate-agent-stack campaign start --objective TEXT --max-iterations 1..25
+    --coordinator-token TOKEN [--target DIR]
+  ultimate-agent-stack campaign next --coordinator-token TOKEN [--target DIR]
+  ultimate-agent-stack campaign stop --reason TEXT --coordinator-token TOKEN
+    [--target DIR]
   ultimate-agent-stack memory-setup [--target DIR] [--harness NAME]
   ultimate-agent-stack memory-health [--target DIR]
   ultimate-agent-stack linear-setup [--target DIR]
   ultimate-agent-stack linear-health [--target DIR]
+  ultimate-agent-stack linear-write issue-create --work-item ID --team KEY
+    --authority-source TEXT --coordinator-token TOKEN
+    --confirm-external-write [--target DIR]
+  ultimate-agent-stack linear-write evidence-comment --work-item ID
+    --authority-source TEXT --coordinator-token TOKEN
+    --confirm-external-write [--target DIR]
   ultimate-agent-stack start [--target DIR] [--idea TEXT]
     [--coordinator-token TOKEN]
 
@@ -6141,6 +7946,7 @@ Agent-operated quality controls:
   ultimate-agent-stack configure --profile PROFILE --review PROVIDER
     --knowledge PROVIDER [--knowledge-scope SCOPE] --external-data POLICY
     [--work repository|linear] [--linear-team KEY ...]
+    [--linear-write issue_create|evidence_comment ...]
     --reason TEXT [--reviewer LOGIN ...]
     [--execution MODE] [--merge MODE] [--target DIR]
   ultimate-agent-stack approve-checks --reason TEXT [--target DIR]
@@ -6172,7 +7978,10 @@ backed defaults with built-in review and human-controlled merge authority.
 Repository checkpoints remain authoritative. Optional GBrain memory is project-
 scoped and falls back safely. Optional project telemetry is read-only, disabled by
 default, and falls back to repository evidence; Ultimate Agent Stack does not phone
-home. One active Project Steward owns a checkout at a time.`;
+home. Linear is read-only by default; the only optional writes are receipted issue
+and evidence-comment creation with explicit authority. Campaigns select one
+repository item at a time and stop at their configured bound. One active Project
+Steward owns a checkout at a time.`;
 }
 
 function execute(command, args) {
@@ -6221,6 +8030,60 @@ function execute(command, args) {
       const target = resolveTarget(getOption(evidenceArgs, "--target", "."));
       return commandEvidenceValidate(target);
     }
+    case "receipts": {
+      const [subcommand, ...receiptArgs] = args;
+      if (subcommand !== "validate") {
+        throw new StackError("receipts subcommand must be validate");
+      }
+      assertNoUnknownOptions(receiptArgs, ["--target"]);
+      const target = resolveTarget(getOption(receiptArgs, "--target", "."));
+      return commandReceiptsValidate(target);
+    }
+    case "campaign": {
+      const [subcommand, ...campaignArgs] = args;
+      if (!["start", "status", "next", "stop"].includes(subcommand)) {
+        throw new StackError(
+          "campaign subcommand must be start, status, next, or stop",
+        );
+      }
+      const allowedCampaignOptions = {
+        start: [
+          "--target",
+          "--objective",
+          "--max-iterations",
+          "--coordinator-token",
+        ],
+        status: ["--target"],
+        next: ["--target", "--coordinator-token"],
+        stop: ["--target", "--reason", "--coordinator-token"],
+      };
+      assertNoUnknownOptions(
+        campaignArgs,
+        allowedCampaignOptions[subcommand],
+      );
+      const target = resolveTarget(getOption(campaignArgs, "--target", "."));
+      if (subcommand === "status") {
+        return commandCampaignStatus(target);
+      }
+      const coordinatorToken = getOption(
+        campaignArgs,
+        "--coordinator-token",
+      );
+      if (subcommand === "start") {
+        return commandCampaignStart(target, {
+          objective: getOption(campaignArgs, "--objective"),
+          maxIterations: getOption(campaignArgs, "--max-iterations"),
+          coordinatorToken,
+        });
+      }
+      if (subcommand === "next") {
+        return commandCampaignNext(target, { coordinatorToken });
+      }
+      return commandCampaignStop(target, {
+        reason: getOption(campaignArgs, "--reason"),
+        coordinatorToken,
+      });
+    }
     case "memory-setup": {
       assertNoUnknownOptions(args, ["--target", "--harness"]);
       const target = resolveTarget(getOption(args, "--target", "."));
@@ -6241,6 +8104,45 @@ function execute(command, args) {
       const target = resolveTarget(getOption(args, "--target", "."));
       return commandLinearHealth(target);
     }
+    case "linear-write": {
+      const [operation, ...writeArgs] = args;
+      if (!["issue-create", "evidence-comment"].includes(operation)) {
+        throw new StackError(
+          "linear-write operation must be issue-create or evidence-comment",
+        );
+      }
+      assertNoUnknownOptions(
+        writeArgs,
+        [
+          "--target",
+          "--work-item",
+          "--team",
+          "--authority-source",
+          "--coordinator-token",
+        ],
+        ["--confirm-external-write"],
+      );
+      const target = resolveTarget(getOption(writeArgs, "--target", "."));
+      const options = {
+        workItemId: getOption(writeArgs, "--work-item"),
+        teamKey: getOption(writeArgs, "--team"),
+        authoritySource: getOption(writeArgs, "--authority-source"),
+        coordinatorToken: getOption(writeArgs, "--coordinator-token"),
+        confirmExternalWrite: hasFlag(
+          writeArgs,
+          "--confirm-external-write",
+        ),
+      };
+      if (operation === "issue-create") {
+        return commandLinearIssueCreate(target, options);
+      }
+      if (options.teamKey !== undefined) {
+        throw new StackError(
+          "--team is only supported for linear-write issue-create",
+        );
+      }
+      return commandLinearEvidenceComment(target, options);
+    }
     case "configure": {
       assertNoUnknownOptions(args, [
         "--target",
@@ -6251,6 +8153,7 @@ function execute(command, args) {
         "--knowledge-scope",
         "--work",
         "--linear-team",
+        "--linear-write",
         "--external-data",
         "--execution",
         "--merge",
@@ -6266,6 +8169,7 @@ function execute(command, args) {
         knowledgeScope: getOption(args, "--knowledge-scope"),
         work: getOption(args, "--work"),
         linearTeams: getRepeatedOption(args, "--linear-team"),
+        linearWrites: getRepeatedOption(args, "--linear-write"),
         externalData: getOption(args, "--external-data"),
         execution: getOption(args, "--execution"),
         merge: getOption(args, "--merge"),
@@ -6440,6 +8344,7 @@ if (isEntryPoint) {
 export {
   CHECKPOINT_MARKDOWN_PATH,
   CHECKPOINT_PATH,
+  CAMPAIGN_PATH,
   CONFIG_PATH,
   COORDINATOR_PATH,
   CORE_POLICY_PATH,
@@ -6449,6 +8354,7 @@ export {
   PACKAGE_ROOT,
   PACKAGE_VERSION,
   PROJECT_CLI_PATH,
+  PROVIDER_RECEIPTS_PATH,
   REVIEW_RECEIPT_PATH,
   REVIEW_WORKFLOW_PATH,
   SAFE_ENVIRONMENT_NAMES,
@@ -6457,6 +8363,10 @@ export {
   checksHash,
   commandCheckpoint,
   commandCapabilities,
+  commandCampaignNext,
+  commandCampaignStart,
+  commandCampaignStatus,
+  commandCampaignStop,
   commandAdoptManaged,
   commandApproveChecks,
   commandCheckLock,
@@ -6467,9 +8377,12 @@ export {
   commandEvidenceValidate,
   commandLock,
   commandLinearHealth,
+  commandLinearEvidenceComment,
+  commandLinearIssueCreate,
   commandLinearSetup,
   commandMemoryHealth,
   commandMemorySetup,
+  commandReceiptsValidate,
   commandStart,
   commandStatus,
   commandUnlock,
@@ -6479,6 +8392,7 @@ export {
   configurationHash,
   defaultConfig,
   detectProject,
+  deterministicUuid,
   execute,
   formatDoctorHuman,
   installOrUpgrade,
@@ -6490,7 +8404,9 @@ export {
   resolveConfigureOptions,
   resolveTarget,
   validateConfig,
+  validateCampaignState,
   validateEvidenceGraph,
+  validateProviderReceipt,
   validateWorkEvidenceLinkage,
   validateWorkLedger,
 };

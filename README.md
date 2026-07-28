@@ -114,7 +114,9 @@ It may ask:
 - Should progress live only in repository files, or also in private local
   searchable memory?
 - Should work stay in the portable repository ledger, or also read approved
-  Linear teams through the reviewed read-only adapter?
+  Linear teams through the reviewed adapter?
+- If Linear is selected, should it remain read-only, or may it create only
+  receipted issues and evidence comments after explicit approval?
 - May it merge after every required check passes?
 
 It should not ask you to choose routine frameworks, write test commands, manage
@@ -250,7 +252,7 @@ The core workflow depends on capabilities, not vendor names.
 | Independent review | Repository standards and intent review | CodeRabbit or an approved GitHub human |
 | Project knowledge | Repository checkpoint, evidence, and Git history | Project-scoped local or separately approved remote GBrain |
 | Project telemetry | Repository and deployment evidence | Reviewed read-only product, error, service, or AI provider |
-| Work tracking | Portable repository ledger and evidence graph | Scoped read-only Linear today; other reviewed providers can implement the same contract |
+| Work tracking | Portable repository ledger and evidence graph | Scoped Linear reading plus optional receipted issue/comment creation; other reviewed providers can implement the same contract |
 
 Optional providers cannot expand authority. A missing knowledge provider falls
 back to repository state. Missing telemetry falls back to repository evidence.
@@ -271,6 +273,18 @@ includes them in `doctor`. Repository tracking works with no account or vendor.
 An optional provider may organize the same normalized work later, but it cannot
 change delivery authority or replace acceptance evidence.
 
+### Bounded campaign loop
+
+Campaign mode walks the provider-neutral ledger one work item at a time. A
+campaign has a human-readable objective, a hard limit of 1–25 iterations, and
+one active work item. It selects only `ready` work whose dependencies are
+`done`, stops at the limit, and returns `decision-needed` when no safe item is
+eligible. It never creates an unbounded autonomous queue.
+
+The active Project Steward token is required for every campaign transition.
+External-provider synchronization is separate and explicit; starting or
+advancing a campaign never writes to Linear.
+
 ### Optional Linear connection
 
 Onboarding asks whether work should remain repository-only or also read from
@@ -285,13 +299,29 @@ helper exposes one bounded, paginated GraphQL query shape but no mutations.
 `doctor` verify authentication plus visibility of the approved team keys, and
 `start` tests the configured provider automatically.
 
+Read-only remains the recommended Linear mode. If a human separately approves
+writes, configuration may enable only `issue_create`, or `issue_create` plus
+`evidence_comment`. Each command requires the active Project Steward token,
+`--confirm-external-write`, and an authority source. Creation uses deterministic
+provider IDs, reconciles ambiguous outcomes, and writes a validated receipt
+under `.agent-stack/provider-receipts/`.
+
+Write credentials are separate and least-privilege:
+
+- `LINEAR_CREATE_API_KEY` has only Create issues permission.
+- `LINEAR_COMMENT_API_KEY` has only Create comments permission.
+
+Both are restricted to approved teams. The adapter exposes no issue edits,
+status transitions, assignment, deletion, projects, cycles, labels, or
+administrative mutations. The repository ledger remains canonical.
+
 Linear's response does not attest the permission selected when the key was
-created. The CLI can prove its own surface is query-only; the human confirms
-that the upstream key was created with Read permission. Compatible coding
-harnesses may additionally use Linear's official
+created. The CLI proves its own fixed read and mutation surfaces; the human
+confirms the upstream keys use the documented least-privilege permissions.
+Compatible coding harnesses may additionally use Linear's official
 `https://mcp.linear.app/mcp/readonly` endpoint. Failure always returns to the
-repository ledger. Native Linear Agent sessions, Agent Auth, and remote writes
-remain deliberately out of this adapter.
+repository ledger. Native Linear Agent sessions and Agent Auth remain
+deliberately deferred until adoption demonstrates a need.
 
 ## Safety in Plain Language
 
@@ -303,6 +333,8 @@ The CLI checks the controls it owns:
 - Changed check commands or package scripts require approval again.
 - Missing, failed, skipped, or timed-out required checks block completion.
 - Changed project intent is detected through locked file hashes.
+- Provider writes require explicit authority and validated local receipts.
+- Campaigns are iteration-bounded and select only one eligible work item.
 - Required review must be current with no unresolved actionable thread.
 - One active Project Steward lease owns a checkout; explicit confirmation is
   required to take over an active lease.

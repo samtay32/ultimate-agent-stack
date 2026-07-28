@@ -119,7 +119,7 @@ itself.
 The shared vocabulary and receipt live in
 [`manage-project-work`](../skills/manage-project-work/references/work-evidence-contract.md).
 
-### Linear read-only adapter
+### Linear adapter
 
 Linear is the first optional implementation of the neutral work contract. It is
 selected only after the onboarding question and requires:
@@ -127,7 +127,7 @@ selected only after the onboarding question and requires:
 - `approved_providers` external-data policy;
 - one or more explicit uppercase team keys;
 - `read_only_mirror` synchronization;
-- `read_only` provider policy;
+- `read_only` provider policy by default;
 - a `LINEAR_API_KEY` created in Linear with only the Read permission;
 - the portable repository ledger and evidence graph as fallback.
 
@@ -136,14 +136,24 @@ viewer identity and visible team keys. It has no mutation operation.
 `linear-health`, `doctor`, and `start` report availability without recording
 the credential, user profile, team names, issue contents, or raw response.
 
+After a second explicit onboarding decision, the reviewed adapter can enable
+only `issue_create`, or `issue_create` plus `evidence_comment`. These operations
+use separate team-restricted credentials, require the active coordinator token,
+an authority source, and an explicit external-write confirmation, and produce
+validated repository receipts. They do not expose arbitrary GraphQL or issue
+editing, status, assignment, deletion, project, cycle, label, attachment, or
+administrative mutations.
+
 Linear's official read-only MCP endpoint,
 `https://mcp.linear.app/mcp/readonly`, may be connected by compatible harnesses
 after approval. A host-owned MCP connection does not alter project policy.
-Native Linear Agent sessions, Agent Auth, write scopes, and automatic issue
-mutation remain deferred.
+Native Linear Agent sessions and Agent Auth remain deferred. Provider writes
+are never automatic and campaign mode never triggers them.
 
 See the
-[`Linear read-only provider reference`](../skills/manage-project-work/references/linear-readonly-provider.md).
+[`Linear read-only provider reference`](../skills/manage-project-work/references/linear-readonly-provider.md)
+and
+[`Linear receipted-writes reference`](../skills/manage-project-work/references/linear-receipted-writes.md).
 
 ## Adding a Future Provider
 

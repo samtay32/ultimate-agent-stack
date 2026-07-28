@@ -112,11 +112,17 @@ expands execution, merge, deployment, or release authority. Do not store remote
 payloads, credentials, personal data, or raw telemetry in repository work
 evidence.
 
-The reviewed Linear adapter is optional and read-only. When configured, run
-`linear-health` before relying on it, restrict reads to approved team keys, and
-fall back to the repository ledger on any authentication, scope, rate-limit, or
-availability failure. Never use a write-capable key or treat Linear status as
-completion evidence.
+The reviewed Linear adapter is optional and read-only by default. When
+configured, run `linear-health` before relying on it, restrict reads to approved
+team keys, and fall back to the repository ledger on any authentication, scope,
+rate-limit, or availability failure. If receipted writes are separately
+approved, use only the protected `linear-write` commands with the active
+coordinator token, explicit external-write confirmation, and an authority
+source. Never treat Linear status as completion evidence.
+
+Campaign mode selects one eligible repository work item at a time and never
+synchronizes a provider implicitly. Respect its iteration bound and stop for
+`decision-needed`.
 
 ## Continuity
 

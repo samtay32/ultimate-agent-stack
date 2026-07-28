@@ -149,6 +149,8 @@ flowchart LR
 | `.agent-stack/coordinator.json` | Local CLI state | Expiring ownership lease for one Project Steward in a checkout; ignored by Git |
 | `.agent-stack/gbrain-home/` | Optional local adapter | Checkout-scoped PGLite memory; ignored by Git |
 | `.agent-stack/runs/` | Local evidence | Bounded command results; ignored by default |
+| `.agent-stack/campaign.json` | CLI and Project Steward | Tracked one-item-at-a-time campaign state with a hard iteration bound |
+| `.agent-stack/provider-receipts/` | CLI | Tracked bounded receipts for every enabled external work-provider write attempt |
 | Pull request | GitHub | Reviewable outcome, evidence, and disposition ledger |
 
 The configuration stores guided-interaction invariants, selected providers, and
@@ -163,7 +165,7 @@ delivery continues.
 | Review | Built-in standards and intent review | CodeRabbit or allowed GitHub human | A required provider fails closed; a stale review never counts |
 | Knowledge | Project-scoped repository instructions, artifacts, evidence, and Git | Project- or organization-scoped GBrain | Warn, retain provenance, and continue with repository fallback |
 | Telemetry | Repository and deployment evidence | Zero or more reviewed read-only product, error, service, or AI providers | Warn, retain bounded references, and continue with repository fallback |
-| Work | Portable repository ledger and evidence graph | Scoped read-only Linear today; future reviewed providers use the same contract | Continue from the repository mirror; never expand delivery authority |
+| Work | Portable repository ledger and evidence graph | Scoped Linear reading plus optional receipted issue/comment creation; future reviewed providers use the same contract | Continue from the repository mirror; never expand delivery authority |
 
 Provider configuration is declarative and validated by package code. A
 repository cannot add an arbitrary executable adapter merely by naming it in
@@ -188,11 +190,14 @@ requests, review, release, checkpoints, and telemetry. It stores references and
 short redacted summaries, not copies of remote systems. The graph is derived
 evidence navigation; the referenced artifacts remain authoritative.
 
-The Linear adapter is a bounded reader, not a second orchestrator. Its fixed,
-paginated GraphQL query shape checks viewer authentication and configured team
-visibility; it exposes no mutation. The official read-only MCP endpoint is an
-optional harness-owned connection. Native Linear Agent sessions and Agent Auth
-remain outside the current architecture.
+The Linear adapter is not a second orchestrator. Its fixed, paginated query
+shape checks viewer authentication and configured team visibility. Optional
+write helpers expose only deterministic issue creation and evidence-comment
+creation, with separate credentials, explicit authority, reconciliation, and
+repository receipts. Campaign advancement and provider synchronization remain
+separate operations. The official read-only MCP endpoint is an optional
+harness-owned connection. Native Linear Agent sessions and Agent Auth remain
+outside the current architecture.
 
 ## Continuity and Checkout Ownership
 
