@@ -65,11 +65,13 @@ function temporaryProject() {
   return {
     directory,
     cleanup() {
+      // Windows may retain a child-process file handle briefly after an
+      // intentional timeout or output-overflow termination.
       rmSync(directory, {
         recursive: true,
         force: true,
-        maxRetries: 5,
-        retryDelay: 100,
+        maxRetries: 20,
+        retryDelay: 250,
       });
     },
   };
