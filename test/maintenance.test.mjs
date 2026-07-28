@@ -201,11 +201,6 @@ test("review closure validates claims and has one disposition vocabulary", () =>
     closeReviewSkill,
     /Apply one exact canonical disposition and the response format/,
   );
-  assert.doesNotMatch(
-    closeReviewSkill,
-    /\*\*(?:fix|rebut|defer|decision needed):\*\*/,
-    "the skill must not restate the policy with noncanonical labels",
-  );
 
   for (const source of [
     closeReviewSkill,
@@ -220,7 +215,12 @@ test("review closure validates claims and has one disposition vocabulary", () =>
     );
     assert.doesNotMatch(
       source,
-      /^Disposition:/m,
+      /\*\*(?:fix|rebut|defer|decision needed):\*\*/,
+      "secondary guidance must not restate noncanonical labels",
+    );
+    assert.doesNotMatch(
+      source,
+      /^[ \t]*Disposition:/m,
       "secondary guidance must defer to the canonical policy",
     );
   }
