@@ -200,11 +200,11 @@ function main() {
         "bounded_references_only" ||
       config.capabilities.telemetry.raw_payload_storage !== false ||
       config.capabilities.telemetry.repository_fallback !== true ||
-      config.capabilities.work.provider !== "repository" ||
-      config.capabilities.work.required !== false ||
-      config.capabilities.work.sync_mode !== "repository_only" ||
-      config.capabilities.work.write_policy !== "repository_only" ||
-      config.capabilities.work.repository_fallback !== true ||
+      config.capabilities?.work?.provider !== "repository" ||
+      config.capabilities?.work?.required !== false ||
+      config.capabilities?.work?.sync_mode !== "repository_only" ||
+      config.capabilities?.work?.write_policy !== "repository_only" ||
+      config.capabilities?.work?.repository_fallback !== true ||
       !Array.isArray(config.quality?.environment?.allow) ||
       config.quality.environment.allow.length !== 0
     ) {

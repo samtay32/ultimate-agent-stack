@@ -27,7 +27,7 @@ implicitly from precise descriptions.
 flowchart LR
     SET["setup-autonomous-project"] --> RUN["run-autonomous-delivery"]
     RUN --> KNOW["use-project-knowledge"]
-    RUN --> TELEMETRY["use-project-telemetry"]
+    RUN -->|"configured + bounded operational-evidence need"| TELEMETRY["use-project-telemetry"]
     RUN --> WORK["manage-project-work"]
     WORK --> SHAPE["shape-project"]
     SHAPE --> SECURE["secure-launch"]

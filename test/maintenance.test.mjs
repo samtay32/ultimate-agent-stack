@@ -523,6 +523,19 @@ test("work and evidence contracts remain portable and provider-neutral", () => {
   assert.equal(workItemSchema.additionalProperties, false);
   assert.equal(evidenceGraphSchema.additionalProperties, false);
   assert.equal(
+    workItemSchema.$defs.timestamp.oneOf[1].pattern,
+    "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?Z$",
+  );
+  assert.equal(
+    evidenceGraphSchema.$defs.timestamp.oneOf[1].pattern,
+    workItemSchema.$defs.timestamp.oneOf[1].pattern,
+  );
+  assert.equal(
+    workItemSchema.$defs.workItem.properties.external_refs.uniqueItems,
+    true,
+  );
+  assert.equal(evidenceGraphSchema.properties.edges.uniqueItems, true);
+  assert.equal(
     workItemSchema.$defs.workItem.properties.status.enum.includes("done"),
     true,
   );
@@ -531,6 +544,14 @@ test("work and evidence contracts remain portable and provider-neutral", () => {
       "verifies",
     ),
     true,
+  );
+  assert.match(
+    adaptersGuide,
+    /acceptance,\s+implementation,\s+verification,\s+and review evidence/i,
+  );
+  assert.match(
+    workEvidenceContract,
+    /Every item\s+beyond `backlog` requires a matching `work_item` node/i,
   );
 });
 
