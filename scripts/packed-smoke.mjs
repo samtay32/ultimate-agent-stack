@@ -81,7 +81,7 @@ function main() {
           name: "packed-smoke-fixture",
           private: true,
           scripts: {
-            test: "node --test tests",
+            test: "node --test tests/smoke.test.mjs",
           },
         },
         null,
