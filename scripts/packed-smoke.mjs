@@ -11,30 +11,20 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+
+import {
+  spawnNpm,
+  spawnPortable,
+} from "../lib/portable-process.mjs";
 
 const SCRIPT_FILE = fileURLToPath(import.meta.url);
 const PACKAGE_ROOT = resolve(dirname(SCRIPT_FILE), "..");
 
-function npmInvocation(args) {
-  const npmCli = [
-    process.env.npm_execpath,
-    join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
-  ].find((candidate) => candidate && existsSync(candidate));
-  return npmCli
-    ? { command: process.execPath, args: [npmCli, ...args] }
-    : {
-        command: process.platform === "win32" ? "npm.cmd" : "npm",
-        args,
-      };
-}
-
 function run(command, args, cwd) {
-  const result = spawnSync(command, args, {
+  const result = spawnPortable(command, args, {
     cwd,
     encoding: "utf8",
-    shell: false,
     timeout: 120_000,
     maxBuffer: 8 * 1024 * 1024,
   });
@@ -47,8 +37,18 @@ function run(command, args, cwd) {
 }
 
 function runNpm(args, cwd) {
-  const invocation = npmInvocation(args);
-  return run(invocation.command, invocation.args, cwd);
+  const result = spawnNpm(args, {
+    cwd,
+    encoding: "utf8",
+    timeout: 120_000,
+    maxBuffer: 8 * 1024 * 1024,
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `npm ${args.join(" ")} failed\n${result.stdout}\n${result.stderr}`,
+    );
+  }
+  return result.stdout;
 }
 
 function main() {

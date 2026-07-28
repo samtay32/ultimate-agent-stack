@@ -14,8 +14,8 @@ All notable changes to Ultimate Agent Stack are documented here.
 - A deterministic evaluator validates live harness run records against the
   current hashed behavior surface without claiming that unit tests prove model
   behavior.
-- CI now runs the full release gate on the minimum supported Node.js version
-  and on minimum and current Node.js versions for Windows.
+- The supported runtime is now Node.js 22 or newer. CI runs the full release
+  gate on Node.js 22 for Ubuntu and Windows, plus current Node.js on Windows.
 
 ### Changed
 
@@ -41,10 +41,11 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ### Fixed
 
-- Quality checks, local GBrain commands, npm release preflight, and packed smoke
-  now execute Windows command shims without enabling an unrestricted shell.
-  Test discovery, skill metadata parsing, and behavioral-surface hashes are
-  stable across Windows paths and CRLF checkouts.
+- Quality checks, local GBrain commands, npm release preflight, GitHub release
+  synchronization, and packed smoke now use the maintained `cross-spawn`
+  implementation to execute Windows command shims without enabling an
+  unrestricted shell. Test discovery, skill metadata parsing, and
+  behavioral-surface hashes are stable across Windows paths and CRLF checkouts.
 
 ## 0.7.1 - 2026-07-27
 

@@ -5,6 +5,8 @@ import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+import { spawnNpm } from "../lib/portable-process.mjs";
+
 const SCRIPT_FILE = fileURLToPath(import.meta.url);
 const PACKAGE_ROOT = resolve(dirname(SCRIPT_FILE), "..");
 
@@ -55,9 +57,9 @@ function releaseBlockers(packageData, confirmation, runtime = null) {
   }
   if (
     runtime?.releaseMode === "bootstrap" &&
-    !versionAtLeast(runtime.node, "20.12.0")
+    !versionAtLeast(runtime.node, "22.0.0")
   ) {
-    blockers.push("bootstrap publication requires Node.js 20.12.0 or newer");
+    blockers.push("bootstrap publication requires Node.js 22.0.0 or newer");
   }
   if (
     runtime?.releaseMode === "bootstrap" &&
@@ -135,17 +137,8 @@ function main() {
     throw new Error(`Missing package.json: ${packageFile}`);
   }
   const packageData = JSON.parse(readFileSync(packageFile, "utf8"));
-  const npmCli = [
-    process.env.npm_execpath,
-    join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
-  ].find((candidate) => candidate && existsSync(candidate));
-  const npmExecutable = npmCli
-    ? process.execPath
-    : (process.platform === "win32" ? "npm.cmd" : "npm");
-  const npmArguments = npmCli ? [npmCli, "--version"] : ["--version"];
-  const npmResult = spawnSync(npmExecutable, npmArguments, {
+  const npmResult = spawnNpm(["--version"], {
     encoding: "utf8",
-    shell: false,
     timeout: 10_000,
   });
   const gitStatus = spawnSync(

@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { spawnSync } from "node:child_process";
 import {
   mkdtempSync,
   readFileSync,
@@ -11,6 +10,8 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { spawnNpm } from "../lib/portable-process.mjs";
 
 const SCRIPT_FILE = fileURLToPath(import.meta.url);
 const PACKAGE_ROOT = resolve(dirname(SCRIPT_FILE), "..");
@@ -350,7 +351,6 @@ function attestationUrl(value) {
 
 function verifyNpmPackageSignatures(packageName, version) {
   const directory = mkdtempSync(join(tmpdir(), "uas-release-signature-"));
-  const npmExecutable = process.platform === "win32" ? "npm.cmd" : "npm";
   try {
     const npmConfig = join(directory, ".npmrc");
     writeFileSync(
@@ -378,8 +378,7 @@ function verifyNpmPackageSignatures(packageName, version) {
     delete environment.GH_TOKEN;
     delete environment.NODE_AUTH_TOKEN;
     delete environment.NPM_TOKEN;
-    const install = spawnSync(
-      npmExecutable,
+    const install = spawnNpm(
       [
         "install",
         "--save-exact",
@@ -393,7 +392,6 @@ function verifyNpmPackageSignatures(packageName, version) {
         encoding: "utf8",
         env: environment,
         maxBuffer: 1_000_000,
-        shell: false,
         timeout: 120_000,
       },
     );
@@ -402,15 +400,13 @@ function verifyNpmPackageSignatures(packageName, version) {
         `could not install ${packageName}@${version} for signature verification`,
       );
     }
-    const audit = spawnSync(
-      npmExecutable,
+    const audit = spawnNpm(
       ["audit", "signatures", "--registry", NPM_REGISTRY],
       {
         cwd: directory,
         encoding: "utf8",
         env: environment,
         maxBuffer: 1_000_000,
-        shell: false,
         timeout: 120_000,
       },
     );

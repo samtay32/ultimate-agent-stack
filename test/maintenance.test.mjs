@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
@@ -18,6 +18,7 @@ import {
   releaseBlockers,
   versionAtLeast,
 } from "../scripts/release-preflight.mjs";
+import { spawnNpm } from "../lib/portable-process.mjs";
 
 const packageData = JSON.parse(
   readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8"),
@@ -326,7 +327,8 @@ test("CI covers minimum Node and Windows before the required verify job", () => 
   assert.match(ciWorkflow, /name: ubuntu-node-minimum/);
   assert.match(ciWorkflow, /name: windows-node-minimum/);
   assert.match(ciWorkflow, /name: windows-node-current/);
-  assert.match(ciWorkflow, /node: 20\.12\.2/);
+  assert.equal([...ciWorkflow.matchAll(/node: 22\b/g)].length, 2);
+  assert.doesNotMatch(ciWorkflow, /20\.12/);
   assert.match(ciWorkflow, /os: windows-latest/);
   assert.match(ciWorkflow, /verify:\s+needs: compatibility/);
   assert.ok(
@@ -360,6 +362,7 @@ test("package has no install hooks and guards publication with prepublishOnly", 
     [
       "scripts/github-release-sync.mjs",
       "scripts/gbrain-project.mjs",
+      "scripts/check-portable-bundle.mjs",
       "scripts/packed-smoke.mjs",
       "scripts/release-preflight.mjs",
       "scripts/review-receipt.mjs",
@@ -382,6 +385,7 @@ test("package has no install hooks and guards publication with prepublishOnly", 
     true,
     "package files must include the private vulnerability reporting policy",
   );
+  assert.equal(packageData.files.includes("lib/"), true);
   assert.equal(packageData.files.includes("evals/"), true);
   assert.equal(
     packageData.scripts?.["eval:contracts"],
@@ -390,9 +394,17 @@ test("package has no install hooks and guards publication with prepublishOnly", 
   assert.match(packageData.scripts?.["release:check"], /eval:contracts/);
   assert.match(packedSmoke, /packed\[0\]\.files/);
   assert.match(packedSmoke, /duplicate-copy paths/);
-  assert.match(packedSmoke, /process\.env\.npm_execpath/);
+  assert.match(packedSmoke, /spawnNpm/);
   assert.match(packedSmoke, /node --test tests\/smoke\.test\.mjs/);
+  assert.equal(packageData.engines?.node, ">=22");
   assert.deepEqual(packageData.dependencies ?? {}, {});
+  assert.equal(packageData.devDependencies?.["cross-spawn"], "7.0.6");
+  assert.equal(packageData.devDependencies?.esbuild, "0.28.1");
+  assert.equal(
+    packageLockData.packages?.[""]?.devDependencies?.["cross-spawn"],
+    "7.0.6",
+  );
+  assert.match(packageData.scripts?.["release:check"], /check:portable/);
 });
 
 test("release docs separate deterministic contracts from live model evidence", () => {
@@ -502,7 +514,7 @@ test("release preflight accepts explicit fully configured metadata", () => {
   );
   assert.deepEqual(
     releaseBlockers(candidate, "example-package@1.2.3", {
-      node: "20.12.0",
+      node: "22.0.0",
       npm: "10.8.0",
       releaseMode: "bootstrap",
       gitClean: true,
@@ -580,24 +592,13 @@ test("release preflight accepts explicit fully configured metadata", () => {
 });
 
 test("direct npm publication fails closed without explicit release authority", () => {
-  const npmCli = [
-    process.env.npm_execpath,
-    join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
-  ].find((candidate) => candidate && existsSync(candidate));
-  const npmExecutable = npmCli
-    ? process.execPath
-    : (process.platform === "win32" ? "npm.cmd" : "npm");
-  const npmArguments = npmCli
-    ? [npmCli, "publish", "--dry-run"]
-    : ["publish", "--dry-run"];
   const environment = { ...process.env };
   delete environment.NPM_RELEASE_MODE;
   delete environment.PUBLISH_CONFIRM;
-  const result = spawnSync(npmExecutable, npmArguments, {
+  const result = spawnNpm(["publish", "--dry-run"], {
     cwd: PACKAGE_ROOT,
     encoding: "utf8",
     env: environment,
-    shell: false,
     timeout: 30_000,
   });
 
@@ -606,6 +607,20 @@ test("direct npm publication fails closed without explicit release authority", (
     `${result.stdout}\n${result.stderr}`,
     /release mode must be explicitly set|confirmation must exactly equal/,
   );
+});
+
+test("portable npm fallback works without npm_execpath", () => {
+  const environment = { ...process.env };
+  delete environment.npm_execpath;
+  const result = spawnNpm(["--version"], {
+    cwd: PACKAGE_ROOT,
+    encoding: "utf8",
+    env: environment,
+    timeout: 10_000,
+  });
+
+  assert.equal(result.status, 0, result.error?.message ?? result.stderr);
+  assert.match(result.stdout, /^\d+\./);
 });
 
 test("upstream issue body is review-only and repository names are validated", () => {

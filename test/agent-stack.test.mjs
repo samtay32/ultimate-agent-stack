@@ -343,6 +343,26 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
         join(
           fixture.directory,
           ".agent-stack",
+          "lib",
+          "portable-process.mjs",
+        ),
+      ),
+    );
+    assert.ok(
+      existsSync(
+        join(
+          fixture.directory,
+          ".agent-stack",
+          "lib",
+          "THIRD_PARTY_NOTICES.md",
+        ),
+      ),
+    );
+    assert.ok(
+      existsSync(
+        join(
+          fixture.directory,
+          ".agent-stack",
           "bin",
           "gbrain-project.mjs",
         ),
