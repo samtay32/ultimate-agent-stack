@@ -22,7 +22,7 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: review-receipt-${{ github.event.pull_request.number || inputs.pr_number }}
+  group: review-receipt-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number }}
   cancel-in-progress: true
 
 jobs:
