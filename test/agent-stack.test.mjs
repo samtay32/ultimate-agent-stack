@@ -1590,6 +1590,62 @@ test("telemetry configuration rejects duplicate, custom-host, and local-only spe
   }
 });
 
+test("telemetry scope validation rejects missing and non-string identifiers", () => {
+  const cases = [
+    {
+      provider: {
+        provider: "posthog",
+        role: "product",
+        region: "us",
+        credential_env: "POSTHOG_PERSONAL_API_KEY",
+        scope: { project_id: 12345 },
+      },
+      expected:
+        "capabilities.telemetry.providers[0].scope.project_id must be a positive numeric identifier",
+    },
+    {
+      provider: {
+        provider: "sentry",
+        role: "errors",
+        region: "de",
+        credential_env: "SENTRY_AUTH_TOKEN",
+        scope: { project: "web-app" },
+      },
+      expected:
+        "capabilities.telemetry.providers[0].scope.organization must be a bounded slug",
+    },
+    {
+      provider: {
+        provider: "sentry",
+        role: "errors",
+        region: "de",
+        credential_env: "SENTRY_AUTH_TOKEN",
+        scope: { organization: "acme", project: 12345 },
+      },
+      expected:
+        "capabilities.telemetry.providers[0].scope.project must be a bounded slug",
+    },
+    {
+      provider: {
+        provider: "new-relic",
+        role: "service",
+        region: "eu",
+        credential_env: "NEW_RELIC_USER_KEY",
+        scope: { account_id: 98765 },
+      },
+      expected:
+        "capabilities.telemetry.providers[0].scope.account_id must be a positive numeric identifier",
+    },
+  ];
+
+  for (const { provider, expected } of cases) {
+    const config = safeConfig();
+    config.onboarding.external_data_policy = "approved_providers";
+    config.capabilities.telemetry.providers = [provider];
+    assert.ok(validateConfig(config).includes(expected));
+  }
+});
+
 test("telemetry health shares one aggregate provider probe budget", () => {
   const fixture = temporaryProject();
   const priorEnvironment = Object.fromEntries(

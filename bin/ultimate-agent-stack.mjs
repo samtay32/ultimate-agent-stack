@@ -1790,6 +1790,7 @@ function validateTelemetryProvider(value, label, expectedProvider) {
       `${label}.scope`,
     );
     if (
+      typeof value.scope.project_id !== "string" ||
       !TELEMETRY_NUMERIC_ID.test(value.scope.project_id) ||
       !Number.isSafeInteger(Number(value.scope.project_id))
     ) {
@@ -1802,10 +1803,16 @@ function validateTelemetryProvider(value, label, expectedProvider) {
       new Set(["organization", "project"]),
       `${label}.scope`,
     );
-    if (!TELEMETRY_IDENTIFIER.test(value.scope.organization)) {
+    if (
+      typeof value.scope.organization !== "string" ||
+      !TELEMETRY_IDENTIFIER.test(value.scope.organization)
+    ) {
       errors.push(`${label}.scope.organization must be a bounded slug`);
     }
-    if (!TELEMETRY_IDENTIFIER.test(value.scope.project)) {
+    if (
+      typeof value.scope.project !== "string" ||
+      !TELEMETRY_IDENTIFIER.test(value.scope.project)
+    ) {
       errors.push(`${label}.scope.project must be a bounded slug`);
     }
   } else {
@@ -1816,6 +1823,7 @@ function validateTelemetryProvider(value, label, expectedProvider) {
       `${label}.scope`,
     );
     if (
+      typeof value.scope.account_id !== "string" ||
       !TELEMETRY_NUMERIC_ID.test(value.scope.account_id) ||
       !Number.isSafeInteger(Number(value.scope.account_id))
     ) {
