@@ -132,10 +132,21 @@ post-run project. Use the same receipt-bound fixture for every harness
 comparison. Do not substitute a hand-built checkout or reuse a mutated fixture
 between harnesses.
 
+The protected baseline catalog binds every scenario to its exact initial Git
+commit and project-tree receipt. Materialization fails if the generated project
+does not match that baseline. Inspection also requires the requested
+scenario's baseline commit to be an ancestor of the current `HEAD`; a project
+materialized for one scenario cannot be relabeled as evidence for another.
+
 Repository text uses an LF checkout policy so canonical materialization is
 stable across supported Git platforms. The project-tree receipt hashes raw
 post-checkout bytes and therefore exposes any checkout or harness mutation
-rather than silently normalizing it away.
+rather than silently normalizing it away. Receipt traversal is iterative and
+fails closed above 20,000 filesystem entries, 10,000 files, 16 MiB for one
+file, or 128 MiB total so an agent-created empty-directory, dependency, or build
+tree cannot turn evidence inspection into an unbounded memory operation. Keep
+live-evaluation outputs outside the fixture unless the scenario explicitly
+requires the file.
 
 Immediately before and after the harness run, inspect the exact project without
 changing it:
@@ -149,7 +160,7 @@ npm run eval:fixture -- inspect \
 Copy the initial inspection into the `materialized_*` run-record fields and the
 final inspection into the `final_*` fields. Inspection rejects symlinked
 targets or project-tree entries and fails when the target is not a Git checkout
-with an exact HEAD commit.
+with an exact HEAD commit descended from the requested scenario baseline.
 
 If the materialization result lists prompt-only external input, retrieve the
 exact payload separately:
@@ -165,15 +176,16 @@ context. Do not write prompt-only content into the project. Retain a redacted
 trace showing that the input was delivered; a case run without its external
 stimulus is not a pass.
 
-`direct-receipted-linear-write` is intentionally preflight-only. It validates
-the configured operation, coordinator ownership, authority source,
-idempotency, and bounded input without contacting Linear or claiming that a
-provider write occurred. The deterministic Linear adapter tests separately
-exercise the fixed mutation shape and receipt behavior with an injected
-transport. A real provider dogfood run requires a disposable least-privilege
-workspace and explicit human authority; it is not part of the portable
-behavioral gate. The returned coordinator token belongs only to that disposable
-harness run; never publish it or reuse it in another fixture.
+`direct-receipted-linear-write` is intentionally readiness-only. It validates
+the configured operation, repository work and evidence, and coordinator
+ownership without contacting Linear, asserting exact external-write approval,
+or claiming that a provider preflight/write receipt exists. The deterministic
+Linear adapter tests separately exercise authority, idempotency, fixed mutation
+shape, and receipt behavior with an injected transport. A real provider dogfood
+run requires a disposable least-privilege workspace and explicit human
+authority; it is not part of the portable behavioral gate. The returned
+coordinator token belongs only to that disposable harness run; never publish it
+or reuse it in another fixture.
 
 The telemetry diagnosis scenario similarly proves fail-closed health and
 repository fallback with an intentionally absent credential. It must not
@@ -191,7 +203,36 @@ npm run eval:scaffold > /safe/temporary/path/uas-run.json
 For each scenario, start a fresh harness task or process with no conversation
 history from another case, then give it the exact `request` plus `context` in
 an isolated disposable project appropriate to that case. Do not show the
-`expected` block to the agent. Record:
+`expected` block to the agent.
+
+Mount only the exact package snapshot being evaluated as the harness-level
+plugin/skill source. This is required for uninstalled setup fixtures, which
+correctly contain no project copy of the stack. Disable every unrelated user
+plugin, skill, MCP server, and saved conversation. Record the isolated mount's
+behavior-surface hash so `user_configuration: "disabled"` means unrelated
+ambient configuration is disabled, not that the evaluated package is absent.
+
+Disable project-tool network access and remove this exact credential denylist
+from the harness process before the agent starts:
+
+```text
+GH_TOKEN
+GITHUB_TOKEN
+NODE_AUTH_TOKEN
+NPM_TOKEN
+LINEAR_API_KEY
+LINEAR_CREATE_API_KEY
+LINEAR_COMMENT_API_KEY
+POSTHOG_PERSONAL_API_KEY
+SENTRY_AUTH_TOKEN
+NEW_RELIC_USER_KEY
+```
+
+This boundary excludes the harness service's own authenticated model
+transport. It prevents project commands, unrelated plugins, and provider
+helpers from inheriting credentials that could turn a readiness/fail-closed
+scenario into a real external operation. A prompt-only instruction is not
+sufficient. Record:
 
 - `activated_skills` from the harness trace or explicit skill loading record;
 - `asked_clarifying_question`, `question_count`,
@@ -209,13 +250,17 @@ an isolated disposable project appropriate to that case. Do not show the
 - the exact `fixture_receipt` returned by canonical materialization;
 - the exact `materialization_spec_sha256` and readable `provider_authority`
   returned under `receipt`, including the explicit no-provider-call boundary
-  for the preflight case;
+  for the readiness case;
 - the exact materialized and post-run Git heads, project-tree receipts, and
-  project-state receipts;
+  project-state receipts, plus the final baseline-ancestor result;
 - a unique harness-session ID with
   `isolation: "fresh-session-per-scenario"`; session reuse invalidates the
   record because earlier activations and instructions could contaminate later
   cases;
+- the exact isolated package mount surface hash and execution-boundary receipt
+  showing project-tool network disabled, unrelated user configuration
+  disabled, provider credentials scrubbed, and the canonical variable
+  denylist;
 - the canonical prompt-only `external_inputs` receipts and a trace proving the
   matching content was delivered out of band;
 - a concise evidence summary and a transcript, trace, or run identifier.
@@ -262,6 +307,29 @@ When a pull request changes the behavior-surface hash:
 A release with an unchanged behavior-surface hash may cite the previous live
 result. A release with changed skills, entry prompts, adapters, project policy,
 or scenarios needs new live evidence.
+
+The canonical configured fixtures include protected installed package bytes and
+their manifest hashes. A package-version bump changes those bytes, so maintainers
+must regenerate and review `evals/fixture-baselines.json`. Because that catalog
+is part of the behavior surface, the bump requires fresh live evidence even
+when the human-facing skill prose is unchanged. This is deliberate: an old run
+must not be credited to different installed bytes.
+
+Generate a review-only proposal in a temporary file:
+
+```bash
+npm run eval:fixture -- propose-baselines \
+  > /safe/temporary/path/proposed-fixture-baselines.json
+diff -u \
+  evals/fixture-baselines.json \
+  /safe/temporary/path/proposed-fixture-baselines.json
+```
+
+The command materializes all scenarios in disposable directories, prints the
+deterministic proposed catalog, cleans up, and never edits the repository.
+Review every changed head/tree pair, update the committed catalog as an
+intentional code change, rerun the proposal until it matches exactly, then
+collect fresh harness evidence for the new surface.
 
 The flexible-intake front half deliberately crosses skill routing, multi-turn
 question behavior, source handling, repository reconciliation, artifact

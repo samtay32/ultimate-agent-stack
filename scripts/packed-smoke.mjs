@@ -21,12 +21,13 @@ import {
 const SCRIPT_FILE = fileURLToPath(import.meta.url);
 const PACKAGE_ROOT = resolve(dirname(SCRIPT_FILE), "..");
 
-function run(command, args, cwd) {
+function run(command, args, cwd, environment = undefined) {
   const result = spawnPortable(command, args, {
     cwd,
     encoding: "utf8",
     timeout: 120_000,
     maxBuffer: 8 * 1024 * 1024,
+    ...(environment ? { env: environment } : {}),
   });
   if (result.status !== 0) {
     throw new Error(
@@ -79,6 +80,7 @@ function main() {
       "skills/develop-project-brief/SKILL.md",
       "skills/develop-project-brief/references/brief-contract.md",
       "skills/develop-project-brief/references/intake-and-reconciliation.md",
+      "evals/fixture-baselines.json",
       "evals/fixtures.json",
       "scripts/skill-fixture.mjs",
     ]) {
@@ -127,12 +129,57 @@ function main() {
       !fixtureList.ok ||
       fixtureList.scenarios.length !== 26 ||
       fixtureList.scenarios.some(
-        (item) => !/^sha256:[a-f0-9]{64}$/.test(item.fixture_receipt),
+        (item) =>
+          !/^sha256:[a-f0-9]{64}$/.test(item.fixture_receipt) ||
+          !/^[a-f0-9]{40}$/.test(
+            item.expected_baseline?.git_head ?? "",
+          ) ||
+          !/^sha256:[a-f0-9]{64}$/.test(
+            item.expected_baseline?.project_tree_sha256 ?? "",
+          ),
       )
     ) {
       throw new Error("packed canonical fixture catalog is invalid");
     }
+    const proposedBaselines = JSON.parse(
+      run(
+        process.execPath,
+        [fixtureScript, "propose-baselines"],
+        fixtureConsumer,
+      ),
+    );
+    const committedBaselines = JSON.parse(
+      readFileSync(
+        join(
+          dirname(dirname(fixtureScript)),
+          "evals",
+          "fixture-baselines.json",
+        ),
+        "utf8",
+      ),
+    );
+    if (
+      JSON.stringify(proposedBaselines) !==
+      JSON.stringify(committedBaselines)
+    ) {
+      throw new Error(
+        "packed proposed fixture baselines do not match the committed catalog",
+      );
+    }
     const materializedFixture = join(sandbox, "materialized-fixture");
+    const outsideGitDirectory = join(sandbox, "outside-git-directory");
+    const outsideGitIndex = join(sandbox, "outside-git-index");
+    const hostileGitEnvironment = {
+      ...process.env,
+      GIT_DIR: outsideGitDirectory,
+      GIT_WORK_TREE: sandbox,
+      GIT_INDEX_FILE: outsideGitIndex,
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "core.hooksPath",
+      GIT_CONFIG_VALUE_0: sandbox,
+      GIT_EXTERNAL_DIFF: join(sandbox, "outside-diff"),
+      GIT_TEMPLATE_DIR: join(sandbox, "outside-template"),
+    };
     const fixtureResult = JSON.parse(
       run(
         process.execPath,
@@ -145,6 +192,7 @@ function main() {
           materializedFixture,
         ],
         fixtureConsumer,
+        hostileGitEnvironment,
       ),
     );
     if (
@@ -166,6 +214,7 @@ function main() {
           materializedFixture,
         ],
         fixtureConsumer,
+        hostileGitEnvironment,
       ),
     );
     if (
@@ -176,6 +225,14 @@ function main() {
         fixtureResult.receipt.project_state_sha256
     ) {
       throw new Error("packed canonical fixture inspection did not match");
+    }
+    if (
+      existsSync(outsideGitDirectory) ||
+      existsSync(outsideGitIndex)
+    ) {
+      throw new Error(
+        "packed canonical fixture honored ambient Git redirection",
+      );
     }
     const project = join(sandbox, "project");
     mkdirSync(project);

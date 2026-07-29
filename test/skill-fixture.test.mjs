@@ -26,12 +26,15 @@ import {
 import {
   EXPECTED_FIXTURE_IDS,
   LIVE_LINEAR_SANDBOX_OPT_IN,
+  expectedFixtureBaseline,
   expectedMaterializationSha256,
   externalInputsForFixture,
+  fixtureBaselineCatalog,
   fixtureCatalog,
   fixtureReceipt,
   inspectFixtureProject,
   materializeFixture,
+  proposeFixtureBaselines,
   projectStateSha256,
   projectTreeSha256,
   validateFixtureProviderBoundary,
@@ -107,6 +110,24 @@ test("canonical catalog covers exactly all 26 current scenarios", () => {
   }
 });
 
+test("baseline proposal is deterministic, review-only, and matches the protected catalog", () => {
+  const before = readFileSync(
+    join(PACKAGE_ROOT, "evals/fixture-baselines.json"),
+    "utf8",
+  );
+  assert.deepEqual(
+    proposeFixtureBaselines(),
+    fixtureBaselineCatalog(),
+  );
+  assert.equal(
+    readFileSync(
+      join(PACKAGE_ROOT, "evals/fixture-baselines.json"),
+      "utf8",
+    ),
+    before,
+  );
+});
+
 test("provider execution mode is bidirectionally bound to Linear write fixtures", () => {
   const linearFixture = fixtureCatalog().fixtures.find(
     (fixture) => fixture.scenario_id === "direct-receipted-linear-write",
@@ -138,7 +159,7 @@ test("provider execution mode is bidirectionally bound to Linear write fixtures"
           requires_explicit_sandbox_opt_in: true,
         },
       }),
-    /valid Linear preflight or explicit sandbox live-write boundary/,
+    /valid Linear readiness-only or explicit sandbox live-write boundary/,
   );
   assert.doesNotThrow(() =>
     validateFixtureProviderBoundary({
@@ -189,6 +210,14 @@ test("all canonical fixtures materialize with deterministic base and git state",
       );
       assert.match(result.git.head, /^[a-f0-9]{40}$/);
       assert.equal(result.git.branch, "main");
+      assert.deepEqual(
+        {
+          scenario_id: scenario.id,
+          git_head: result.git.head,
+          project_tree_sha256: result.receipt.project_tree_sha256,
+        },
+        expectedFixtureBaseline(scenario.id),
+      );
       assert.equal(git(target, ["rev-parse", "HEAD"]), result.git.head);
       const packageFile = readJson(join(target, "package.json"));
       assert.equal(packageFile.scripts.test, "node --test");
@@ -271,6 +300,41 @@ test("project-state receipts bind produced bytes and post-baseline runtime state
   }
 });
 
+test("project-tree receipts fail closed on unbounded files, bytes, and totals", () => {
+  const temporary = temporaryDirectory();
+  try {
+    const target = join(temporary.directory, "bounded-tree");
+    mkdirSync(target);
+    writeFileSync(join(target, "a.txt"), "aa");
+    writeFileSync(join(target, "b.txt"), "bb");
+    writeFileSync(join(target, "c.txt"), "cc");
+    mkdirSync(join(target, "empty-one"));
+    mkdirSync(join(target, "empty-two"));
+    assert.throws(
+      () => projectTreeSha256(target, { maxEntries: 4 }),
+      /more than 4 entries/,
+    );
+    assert.throws(
+      () => projectTreeSha256(target, { maxFiles: 2 }),
+      /more than 2 files/,
+    );
+    assert.throws(
+      () => projectTreeSha256(target, { maxFileBytes: 1 }),
+      /file larger than 1 bytes: a\.txt/,
+    );
+    assert.throws(
+      () => projectTreeSha256(target, { maxTotalBytes: 5 }),
+      /project tree larger than 5 bytes/,
+    );
+    assert.throws(
+      () => projectTreeSha256(target, { maxFiles: 0 }),
+      /maxFiles must be a positive safe integer/,
+    );
+  } finally {
+    temporary.cleanup();
+  }
+});
+
 test("fixture inspection returns exact read-only post-run receipts", () => {
   const temporary = temporaryDirectory();
   try {
@@ -284,6 +348,11 @@ test("fixture inspection returns exact read-only post-run receipts", () => {
       target,
     );
     assert.equal(initial.git.head, materialized.git.head);
+    assert.equal(initial.git.baseline_ancestor, true);
+    assert.equal(
+      initial.git.baseline_head,
+      expectedFixtureBaseline("flexible-direct-bypass").git_head,
+    );
     assert.equal(
       initial.receipt.project_tree_sha256,
       materialized.receipt.project_tree_sha256,
@@ -306,6 +375,16 @@ test("fixture inspection returns exact read-only post-run receipts", () => {
     assert.notEqual(
       postRun.receipt.project_state_sha256,
       initial.receipt.project_state_sha256,
+    );
+    assert.equal(postRun.git.baseline_ancestor, true);
+
+    assert.throws(
+      () =>
+        inspectFixtureProject(
+          "flexible-vague-discovery",
+          target,
+        ),
+      /does not descend from the canonical flexible-vague-discovery baseline/,
     );
 
     const cli = spawnSync(
@@ -336,6 +415,88 @@ test("fixture inspection returns exact read-only post-run receipts", () => {
         ),
       /existing non-symlink directory/,
     );
+  } finally {
+    temporary.cleanup();
+  }
+});
+
+test("fixture Git commands ignore ambient repository redirection and execution controls", () => {
+  const temporary = temporaryDirectory();
+  try {
+    const outsideGitDirectory = join(
+      temporary.directory,
+      "outside-git-directory",
+    );
+    const outsideIndex = join(temporary.directory, "outside-index");
+    const hostileEnvironment = {
+      ...process.env,
+      GIT_DIR: outsideGitDirectory,
+      GIT_WORK_TREE: temporary.directory,
+      GIT_INDEX_FILE: outsideIndex,
+      GIT_OBJECT_DIRECTORY: join(temporary.directory, "outside-objects"),
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: join(
+        temporary.directory,
+        "outside-alternates",
+      ),
+      GIT_COMMON_DIR: join(temporary.directory, "outside-common"),
+      GIT_CONFIG: join(temporary.directory, "outside-config"),
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "core.hooksPath",
+      GIT_CONFIG_VALUE_0: temporary.directory,
+      GIT_EXTERNAL_DIFF: join(temporary.directory, "outside-diff"),
+      GIT_PAGER: join(temporary.directory, "outside-pager"),
+      GIT_SSH: join(temporary.directory, "outside-ssh"),
+      GIT_SSH_COMMAND: join(temporary.directory, "outside-ssh-command"),
+      GIT_TEMPLATE_DIR: join(temporary.directory, "outside-template"),
+    };
+    for (const scenarioId of [
+      "flexible-vague-discovery",
+      "flexible-direct-bypass",
+    ]) {
+      const target = join(temporary.directory, `contained-${scenarioId}`);
+      const materialize = spawnSync(
+        process.execPath,
+        [
+          join(PACKAGE_ROOT, "scripts/skill-fixture.mjs"),
+          "materialize",
+          "--scenario",
+          scenarioId,
+          "--target",
+          target,
+        ],
+        {
+          encoding: "utf8",
+          env: hostileEnvironment,
+        },
+      );
+      assert.equal(materialize.status, 0, materialize.stderr);
+      assert.equal(existsSync(outsideGitDirectory), false);
+      assert.equal(existsSync(outsideIndex), false);
+      assert.equal(existsSync(join(target, ".git")), true);
+
+      const inspect = spawnSync(
+        process.execPath,
+        [
+          join(PACKAGE_ROOT, "scripts/skill-fixture.mjs"),
+          "inspect",
+          "--scenario",
+          scenarioId,
+          "--target",
+          target,
+        ],
+        {
+          encoding: "utf8",
+          env: hostileEnvironment,
+        },
+      );
+      assert.equal(inspect.status, 0, inspect.stderr);
+      assert.equal(
+        JSON.parse(inspect.stdout).git.baseline_ancestor,
+        true,
+      );
+      assert.equal(existsSync(outsideGitDirectory), false);
+      assert.equal(existsSync(outsideIndex), false);
+    }
   } finally {
     temporary.cleanup();
   }
@@ -511,7 +672,7 @@ test("draft, approved promotion, onboarding, providers, and work evidence match 
     assert.match(linearResult.coordinator_token, /^[a-f0-9]{64}$/);
     assert.deepEqual(linearResult.receipt.provider_authority, {
       provider: "linear",
-      mode: "preflight-only",
+      mode: "readiness-only",
       sandbox_opt_in_required: false,
       sandbox_opt_in_supplied: false,
       opt_in_option: null,
@@ -542,7 +703,7 @@ test("draft, approved promotion, onboarding, providers, and work evidence match 
   }
 });
 
-test("provider preflight fixture ignores ambient credentials and never claims a provider write", () => {
+test("provider readiness fixture ignores ambient credentials and never claims a provider write", () => {
   const temporary = temporaryDirectory();
   try {
     const preflightTarget = join(temporary.directory, "preflight");
@@ -569,7 +730,7 @@ test("provider preflight fixture ignores ambient credentials and never claims a 
     const result = JSON.parse(preflight.stdout);
     assert.deepEqual(result.receipt.provider_authority, {
       provider: "linear",
-      mode: "preflight-only",
+      mode: "readiness-only",
       sandbox_opt_in_required: false,
       sandbox_opt_in_supplied: false,
       opt_in_option: null,
