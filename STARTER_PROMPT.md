@@ -3,7 +3,12 @@
 Replace the bracketed request and paste the entire block into a fresh agent session opened at the project root.
 
 ```text
-Use $run-autonomous-delivery as the controlling workflow. If this repository is not configured for Ultimate Agent Stack, use $setup-autonomous-project first, finish its baseline, then continue.
+For end-to-end delivery or RESUME, use $run-autonomous-delivery as the
+controlling workflow. For a request explicitly limited to brief refinement,
+source audit, or reconciliation, use $develop-project-brief directly and stop
+before delivery. For explanation-only work, use neither. If this repository is
+not configured for Ultimate Agent Stack, use $setup-autonomous-project first,
+finish its baseline, then continue.
 
 Before material work, read `.agent-stack/core-policy.json` and run the local
 `start` command to acquire or resume the Project Steward lease, load the

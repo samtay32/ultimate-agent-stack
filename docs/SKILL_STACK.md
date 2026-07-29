@@ -42,7 +42,9 @@ flowchart LR
     SECURE --> COORD["coordinate-parallel-delivery"]
     COORD --> BUILD["build-vertical-slice"]
     BUILD --> VERIFY["verify-change"]
-    VERIFY --> CLOSE["close-review-loop"]
+    VERIFY --> REVIEW["independent pre-PR review"]
+    REVIEW --> PR["open or update pull request"]
+    PR --> CLOSE["close-review-loop"]
     CLOSE -->|repair| BUILD
     CLOSE -->|green| DONE["merge or merge-ready"]
     DONE --> KNOW
@@ -90,6 +92,12 @@ Project Steward: it alone retains the checkout coordinator token and writes the
 repository checkpoint.
 
 ## Installation Locations
+
+Every location below points to the same route-aware workflow contract. The
+package does not weaken authority, artifact, verification, or evidence rules
+for a particular vendor. Installing an adapter proves discovery wiring, not
+that every model/version follows it; compatibility claims require current live
+evidence for the exact harness and model.
 
 ### Codex
 

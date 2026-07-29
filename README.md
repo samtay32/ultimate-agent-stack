@@ -19,6 +19,13 @@ choices, destructive production actions, merging, and publishing.
 > cannot force every coding agent to follow written instructions, and it is not
 > an operating-system sandbox. See [What Is Actually Enforced](docs/TRUST.md).
 
+Provider-neutral does not mean every model/harness combination is silently
+declared compatible. The same project contract and skills are installed for
+each supported adapter, and releases report live evidence by exact harness and
+model. A harness that cannot follow the shared contract safely is reported as
+limited or untested; the package does not add vendor-specific exceptions or
+weaken the contract to manufacture a pass.
+
 ## Start in 30 Seconds
 
 Open or create a dedicated project folder in Codex, Claude Code, Cursor,
@@ -130,6 +137,9 @@ relevant advanced provider, the agent starts with one question:
 Approval selects repository memory and work tracking, no telemetry, built-in
 review, local-only data, routine agent-owned execution, and human-controlled
 merge authority. It should not follow that with separate provider questions.
+If your request already says to use the recommendation, that is the one
+approval and the agent should configure it without asking again. If the agent
+asks "Use this?", it must stop and wait for your answer before configuring.
 
 An advanced choice appears only when the project already uses it and evidence
 makes it relevant, you explicitly request it, or a real requirement cannot be

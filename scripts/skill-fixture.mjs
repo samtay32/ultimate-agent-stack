@@ -87,6 +87,7 @@ const EXPECTED_FIXTURE_IDS = new Set([
   "flexible-draft-lock",
   "flexible-approved-promotion",
   "flexible-simple-onboarding",
+  "flexible-simple-onboarding-approved",
   "flexible-external-secret-redaction",
 ]);
 const CONFIGURATION_STATES = new Set([

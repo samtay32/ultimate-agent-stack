@@ -25,6 +25,10 @@ Evidence, not confidence, decides readiness.
    node .agent-stack/bin/agent-stack.mjs verify
    ```
 
+   Keep the resulting bounded receipts through the current checkpoint and
+   handoff. Do not delete evidence merely because a duplicate `latest.json`
+   summary exists.
+
 5. Perform independent reviews:
    - **standards:** correctness, data loss, security, privacy, concurrency, performance, reliability, observability, maintainability;
    - **intent:** every requirement, non-goal, compatibility promise, migration, UX state, and operational outcome.
@@ -45,6 +49,8 @@ Evidence, not confidence, decides readiness.
 - declaring a warning "pre-existing" without base-revision evidence;
 - relying on an LLM reviewer as the sole correctness gate;
 - silently skipping unavailable tools.
+- claiming a test was added, a review was closed, or an artifact was locked
+  without matching repository and command evidence.
 
 ## Exit Contract
 

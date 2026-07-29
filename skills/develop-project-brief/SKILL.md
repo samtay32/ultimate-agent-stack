@@ -59,6 +59,8 @@ the brief. For supplied material or an existing codebase, also read
 9. Present the substantial draft in reviewable sections. Approval means the
    user accepted the brief for promotion; it does not cryptographically
    authenticate the approver.
+   When asking for that acceptance, end the turn and wait. Do not treat the
+   agent's own recommendation or a complete source as product-owner approval.
 10. Only after approval:
     - set `Status: APPROVED`;
     - set `Material open conflicts: NO`;
@@ -79,3 +81,8 @@ The skill exits in exactly one of these states:
 
 Never lock a DRAFT brief or implement product code while a material intent
 conflict remains.
+
+Artifact status is only `DRAFT` or `APPROVED`. Promotion does not rename the
+brief's status, and "locked" is CLI state rather than an artifact declaration.
+A rejected guard, including a rejected lock attempt, never authorizes changing
+a status or conflict declaration.

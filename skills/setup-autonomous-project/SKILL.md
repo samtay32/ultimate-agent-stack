@@ -51,6 +51,10 @@ Configure the repository without erasing its conventions. Setup is complete only
    > I recommend the private repository-only setup. It uses no outside memory,
    > tracking, or telemetry, and you retain merge control. Use this?
 
+   End the turn after asking and wait for the answer. The agent's recommendation
+   is not approval. A prior explicit instruction such as "use your recommended
+   safe setup" is already the one confirmation and must not be asked again.
+
    This one confirmation selects repository memory, repository work tracking,
    no telemetry, built-in review, local-only data, routine agent-owned
    execution, and human-controlled merge authority. After approval, use:

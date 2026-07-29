@@ -155,8 +155,8 @@ flowchart LR
    fail-closed verification, bounded logs, and artifact hashes. It deliberately
    contains no LLM decision logic.
 6. **Review plane** — independently checks engineering standards and locked
-   intent, then uses the configured CodeRabbit or allowed GitHub-human adapter
-   as an additional adversarial surface when required.
+   intent, then uses the configured independent review adapter as an additional
+   adversarial surface when required.
 7. **Authority plane** — limits interruptions without pretending authority does
    not exist. Reversible engineering is agent-owned; credentials, cost, legal
    risk, destructive production actions, and unauthorized releases remain
@@ -197,7 +197,10 @@ develops intent. Approval changes its working status but does not
 cryptographically authenticate the approver. `shape-project` promotes an
 approved brief into the canonical delivery, architecture, security, decision,
 and verification artifacts; only those final contracts enter the normal lock
-and implementation flow.
+and implementation flow. Artifact declarations use only `DRAFT` or `APPROVED`;
+the protected CLI records lock state separately in `.agent-stack/state.json`.
+A lock refusal does not grant authority to rewrite the artifact's approval or
+conflict declarations.
 
 ## Decision Semantics
 

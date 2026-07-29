@@ -104,7 +104,7 @@ The agent:
 5. starts **Publish npm package** with the exact
    `ultimate-agent-stack@VERSION` input.
 
-The flexible-intake Milestone 1 release contains 26 scenarios and 13 skills.
+The flexible-intake Milestone 1 release contains 27 scenarios and 13 skills.
 Its broad front-half behavior claim requires complete current-surface evidence
 from at least two distinct primary supported harnesses. Each record must include
 activation and false activation, bounded question behavior, prohibited actions

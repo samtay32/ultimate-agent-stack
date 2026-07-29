@@ -1,6 +1,6 @@
 ---
 name: manage-project-work
-description: Plan, update, or inspect actual project work through the configured work provider while preserving a portable repository ledger and evidence graph. Use when turning intent into work items, choosing the next bounded slice, recording progress or blockers, linking requirements to implementation and verification, reconciling external work tracking, or reporting what repository evidence supports a real work item. Do not activate for explanation-only questions or coordinator-lease disputes; answer a requested concept directly, and let run-autonomous-delivery enforce the active-writer lease during delivery.
+description: Plan, update, inspect, or check provider-write readiness for actual project work while preserving a portable repository ledger and evidence graph. Use when turning intent into work items, choosing the next bounded slice, recording progress or blockers, linking requirements to implementation and verification, reconciling external work tracking, reporting or diagramming what repository evidence supports a real work item, or starting/refusing a bounded campaign. Do not activate for explanation-only questions or coordinator-lease disputes; answer a requested concept directly, and let run-autonomous-delivery enforce the active-writer lease during delivery.
 ---
 
 # Manage Project Work

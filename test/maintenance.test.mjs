@@ -139,6 +139,10 @@ const setupProjectSkill = readFileSync(
   join(PACKAGE_ROOT, "skills/setup-autonomous-project/SKILL.md"),
   "utf8",
 );
+const manageProjectWorkSkill = readFileSync(
+  join(PACKAGE_ROOT, "skills/manage-project-work/SKILL.md"),
+  "utf8",
+);
 const plainLanguageEntryAdapters = [
   "setup-autonomous-project",
   "run-autonomous-delivery",
@@ -168,6 +172,10 @@ const handoffTemplate = readFileSync(
 );
 const projectAgents = readFileSync(
   join(PACKAGE_ROOT, "assets/project-template/AGENTS.md"),
+  "utf8",
+);
+const geminiAdapter = readFileSync(
+  join(PACKAGE_ROOT, "assets/project-template/GEMINI.md"),
   "utf8",
 );
 const readme = readFileSync(join(PACKAGE_ROOT, "README.md"), "utf8");
@@ -510,6 +518,43 @@ test("flexible intake stays ordered, proportionate, and source preserving", () =
   }
 });
 
+test("workflow loading stays route-aware and provider-neutral", () => {
+  for (const source of [
+    projectAgents,
+    geminiAdapter,
+    runDeliverySkill,
+    starterPrompt,
+    packageCliSource,
+  ]) {
+    assert.match(
+      source,
+      /explicitly limited[\s\S]{0,60}brief refinement/i,
+    );
+    assert.match(source, /run-autonomous-delivery/);
+    assert.match(source, /develop-project-brief/);
+  }
+  for (const source of [projectAgents, runDeliverySkill, packageCliSource]) {
+    assert.match(source, /implementation.*build-vertical-slice/is);
+    assert.match(source, /verification.*verify-change/is);
+    assert.match(
+      source,
+      /close-review-loop.*existing pull request.*(?:provider|human).*review thread/is,
+    );
+  }
+  assert.match(
+    manageProjectWorkSkill,
+    /provider-write readiness[\s\S]*diagramming[\s\S]*bounded campaign/i,
+  );
+  assert.match(
+    projectAgents,
+    /harness supports native skills[\s\S]*same installed `SKILL\.md`/i,
+  );
+  assert.match(
+    projectAgents,
+    /can do neither safely[\s\S]*capability limitation[\s\S]*do not force/i,
+  );
+});
+
 test("working brief and lock guidance preserve honest promotion boundaries", () => {
   for (const marker of [
     "Status: DRAFT",
@@ -533,6 +578,25 @@ test("working brief and lock guidance preserve honest promotion boundaries", () 
   assert.match(trustGuide, /does not\s+cryptographically authenticate/);
   assert.match(briefContract, /does not understand the truth of prose/);
   assert.match(briefContract, /does not[\s\S]*authenticate the approver/);
+  for (const source of [
+    projectAgents,
+    runDeliverySkill,
+    developBriefSkill,
+    shapeProjectSkill,
+  ]) {
+    assert.match(source, /only `?DRAFT`? or `?APPROVED`?|only `DRAFT` and `APPROVED`/i);
+    assert.match(
+      source,
+      /(?:lock state|["`]locked["`] is (?:CLI )?state)[\s\S]{0,100}(?:protected CLI|CLI state|protected `lock` command|artifact declaration)/is,
+    );
+  }
+  for (const source of [
+    projectAgents,
+    runDeliverySkill,
+    developBriefSkill,
+  ]) {
+    assert.match(source, /(?:failed|rejected) guard.*(?:never authorizes|does not authorize)/is);
+  }
   for (const artifact of [
     "ARCHITECTURE.md",
     "BRIEF.md",
@@ -596,6 +660,21 @@ test("simple onboarding uses one combined recommendation only without a requeste
     packageCliSource,
     /do not separately ask about GBrain, Linear, telemetry/,
   );
+  for (const source of [
+    projectAgents,
+    setupProjectSkill,
+    runDeliverySkill,
+    packageCliSource,
+  ]) {
+    assert.match(
+      source,
+      /(?:question|asking).*ends the turn|end the turn after asking/is,
+    );
+    assert.match(
+      source,
+      /(?:prior explicit instruction|prior explicit).*use.*recommendation/is,
+    );
+  }
 });
 
 test("closed decisions remain canonical and are consumed downstream", () => {
