@@ -10,6 +10,8 @@ const PASSING_REVIEW_STATES = new Set(["APPROVED", "COMMENTED"]);
 const RATE_LIMIT_PATTERN =
   /\b(rate limit|review limit|review quota|reviews? remaining|refill)\b/i;
 const QODO_REVIEW_TITLE_PATTERN = /\bCode Review by Qodo\b/i;
+const QODO_CLEAN_COMPLETION_PATTERN =
+  /<h3>\s*Great,\s*no issues found!\s*<\/h3>[\s\S]*\bQodo reviewed your code and found no material issues that require review\b/i;
 
 function normalizeLogin(login) {
   return String(login ?? "")
@@ -29,19 +31,31 @@ function escapedPattern(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function qodoExactHeadMatches(body, headOid) {
+  const fullCommit = escapedPattern(headOid);
+  return new RegExp(
+    `(?:\\b(?:Review updated until commit|Results up to commit)\\s+(?:https:\\/\\/github\\.com\\/[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+\\/commit\\/)?|https:\\/\\/github\\.com\\/[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+\\/commit\\/)${fullCommit}(?:\\b|$)`,
+    "i",
+  ).test(body);
+}
+
 function qodoCompletionMatches(comment, headOid, unifiedReviewUrl = undefined) {
   if (!isQodo(comment.author?.login) || comment.author?.__typename !== "Bot") {
     return false;
   }
   const commitPattern = escapedPattern(headOid);
   const body = comment.body ?? "";
-  return (
+  const legacyCompletion =
     new RegExp(
       `\\bCode review\\b[\\s\\S]*\\bupdated up to the latest commit\\b[\\s\\S]*\\/commit\\/${commitPattern}(?:\\b|$)`,
       "i",
     ).test(body) &&
-    (unifiedReviewUrl === undefined || body.includes(unifiedReviewUrl))
-  );
+    (unifiedReviewUrl === undefined || body.includes(unifiedReviewUrl));
+  const currentCleanCompletion =
+    QODO_REVIEW_TITLE_PATTERN.test(body) &&
+    QODO_CLEAN_COMPLETION_PATTERN.test(body) &&
+    qodoExactHeadMatches(body, headOid);
+  return legacyCompletion || currentCleanCompletion;
 }
 
 function qodoUnifiedReviewMatches(comment, headOid) {
@@ -49,13 +63,9 @@ function qodoUnifiedReviewMatches(comment, headOid) {
     return false;
   }
   const body = comment.body ?? "";
-  const fullCommit = escapedPattern(headOid);
   return (
     QODO_REVIEW_TITLE_PATTERN.test(body) &&
-    new RegExp(
-      `\\b(?:Review updated until commit|Results up to commit)\\s+(?:https:\\/\\/github\\.com\\/[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+\\/commit\\/)?${fullCommit}(?:\\b|$)`,
-      "i",
-    ).test(body)
+    qodoExactHeadMatches(body, headOid)
   );
 }
 

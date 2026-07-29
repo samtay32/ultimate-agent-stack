@@ -32,6 +32,8 @@ All notable changes to Ultimate Agent Stack are documented here.
 - Independent review receipts can validate a completed Qodo review against the
   exact pull-request head without weakening provider identity, pagination, or
   unresolved-thread checks.
+- Qodo receipts recognize the current single-comment terminal clean format
+  while retaining exact-head, bot-identity, and unresolved-thread checks.
 - Architecture, operating, adapter, trust, and source-tradeoff documentation
   describe the provider-neutral work, evidence, and telemetry boundaries.
 
