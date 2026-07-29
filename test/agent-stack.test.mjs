@@ -1662,6 +1662,14 @@ test("work ledger validates schema-maximum dependency depth without recursion", 
 });
 
 test("evidence reports are deterministic, bounded, and Mermaid-safe", () => {
+  const reportSource = commandEvidenceReport.toString();
+  assert.match(reportSource, /\bloadValidatedWorkEvidence\b/);
+  assert.doesNotMatch(
+    reportSource,
+    /\b(?:commandWorkValidate|commandEvidenceValidate|readJson)\b/,
+    "reporting must render the same in-memory snapshot that passed validation",
+  );
+
   const fixture = temporaryProject();
   try {
     initializeGit(fixture.directory);

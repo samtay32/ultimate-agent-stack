@@ -3482,36 +3482,46 @@ function commandWorkValidate(target) {
   };
 }
 
-function commandEvidenceValidate(target) {
-  const result = validateRepositoryContract(
-    target,
-    EVIDENCE_GRAPH_PATH,
-    validateEvidenceGraph,
-    "evidence graph",
-  );
+function loadValidatedWorkEvidence(target) {
   const ledger = validateRepositoryContract(
     target,
     WORK_LEDGER_PATH,
     validateWorkLedger,
     "work ledger",
   );
+  const graph = validateRepositoryContract(
+    target,
+    EVIDENCE_GRAPH_PATH,
+    validateEvidenceGraph,
+    "evidence graph",
+  );
   const linkageErrors =
-    result.ok && ledger.ok
-      ? validateWorkEvidenceLinkage(ledger.value, result.value)
+    ledger.ok && graph.ok
+      ? validateWorkEvidenceLinkage(ledger.value, graph.value)
       : [];
-  const errors = [...result.errors, ...linkageErrors];
   return {
-    ok: result.ok && ledger.ok && errors.length === 0,
-    path: result.path,
+    ok: ledger.ok && graph.ok && linkageErrors.length === 0,
+    ledger,
+    graph,
+    linkageErrors,
+  };
+}
+
+function commandEvidenceValidate(target) {
+  const snapshot = loadValidatedWorkEvidence(target);
+  const errors = [...snapshot.graph.errors, ...snapshot.linkageErrors];
+  return {
+    ok: snapshot.ok,
+    path: snapshot.graph.path,
     work_ledger: {
-      ok: ledger.ok,
-      path: ledger.path,
+      ok: snapshot.ledger.ok,
+      path: snapshot.ledger.path,
     },
-    node_count: Array.isArray(result.value?.nodes)
-      ? result.value.nodes.length
+    node_count: Array.isArray(snapshot.graph.value?.nodes)
+      ? snapshot.graph.value.nodes.length
       : 0,
-    edge_count: Array.isArray(result.value?.edges)
-      ? result.value.edges.length
+    edge_count: Array.isArray(snapshot.graph.value?.edges)
+      ? snapshot.graph.value.edges.length
       : 0,
     errors,
   };
@@ -3686,23 +3696,20 @@ function commandEvidenceReport(
   ) {
     throw new StackError("--max-nodes must be an integer between 1 and 500");
   }
-  const work = commandWorkValidate(target);
-  const evidence = commandEvidenceValidate(target);
-  if (!work.ok || !evidence.ok) {
+  const snapshot = loadValidatedWorkEvidence(target);
+  if (!snapshot.ok) {
     throw new StackError(
       "Evidence reporting requires valid repository work and evidence.",
       2,
-      [...work.errors, ...evidence.errors],
+      [
+        ...snapshot.ledger.errors,
+        ...snapshot.graph.errors,
+        ...snapshot.linkageErrors,
+      ],
     );
   }
-  const ledger = readJson(
-    projectFile(target, WORK_LEDGER_PATH, "work ledger"),
-    "work ledger",
-  );
-  const graph = readJson(
-    projectFile(target, EVIDENCE_GRAPH_PATH, "evidence graph"),
-    "evidence graph",
-  );
+  const ledger = snapshot.ledger.value;
+  const graph = snapshot.graph.value;
   const report = evidenceReportData(ledger, graph);
   const visualization =
     format === "mermaid"
