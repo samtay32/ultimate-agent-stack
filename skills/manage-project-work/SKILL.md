@@ -1,6 +1,6 @@
 ---
 name: manage-project-work
-description: Plan, update, or inspect project work through the configured work provider while preserving a portable repository ledger and evidence graph. Use when turning intent into work items, choosing the next bounded slice, recording progress or blockers, linking requirements to implementation and verification, reconciling external work tracking, or explaining what evidence supports completion.
+description: Plan, update, or inspect actual project work through the configured work provider while preserving a portable repository ledger and evidence graph. Use when turning intent into work items, choosing the next bounded slice, recording progress or blockers, linking requirements to implementation and verification, reconciling external work tracking, or reporting what repository evidence supports a real work item. Do not activate for explanation-only questions or coordinator-lease disputes; answer a requested concept directly, and let run-autonomous-delivery enforce the active-writer lease during delivery.
 ---
 
 # Manage Project Work
@@ -57,6 +57,13 @@ delivered sequentially:
 
 1. Start with an objective, an explicit 1–25 iteration bound, and the active
    coordinator token.
+   If the user requests an unbounded campaign or omits the bound, refuse the
+   unbounded loop and ask one plain-language question for a finite bound.
+   Recommend the smallest useful bound from the shaped ready work, with five
+   iterations as the default ceiling when repository evidence does not support
+   a smaller number. End the response with the direct question: "How many
+   iterations should this campaign run? I recommend no more than five." Do not
+   start until the user chooses.
 2. Ask `campaign next` to select one `ready` item whose dependencies are
    `done`.
 3. Finish the selected item through normal evidence and review gates.

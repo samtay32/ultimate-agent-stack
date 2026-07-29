@@ -88,6 +88,17 @@ const setupProjectSkill = readFileSync(
   join(PACKAGE_ROOT, "skills/setup-autonomous-project/SKILL.md"),
   "utf8",
 );
+const plainLanguageEntryAdapters = [
+  "setup-autonomous-project",
+  "run-autonomous-delivery",
+  "use-project-telemetry",
+  "maintain-agent-stack",
+].map((skill) =>
+  readFileSync(
+    join(PACKAGE_ROOT, `skills/${skill}/agents/openai.yaml`),
+    "utf8",
+  ),
+);
 const githubLoop = readFileSync(
   join(PACKAGE_ROOT, "docs/GITHUB_LOOP.md"),
   "utf8",
@@ -362,6 +373,12 @@ test("review closure validates claims and has one disposition vocabulary", () =>
       /^[ \t]*Disposition:/m,
       "secondary guidance must defer to the canonical policy",
     );
+  }
+});
+
+test("plain-language entry skills permit implicit activation", () => {
+  for (const adapter of plainLanguageEntryAdapters) {
+    assert.match(adapter, /allow_implicit_invocation:\s*true\b/);
   }
 });
 

@@ -1,6 +1,6 @@
 ---
 name: run-autonomous-delivery
-description: Orchestrate a software request from raw intent through a verified pull request and review closure. Use explicitly for end-to-end autonomous delivery of a product, feature, bug fix, refactor, migration, or documentation change after the repository has the Ultimate Agent Stack.
+description: Orchestrate a software change request from raw intent through a verified pull request and review closure. Use explicitly for end-to-end autonomous delivery of a product, feature, bug fix, refactor, migration, or documentation change after the repository has the Ultimate Agent Stack. Do not activate for explanation-only questions or requests that explicitly forbid repository inspection and changes.
 ---
 
 # Run Autonomous Delivery

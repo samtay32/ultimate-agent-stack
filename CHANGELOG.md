@@ -34,6 +34,9 @@ All notable changes to Ultimate Agent Stack are documented here.
   unresolved-thread checks.
 - Qodo receipts recognize the current single-comment terminal clean format
   while retaining exact-head, bot-identity, and unresolved-thread checks.
+- Plain-language setup, end-to-end delivery, telemetry-diagnosis, and package
+  maintenance requests can invoke their entry skills without requiring users
+  to know internal skill names.
 - Architecture, operating, adapter, trust, and source-tradeoff documentation
   describe the provider-neutral work, evidence, and telemetry boundaries.
 

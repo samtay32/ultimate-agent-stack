@@ -3,4 +3,4 @@ interface:
   short_description: "Install a safe project-specific agent system"
   default_prompt: "Use $setup-autonomous-project to configure this repository for high-autonomy delivery."
 policy:
-  allow_implicit_invocation: false
+  allow_implicit_invocation: true
