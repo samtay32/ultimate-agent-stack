@@ -402,6 +402,10 @@ const TELEMETRY_PROVIDER_REGIONS = Object.freeze({
   sentry: new Set(["global", "us", "de"]),
   "new-relic": new Set(["us", "eu"]),
 });
+const TELEMETRY_NUMERIC_ID = /^[1-9]\d{0,18}$/;
+const TELEMETRY_IDENTIFIER = /^[a-z0-9][a-z0-9_-]{0,99}$/i;
+const TELEMETRY_PROVIDER_TIMEOUT_MS = 20_000;
+const TELEMETRY_TOTAL_TIMEOUT_MS = 20_000;
 const TELEMETRY_PROVIDERS = new Map(
   Object.keys(TELEMETRY_PROVIDER_ROLES).map((provider) => [
     provider,
@@ -1786,7 +1790,7 @@ function validateTelemetryProvider(value, label, expectedProvider) {
       `${label}.scope`,
     );
     if (
-      !/^[1-9]\d{0,18}$/.test(value.scope.project_id) ||
+      !TELEMETRY_NUMERIC_ID.test(value.scope.project_id) ||
       !Number.isSafeInteger(Number(value.scope.project_id))
     ) {
       errors.push(`${label}.scope.project_id must be a positive numeric identifier`);
@@ -1798,10 +1802,10 @@ function validateTelemetryProvider(value, label, expectedProvider) {
       new Set(["organization", "project"]),
       `${label}.scope`,
     );
-    if (!/^[a-z0-9][a-z0-9_-]{0,99}$/i.test(value.scope.organization)) {
+    if (!TELEMETRY_IDENTIFIER.test(value.scope.organization)) {
       errors.push(`${label}.scope.organization must be a bounded slug`);
     }
-    if (!/^[a-z0-9][a-z0-9_-]{0,99}$/i.test(value.scope.project)) {
+    if (!TELEMETRY_IDENTIFIER.test(value.scope.project)) {
       errors.push(`${label}.scope.project must be a bounded slug`);
     }
   } else {
@@ -1812,7 +1816,7 @@ function validateTelemetryProvider(value, label, expectedProvider) {
       `${label}.scope`,
     );
     if (
-      !/^[1-9]\d{0,18}$/.test(value.scope.account_id) ||
+      !TELEMETRY_NUMERIC_ID.test(value.scope.account_id) ||
       !Number.isSafeInteger(Number(value.scope.account_id))
     ) {
       errors.push(`${label}.scope.account_id must be a positive numeric identifier`);
@@ -5390,7 +5394,7 @@ function sanitizeTelemetryHealthResult(value, provider) {
       value.project !== provider.scope.project ||
       value.live_check !== "project-identity" ||
       typeof value.project_status !== "string" ||
-      !/^[a-z0-9][a-z0-9_-]{0,99}$/i.test(value.project_status))
+      !TELEMETRY_IDENTIFIER.test(value.project_status))
   ) {
     return {
       ok: false,
@@ -5428,7 +5432,16 @@ function sanitizeTelemetryHealthResult(value, provider) {
   };
 }
 
-function commandTelemetryHealth(target, suppliedConfig = undefined) {
+function commandTelemetryHealth(
+  target,
+  suppliedConfig = undefined,
+  {
+    now = Date.now,
+    runTelemetry = runTelemetryReadonly,
+    providerTimeout = TELEMETRY_PROVIDER_TIMEOUT_MS,
+    totalTimeout = TELEMETRY_TOTAL_TIMEOUT_MS,
+  } = {},
+) {
   const config = suppliedConfig ?? loadConfig(target);
   const telemetry =
     config.capabilities?.telemetry &&
@@ -5468,6 +5481,7 @@ function commandTelemetryHealth(target, suppliedConfig = undefined) {
     target,
     TELEMETRY_READONLY_PATH,
   );
+  const deadline = now() + totalTimeout;
   const results = providers.map((provider) => {
     const base = {
       provider: provider.provider,
@@ -5497,8 +5511,22 @@ function commandTelemetryHealth(target, suppliedConfig = undefined) {
         error: `${provider.credential_env} is not available to this process`,
       };
     }
+    const remaining = deadline - now();
+    if (remaining <= 0) {
+      return {
+        ok: false,
+        ...base,
+        live_check: "not-run",
+        error:
+          "telemetry health aggregate time budget was exhausted",
+      };
+    }
     const parsed = parseTelemetryProviderJson(
-      runTelemetryReadonly(target, provider),
+      runTelemetry(
+        target,
+        provider,
+        Math.max(1, Math.min(providerTimeout, remaining)),
+      ),
       `${provider.provider} read-only health check`,
     );
     if (!parsed.ok) {
@@ -6590,7 +6618,7 @@ function parseTelemetrySpec(spec) {
   let scope;
   if (provider === "posthog") {
     if (
-      !/^[1-9]\d{0,18}$/.test(scopeValue) ||
+      !TELEMETRY_NUMERIC_ID.test(scopeValue) ||
       !Number.isSafeInteger(Number(scopeValue))
     ) {
       throw new StackError(
@@ -6602,7 +6630,7 @@ function parseTelemetrySpec(spec) {
     const parts = scopeValue.split("/");
     if (
       parts.length !== 2 ||
-      !parts.every((part) => /^[a-z0-9][a-z0-9_-]{0,99}$/.test(part))
+      !parts.every((part) => TELEMETRY_IDENTIFIER.test(part))
     ) {
       throw new StackError(
         "Sentry telemetry scope must be organization-slug/project-slug",
@@ -6611,7 +6639,7 @@ function parseTelemetrySpec(spec) {
     scope = { organization: parts[0], project: parts[1] };
   } else {
     if (
-      !/^[1-9]\d{0,18}$/.test(scopeValue) ||
+      !TELEMETRY_NUMERIC_ID.test(scopeValue) ||
       !Number.isSafeInteger(Number(scopeValue))
     ) {
       throw new StackError(
