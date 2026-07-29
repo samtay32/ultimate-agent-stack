@@ -43,7 +43,9 @@ project. Package assets may not contain symlinks.
 
 This promise covers writes made by the Ultimate Agent Stack CLI. It does not
 confine the coding agent, project tests, package scripts, compilers, or other
-programs.
+programs. Path checks reject symlinks observed before a protected write; they
+are not race-safe confinement against another process that can concurrently
+mutate the checkout with the same operating-system permissions.
 
 ### Safe installation and updates
 

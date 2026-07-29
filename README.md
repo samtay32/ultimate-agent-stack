@@ -288,8 +288,10 @@ The JSON report shows work status, node/edge/provider counts, evidence coverage,
 and bounded samples of missing or unconnected evidence. Mermaid uses generated
 node aliases and sanitized labels, includes only edges whose endpoints are
 shown, caps rendered edges at four per selected node, and states when the
-configured visualization bound omitted nodes or edges. Report writes reject
-symlinked path components and remain physically under `.agent-stack/reports`.
+configured node bound omitted nodes or when eligible selected-node edges
+exceeded the edge cap. Report writes reject symlinked path components observed
+before creation. Like the rest of the CLI containment policy, this is not an
+operating-system sandbox against another process that can mutate the checkout.
 
 ### Bounded campaign loop
 
