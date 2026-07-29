@@ -235,10 +235,20 @@ test("accepts bounded Qodo terminal-clean wording and heading variants", () => {
       ),
     ],
   });
+  const provisionalWithoutProcessingWords = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "qodo",
+    comments: [
+      qodoCleanReviewVariant(
+        "### No issues found yet\nAwaiting additional checks.",
+      ),
+    ],
+  });
 
   assert.equal(markdownHeading.ok, true);
   assert.equal(materialIssueWording.ok, true);
   assert.equal(processingWithCleanWords.ok, false);
+  assert.equal(provisionalWithoutProcessingWords.ok, false);
 });
 
 test("accepts Qodo's exact-head full commit marker after an updated review", () => {

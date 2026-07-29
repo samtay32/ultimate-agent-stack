@@ -12,6 +12,8 @@ const RATE_LIMIT_PATTERN =
 const QODO_REVIEW_TITLE_PATTERN = /\bCode Review by Qodo\b/i;
 const QODO_PROCESSING_PATTERN =
   /\b(?:agents?\s+(?:are|is)|Qodo\s+is)\s+(?:still\s+)?working\b|\bprocessing\b/i;
+const QODO_PROVISIONAL_CLEAN_PATTERN =
+  /\b(?:yet|so\s+far|for\s+now|at\s+(?:this|the\s+current)\s+(?:stage|point|time))\b/i;
 const QODO_CLEAN_COMPLETION_PATTERNS = [
   /(?:<h[1-6]\b[^>]*>|^\s*#{1,6}\s+)\s*(?:great[\s,:!.\u2013\u2014-]*)?no\s+(?:material\s+)?issues?\s+(?:were\s+)?found\b/im,
   /\b(?:found\s+no|no)\s+material\s+issues?(?:\s+(?:that\s+)?(?:require|requiring)\s+review)?\b/i,
@@ -58,6 +60,7 @@ function qodoCompletionMatches(comment, headOid, unifiedReviewUrl = undefined) {
   const currentCleanCompletion =
     QODO_REVIEW_TITLE_PATTERN.test(body) &&
     !QODO_PROCESSING_PATTERN.test(body) &&
+    !QODO_PROVISIONAL_CLEAN_PATTERN.test(body) &&
     QODO_CLEAN_COMPLETION_PATTERNS.some((pattern) => pattern.test(body)) &&
     qodoExactHeadMatches(body, headOid);
   return legacyCompletion || currentCleanCompletion;
