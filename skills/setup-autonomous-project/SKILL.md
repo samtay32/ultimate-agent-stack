@@ -71,9 +71,10 @@ Configure the repository without erasing its conventions. Setup is complete only
 
    Always initialize and validate `.agent-stack/work-items.json` and
    `.agent-stack/evidence-graph.json`. If Linear is approved, configure
-   `--work linear` with repeated `--linear-team KEY`, run `linear-setup`, wait
-   for the human credential step, then verify with `linear-health` and
-   `doctor`. Never select or connect it implicitly.
+   `--work linear` with repeated `--linear-team KEY` and
+   `--external-data approved_providers`, run `linear-setup`, wait for the human
+   credential step, then verify with `linear-health` and `doctor`. Never select
+   or connect it implicitly.
 
    For a local prototype or straightforward project that does not require
    production release protection, external data, external memory, or delegated

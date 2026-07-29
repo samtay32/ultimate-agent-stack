@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
@@ -9,6 +8,7 @@ import {
   PACKAGE_NAME,
   PACKAGE_ROOT,
   PACKAGE_VERSION,
+  portableTextSha256,
 } from "../bin/ultimate-agent-stack.mjs";
 import {
   buildIssueBody,
@@ -542,9 +542,7 @@ test("work and evidence contracts remain portable and provider-neutral", () => {
   assert.match(linearReadonlyProvider, /repository fallback/i);
   assert.doesNotMatch(linearReadonlyHelper, /\bmutation\b/i);
   assert.match(linearReadonlyHelper, /https:\/\/api\.linear\.app\/graphql/);
-  const linearReadonlyHash = createHash("sha256")
-    .update(linearReadonlyHelper.replaceAll("\r\n", "\n"))
-    .digest("hex");
+  const linearReadonlyHash = portableTextSha256(linearReadonlyHelper);
   assert.match(packageCliSource, new RegExp(linearReadonlyHash));
   assert.equal(workItemSchema.additionalProperties, false);
   assert.equal(evidenceGraphSchema.additionalProperties, false);
