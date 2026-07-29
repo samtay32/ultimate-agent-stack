@@ -53,7 +53,7 @@ function qodoUnifiedReviewMatches(comment, headOid) {
   return (
     QODO_REVIEW_TITLE_PATTERN.test(body) &&
     new RegExp(
-      `\\bReview updated until commit\\b[\\s\\S]*\\/commit\\/${fullCommit}(?:\\b|$)`,
+      `\\b(?:Review updated until commit|Results up to commit)\\s+(?:https:\\/\\/github\\.com\\/[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+\\/commit\\/)?${fullCommit}(?:\\b|$)`,
       "i",
     ).test(body)
   );
