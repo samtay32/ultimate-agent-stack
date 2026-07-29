@@ -334,13 +334,12 @@ collect fresh harness evidence for the new surface.
 The flexible-intake front half deliberately crosses skill routing, multi-turn
 question behavior, source handling, repository reconciliation, artifact
 promotion, and lock safety. A broad claim that this front half works across the
-primary supported harnesses requires complete current-surface runs on both
-Codex and Claude Code. Evaluate and attach the two run records separately with
-their exact harness and model identities. Unless additional complete runs are
-attached, identify Gemini, Cursor, Grok, OpenCode, and other harnesses as
-untested for the new front-half behavior. A one-harness result may still be
-reported honestly as evidence for only that named harness; it is not a broad
-compatibility claim.
+primary supported harnesses requires complete current-surface runs on Codex and
+at least one other primary supported harness. Evaluate and attach each run
+record separately with its exact harness and model identity. Identify every
+supported harness without a complete attached run as untested for the new
+front-half behavior. A one-harness result may still be reported honestly as
+evidence for only that named harness; it is not a broad compatibility claim.
 
 This is intentionally not an ambient model call inside ordinary CI. Such a call
 would add credentials, cost, nondeterminism, provider dependence, and a risk of
