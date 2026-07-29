@@ -47,13 +47,15 @@ function qodoCompletion(commit = HEAD, reviewUrl = QODO_REVIEW_URL) {
   };
 }
 
-function qodoUnifiedReview(commit = HEAD) {
+function qodoUnifiedReview(commit = HEAD, marker = "results") {
+  const exactHeadMarker =
+    marker === "updated"
+      ? `Review updated until commit https://github.com/owner/repository/commit/${commit}`
+      : `<details><summary>Results up to commit ${commit.slice(0, 7)}</summary>`;
   return {
     author: { login: "qodo-code-review[bot]", __typename: "Bot" },
     url: QODO_REVIEW_URL,
-    body:
-      "<h3>Code Review by Qodo</h3>\n" +
-      `<details><summary>Results up to commit ${commit.slice(0, 7)}</summary>`,
+    body: "<h3>Code Review by Qodo</h3>\n" + exactHeadMarker,
   };
 }
 
@@ -131,6 +133,22 @@ test("accepts completed exact-head Qodo unified review evidence", () => {
 
   assert.equal(result.ok, true);
   assert.deepEqual(result.detail.review_states, ["UNIFIED_COMMENT"]);
+});
+
+test("accepts Qodo's exact-head full commit marker after an updated review", () => {
+  const result = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "qodo",
+    comments: [qodoUnifiedReview(HEAD, "updated"), qodoCompletion()],
+  });
+  const stale = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "qodo",
+    comments: [qodoUnifiedReview(OLD_HEAD, "updated"), qodoCompletion()],
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(stale.ok, false);
 });
 
 test("accepts Qodo exact-head review plus completed unified evidence", () => {
