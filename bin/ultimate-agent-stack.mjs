@@ -8514,12 +8514,32 @@ function commandCheckpoint(target, options) {
   };
 }
 
+function markdownFenceProbeLine(line) {
+  let probe = line;
+  while (true) {
+    const blockquote = probe.match(/^ {0,3}>[ \t]?/);
+    if (blockquote) {
+      probe = probe.slice(blockquote[0].length);
+      continue;
+    }
+    const list = probe.match(
+      /^ {0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+/,
+    );
+    if (list) {
+      probe = probe.slice(list[0].length);
+      continue;
+    }
+    return probe;
+  }
+}
+
 function markdownOutsideFencedCode(content, artifact) {
   const visible = [];
   let fence = null;
   for (const line of content.split(/\r?\n/)) {
+    const probeLine = markdownFenceProbeLine(line);
     if (fence) {
-      const closing = line.match(/^ {0,3}(`+|~+)[ \t]*$/);
+      const closing = probeLine.match(/^ {0,3}(`+|~+)[ \t]*$/);
       if (
         closing &&
         closing[1][0] === fence.character &&
@@ -8530,7 +8550,7 @@ function markdownOutsideFencedCode(content, artifact) {
       visible.push("");
       continue;
     }
-    const opening = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    const opening = probeLine.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
     if (opening) {
       if (opening[1][0] === "`" && opening[2].includes("`")) {
         throw new StackError(
