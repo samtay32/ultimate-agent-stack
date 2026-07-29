@@ -1743,6 +1743,8 @@ test("evidence reports are deterministic, bounded, and Mermaid-safe", () => {
     });
     assert.equal(bounded.selected_node_count, 1);
     assert.equal(bounded.omitted_node_count, 1);
+    assert.equal(bounded.selected_edge_count, 0);
+    assert.equal(bounded.omitted_edge_count, 0);
     assert.match(bounded.mermaid, /1 nodes omitted by report bound/);
     assert.doesNotMatch(bounded.mermaid, /injected\[/);
 
@@ -1773,6 +1775,67 @@ test("evidence reports are deterministic, bounded, and Mermaid-safe", () => {
         }),
       /under \.agent-stack\/reports/,
     );
+
+    const denseNodes = Array.from({ length: 30 }, (_, index) => ({
+      id: `dense-${String(index).padStart(2, "0")}`,
+      kind: "test",
+      label: `Dense node ${index}`,
+      state: "verified",
+      source: {
+        provider: "repository",
+        reference: `test/dense-${index}.mjs`,
+      },
+      summary: "",
+    }));
+    graph.nodes.push(...denseNodes);
+    graph.edges = graph.nodes.flatMap((from) =>
+      graph.nodes
+        .filter((to) => to.id !== from.id)
+        .map((to) => ({
+          from: from.id,
+          to: to.id,
+          relation: "observes",
+        })),
+    );
+    writeJson(join(fixture.directory, EVIDENCE_GRAPH_PATH), graph);
+    const dense = commandEvidenceReport(fixture.directory, {
+      format: "mermaid",
+      maxNodes: graph.nodes.length,
+    });
+    assert.equal(dense.edge_limit, graph.nodes.length * 4);
+    assert.equal(dense.selected_edge_count, dense.edge_limit);
+    assert.equal(
+      dense.omitted_edge_count,
+      graph.edges.length - dense.edge_limit,
+    );
+    assert.match(
+      dense.mermaid,
+      new RegExp(`${dense.omitted_edge_count} edges omitted by report bound`),
+    );
+    assert.equal(
+      dense.mermaid.match(/-->\|observes\|/g)?.length,
+      dense.edge_limit,
+    );
+
+    const reportDirectory = join(fixture.directory, ".agent-stack", "reports");
+    rmSync(reportDirectory, { recursive: true, force: true });
+    symlinkSync(
+      fixture.directory,
+      reportDirectory,
+      platform() === "win32" ? "junction" : "dir",
+    );
+    const packageFile = join(fixture.directory, "package.json");
+    const packageBefore = readFileSync(packageFile, "utf8");
+    assert.throws(
+      () =>
+        commandEvidenceReport(fixture.directory, {
+          format: "json",
+          output: ".agent-stack/reports/package.json",
+        }),
+      /crosses a symlinked path component/,
+    );
+    assert.equal(readFileSync(packageFile, "utf8"), packageBefore);
+    rmSync(reportDirectory, { recursive: true, force: true });
   } finally {
     fixture.cleanup();
   }

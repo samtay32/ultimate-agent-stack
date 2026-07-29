@@ -193,8 +193,10 @@ evidence navigation; the referenced artifacts remain authoritative.
 `evidence report` derives a provider-neutral summary from those two validated
 files. JSON output contains only counts and bounded identifier samples. Mermaid
 output uses generated aliases and sanitized labels, includes only edges between
-selected nodes, and is capped at 500 nodes. Reports do not query providers and
-do not promote a reference into proof.
+selected nodes, is capped at 500 nodes and four rendered edges per selected
+node, and reports omitted counts. Report output rejects symlinked path
+components and remains physically under `.agent-stack/reports`. Reports do not
+query providers and do not promote a reference into proof.
 
 The Linear adapter is not a second orchestrator. Its fixed, paginated query
 shape checks viewer authentication and configured team visibility. Optional
