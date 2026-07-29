@@ -1511,6 +1511,11 @@ test("configure registers reviewed telemetry adapters with fixed roles and scope
       ),
     );
     process.env.POSTHOG_PERSONAL_API_KEY = "short";
+    assert.equal(
+      commandCapabilities(fixture.directory).available.telemetry.posthog
+        .available,
+      false,
+    );
     const invalidCredential = commandTelemetryHealth(fixture.directory);
     assert.match(
       invalidCredential.providers.find(
