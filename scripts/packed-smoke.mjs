@@ -70,6 +70,19 @@ function main() {
         `npm pack included duplicate-copy paths: ${duplicatePaths.join(", ")}`,
       );
     }
+    const packedPaths = new Set(
+      (packed[0].files ?? []).map((entry) => entry.path),
+    );
+    for (const requiredPath of [
+      "assets/project-template/.agent-stack/artifacts/BRIEF.md",
+      "skills/develop-project-brief/SKILL.md",
+      "skills/develop-project-brief/references/brief-contract.md",
+      "skills/develop-project-brief/references/intake-and-reconciliation.md",
+    ]) {
+      if (!packedPaths.has(requiredPath)) {
+        throw new Error(`npm pack omitted ${requiredPath}`);
+      }
+    }
     const tarball = join(sandbox, packed[0].filename);
     const project = join(sandbox, "project");
     mkdirSync(project);
@@ -137,6 +150,24 @@ function main() {
         "work-management skill",
       ],
       [
+        [".agents", "skills", "develop-project-brief", "SKILL.md"],
+        "working-brief skill",
+      ],
+      [
+        [
+          ".agents",
+          "skills",
+          "develop-project-brief",
+          "references",
+          "brief-contract.md",
+        ],
+        "working-brief contract",
+      ],
+      [
+        [".agent-stack", "artifacts", "BRIEF.md"],
+        "working-brief artifact",
+      ],
+      [
         [".agent-stack", "work-items.json"],
         "repository work ledger",
       ],
@@ -184,6 +215,15 @@ function main() {
           "SKILL.md",
         ],
         "Claude entry skill",
+      ],
+      [
+        [
+          ".claude",
+          "skills",
+          "develop-project-brief",
+          "SKILL.md",
+        ],
+        "Claude working-brief skill",
       ],
       [
         [".gemini", "agents", "uas-researcher.md"],
@@ -241,6 +281,31 @@ function main() {
       config.quality.environment.allow.length !== 0
     ) {
       throw new Error("packed install did not preserve safe guided defaults");
+    }
+    const draftLock = spawnPortable(
+      process.execPath,
+      [localCli, "lock", "--target", project],
+      {
+        cwd: project,
+        encoding: "utf8",
+        timeout: 30_000,
+        maxBuffer: 1024 * 1024,
+      },
+    );
+    if (
+      draftLock.status === 0 ||
+      !/artifact status is DRAFT/.test(draftLock.stderr ?? "")
+    ) {
+      throw new Error(
+        `packed local CLI did not reject DRAFT lock\n${draftLock.stdout}\n${draftLock.stderr}`,
+      );
+    }
+    const statePath = join(project, ".agent-stack", "state.json");
+    if (existsSync(statePath)) {
+      const state = JSON.parse(readFileSync(statePath, "utf8"));
+      if (state.active_lock !== null) {
+        throw new Error("rejected packed DRAFT lock wrote active state");
+      }
     }
     const start = JSON.parse(
       run(process.execPath, [localCli, "start", "--target", project], project),
