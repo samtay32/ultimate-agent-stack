@@ -4,6 +4,51 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ## Unreleased
 
+## 0.8.0 - 2026-07-29
+
+### Added
+
+- Provider-neutral repository contracts now normalize work items, dependencies,
+  authority, acceptance criteria, and evidence relationships without requiring
+  an external work-tracking vendor.
+- Guided Linear integration supports team-scoped read-only health checks and
+  optional, separately authorized issue creation and evidence comments with
+  least-privilege credentials, idempotency, reconciliation, and bounded
+  repository receipts.
+- Campaign mode selects at most one ready work item per invocation and requires
+  an explicit iteration bound, preserving the repository ledger as the
+  provider-neutral source of continuity.
+- Deterministic evidence reports produce bounded JSON coverage summaries and
+  Mermaid maps from a single validated repository snapshot.
+- Optional PostHog, Sentry, and New Relic adapters perform fixed-endpoint,
+  read-only identity and metadata health checks while retaining repository
+  evidence as the fallback.
+
+### Changed
+
+- Guided onboarding asks whether work remains in the repository or mirrors to
+  Linear, while provider setup and capability health explain the available
+  fallback in plain language.
+- Independent review receipts can validate a completed Qodo review against the
+  exact pull-request head without weakening provider identity, pagination, or
+  unresolved-thread checks.
+- Architecture, operating, adapter, trust, and source-tradeoff documentation
+  describe the provider-neutral work, evidence, and telemetry boundaries.
+
+### Security
+
+- Linear writes require an active coordinator token, explicit operation
+  authority, separate restricted credentials, exact confirmation, and
+  idempotent reconciliation before recording a bounded receipt.
+- Linear and telemetry helpers are installed as hash-pinned protected files,
+  reject custom endpoints and malformed scopes, isolate credentials from
+  evidence, and fail back to repository state.
+- Telemetry health rejects untyped scope identifiers and shares one aggregate
+  provider deadline so interactive doctor and start commands remain bounded.
+- Evidence reports reject unsafe output paths and observed symlink components,
+  cap node and edge output, and do not claim operating-system sandboxing
+  against another process that already controls the checkout.
+
 ## 0.7.2 - 2026-07-28
 
 ### Added
