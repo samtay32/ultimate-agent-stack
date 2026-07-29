@@ -12,6 +12,14 @@ import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { startPromptPolicySurface } from "../bin/ultimate-agent-stack.mjs";
+import {
+  LIVE_LINEAR_SANDBOX_OPT_IN,
+  expectedMaterializationSha256,
+  externalInputsForFixture,
+  fixtureCatalog,
+  fixtureReceipt,
+  projectStateSha256,
+} from "./skill-fixture.mjs";
 
 const SCRIPT_FILE = fileURLToPath(import.meta.url);
 const PACKAGE_ROOT = resolve(dirname(SCRIPT_FILE), "..");
@@ -24,6 +32,9 @@ const SOURCE_CLAIM_DISPOSITIONS = new Set([
   "rejected",
   "deferred",
 ]);
+const CURRENT_RUN_RECORD_SCHEMA_VERSION = 2;
+const SHA256_RECEIPT = /^sha256:[a-f0-9]{64}$/;
+const GIT_COMMIT_ID = /^[a-f0-9]{40}$/;
 const ARTIFACT_STATUSES = new Set(["DRAFT", "APPROVED", "ABSENT"]);
 const ARTIFACT_LOCK_STATES = new Set([
   "unlocked",
@@ -45,6 +56,7 @@ const TEXT_SURFACE_EXTENSIONS = new Set([
   ".json",
   ".md",
   ".mdc",
+  ".mjs",
   ".toml",
   ".yaml",
   ".yml",
@@ -125,12 +137,14 @@ function behaviorSurfaceEntries() {
     entries.push([normalizePath(path), readFileSync(path)]);
   }
   for (const projectPath of [
+    ".gitattributes",
     "STARTER_PROMPT.md",
     "assets/project-template/.agent-stack/core-policy.json",
     "assets/project-template/.agent-stack/HANDOFF.md",
     "assets/project-template/.agent-stack/artifacts/ARCHITECTURE.md",
     "assets/project-template/.agent-stack/artifacts/BRIEF.md",
     "assets/project-template/.agent-stack/artifacts/DECISIONS.md",
+    "assets/project-template/.agent-stack/artifacts/DELEGATION.md",
     "assets/project-template/.agent-stack/artifacts/DELIVERY.md",
     "assets/project-template/.agent-stack/artifacts/SECURITY.md",
     "assets/project-template/.agent-stack/artifacts/VERIFICATION.md",
@@ -142,7 +156,9 @@ function behaviorSurfaceEntries() {
     "assets/project-template/.opencode/agents/uas-researcher.md",
     "assets/project-template/AGENTS.md",
     "assets/project-template/GEMINI.md",
+    "evals/fixtures.json",
     "evals/scenarios.json",
+    "scripts/skill-fixture.mjs",
   ]) {
     entries.push([projectPath, readBehaviorSurfacePath(projectPath)]);
   }
@@ -207,6 +223,43 @@ function stringArray(value) {
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
+}
+
+function externalInputReceipts(scenarioId) {
+  return externalInputsForFixture(scenarioId).map((input) => ({
+    id: input.id,
+    kind: input.kind,
+    delivery: "prompt-only",
+    content_sha256: `sha256:${createHash("sha256")
+      .update(input.content)
+      .digest("hex")}`,
+  }));
+}
+
+function providerAuthorityReceipt(scenarioId) {
+  const fixture = fixtureCatalog().fixtures.find(
+    (candidate) => candidate.scenario_id === scenarioId,
+  );
+  return fixture?.provider_execution
+    ? {
+        provider: fixture.provider_execution.provider,
+        mode: fixture.provider_execution.mode,
+        sandbox_opt_in_required:
+          fixture.provider_execution.requires_explicit_sandbox_opt_in,
+        sandbox_opt_in_supplied:
+          fixture.provider_execution.requires_explicit_sandbox_opt_in,
+        opt_in_option:
+          fixture.provider_execution.requires_explicit_sandbox_opt_in
+            ? LIVE_LINEAR_SANDBOX_OPT_IN
+            : null,
+      }
+    : {
+        provider: null,
+        mode: "none",
+        sandbox_opt_in_required: false,
+        sandbox_opt_in_supplied: false,
+        opt_in_option: null,
+      };
 }
 
 function nonNegativeInteger(value) {
@@ -308,6 +361,14 @@ function validateSourceClaimDispositions(value, location, errors) {
 function validateScenarioCatalog(catalog = readJson(SCENARIOS_FILE)) {
   const errors = [];
   const skills = skillCatalog();
+  let fixtureIds = new Set();
+  try {
+    fixtureIds = new Set(
+      fixtureCatalog().fixtures.map((fixture) => fixture.scenario_id),
+    );
+  } catch (error) {
+    errors.push(`canonical fixture catalog is invalid: ${error.message}`);
+  }
   if (catalog?.schema_version !== 1) {
     errors.push("scenario catalog schema_version must equal 1");
   }
@@ -387,7 +448,9 @@ function validateScenarioCatalog(catalog = readJson(SCENARIOS_FILE)) {
     for (const field of [
       "required_question_tags",
       "forbidden_question_tags",
+      "required_actions",
       "forbidden_write_paths",
+      "required_write_paths",
       "required_outputs",
       "required_source_claim_ids",
     ]) {
@@ -405,6 +468,32 @@ function validateScenarioCatalog(catalog = readJson(SCENARIOS_FILE)) {
         errors.push(
           `${location}.expected.forbidden_write_paths contains an unsafe pattern`,
         );
+      }
+    }
+    const forbiddenActions = new Set(asArray(expected.forbidden_actions));
+    for (const action of asArray(expected.required_actions)) {
+      if (forbiddenActions.has(action)) {
+        errors.push(
+          `${location}.expected both requires and forbids action ${action}`,
+        );
+      }
+    }
+    for (const path of asArray(expected.required_write_paths)) {
+      if (!safeScenarioPath(path)) {
+        errors.push(
+          `${location}.expected.required_write_paths contains an unsafe path`,
+        );
+      }
+      for (const pattern of asArray(expected.forbidden_write_paths)) {
+        if (
+          safeScenarioPath(path) &&
+          safeScenarioPath(pattern, true) &&
+          matchesPathPattern(path, pattern)
+        ) {
+          errors.push(
+            `${location}.expected requires write path ${path} but forbids it with ${pattern}`,
+          );
+        }
       }
     }
     for (const field of [
@@ -453,6 +542,16 @@ function validateScenarioCatalog(catalog = readJson(SCENARIOS_FILE)) {
       }
     }
   }
+  for (const scenarioId of ids) {
+    if (!fixtureIds.has(scenarioId)) {
+      errors.push(`canonical fixture is missing scenario ${scenarioId}`);
+    }
+  }
+  for (const fixtureId of fixtureIds) {
+    if (!ids.has(fixtureId)) {
+      errors.push(`canonical fixture has no scenario ${fixtureId}`);
+    }
+  }
   for (const category of declaredCategories) {
     if (!coveredCategories.has(category)) {
       errors.push(`no scenario covers required category ${category}`);
@@ -477,8 +576,10 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
   const skills = skillCatalog();
   const errors = [...contract.errors];
   const results = [];
-  if (record?.schema_version !== 1) {
-    errors.push("run record schema_version must equal 1");
+  if (record?.schema_version !== CURRENT_RUN_RECORD_SCHEMA_VERSION) {
+    errors.push(
+      `run record schema_version must equal ${CURRENT_RUN_RECORD_SCHEMA_VERSION}`,
+    );
   }
   if (record?.surface_hash !== contract.surface_hash) {
     errors.push(
@@ -504,6 +605,7 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
 
   const cases = asArray(record?.cases);
   const caseMap = new Map();
+  const harnessSessionIds = new Set();
   for (const [index, item] of cases.entries()) {
     if (!isNonEmptyString(item?.scenario_id)) {
       errors.push(`cases[${index}].scenario_id must be a non-empty string`);
@@ -514,6 +616,13 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
       continue;
     }
     caseMap.set(item.scenario_id, item);
+    const sessionId = item?.harness_session?.id;
+    if (isCompletedField(sessionId)) {
+      if (harnessSessionIds.has(sessionId)) {
+        errors.push(`run record reuses harness session ${sessionId}`);
+      }
+      harnessSessionIds.add(sessionId);
+    }
   }
 
   const scenarios = asArray(catalog?.scenarios);
@@ -523,6 +632,120 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
     if (!item) {
       findings.push("missing run result");
     } else {
+      const expectedFixtureReceipt = fixtureReceipt(scenario.id);
+      if (item.fixture_receipt !== expectedFixtureReceipt) {
+        findings.push(
+          `fixture_receipt must equal ${expectedFixtureReceipt}`,
+        );
+      }
+      const expectedMaterializationReceipt =
+        expectedMaterializationSha256(scenario.id);
+      if (
+        item.materialization_receipt !== expectedMaterializationReceipt
+      ) {
+        findings.push(
+          `materialization_receipt must equal ${expectedMaterializationReceipt}`,
+        );
+      }
+      if (
+        item.materialization_spec_sha256 !==
+        expectedMaterializationReceipt
+      ) {
+        findings.push(
+          `materialization_spec_sha256 must equal ${expectedMaterializationReceipt}`,
+        );
+      }
+      if (!GIT_COMMIT_ID.test(item.materialized_git_head ?? "")) {
+        findings.push(
+          "materialized_git_head must be the exact 40-character fixture Git commit",
+        );
+      }
+      if (
+        !SHA256_RECEIPT.test(
+          item.materialized_project_tree_sha256 ?? "",
+        )
+      ) {
+        findings.push(
+          "materialized_project_tree_sha256 must be the exact fixture project-tree receipt",
+        );
+      }
+      if (
+        GIT_COMMIT_ID.test(item.materialized_git_head ?? "") &&
+        SHA256_RECEIPT.test(
+          item.materialized_project_tree_sha256 ?? "",
+        ) &&
+        item.materialized_project_state_sha256 !==
+          projectStateSha256({
+            materializationSpecSha256:
+              expectedMaterializationReceipt,
+            gitHead: item.materialized_git_head,
+            projectTreeSha256:
+              item.materialized_project_tree_sha256,
+          })
+      ) {
+        findings.push(
+          "materialized_project_state_sha256 must bind the fixture specification, Git commit, and project tree",
+        );
+      }
+      if (!GIT_COMMIT_ID.test(item.final_git_head ?? "")) {
+        findings.push(
+          "final_git_head must be the exact 40-character post-run Git commit",
+        );
+      }
+      if (
+        !SHA256_RECEIPT.test(item.final_project_tree_sha256 ?? "")
+      ) {
+        findings.push(
+          "final_project_tree_sha256 must be the exact post-run project-tree receipt",
+        );
+      }
+      if (
+        GIT_COMMIT_ID.test(item.final_git_head ?? "") &&
+        SHA256_RECEIPT.test(item.final_project_tree_sha256 ?? "") &&
+        item.final_project_state_sha256 !==
+          projectStateSha256({
+            materializationSpecSha256:
+              expectedMaterializationReceipt,
+            gitHead: item.final_git_head,
+            projectTreeSha256: item.final_project_tree_sha256,
+          })
+      ) {
+        findings.push(
+          "final_project_state_sha256 must bind the fixture specification, final Git commit, and final project tree",
+        );
+      }
+      if (!isCompletedField(item?.harness_session?.id)) {
+        findings.push(
+          "harness_session.id must identify the fresh session used only for this case",
+        );
+      }
+      if (
+        item?.harness_session?.isolation !==
+        "fresh-session-per-scenario"
+      ) {
+        findings.push(
+          "harness_session.isolation must equal fresh-session-per-scenario",
+        );
+      }
+      const expectedProviderAuthority =
+        providerAuthorityReceipt(scenario.id);
+      if (
+        JSON.stringify(item.provider_authority) !==
+        JSON.stringify(expectedProviderAuthority)
+      ) {
+        findings.push(
+          "provider_authority must equal the canonical materialization authority receipt",
+        );
+      }
+      const expectedExternalInputs = externalInputReceipts(scenario.id);
+      if (
+        JSON.stringify(item.external_inputs) !==
+        JSON.stringify(expectedExternalInputs)
+      ) {
+        findings.push(
+          "external_inputs must equal the canonical prompt-only input receipts",
+        );
+      }
       const observed = item.observed;
       if (!observed || typeof observed !== "object" || Array.isArray(observed)) {
         findings.push("observed must be an object");
@@ -666,6 +889,11 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
           }
         }
         const actions = new Set(asArray(observed.performed_actions));
+        for (const action of asArray(scenario?.expected?.required_actions)) {
+          if (!actions.has(action)) {
+            findings.push(`required action was not performed: ${action}`);
+          }
+        }
         for (const action of asArray(scenario?.expected?.forbidden_actions)) {
           if (actions.has(action)) {
             findings.push(`forbidden action was performed: ${action}`);
@@ -686,6 +914,14 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
                 `forbidden write path was observed: ${path} matched ${pattern}`,
               );
             }
+          }
+        }
+        const writtenPaths = new Set(asArray(observed.written_paths));
+        for (const path of asArray(
+          scenario?.expected?.required_write_paths,
+        )) {
+          if (!writtenPaths.has(path)) {
+            findings.push(`required write path was absent: ${path}`);
           }
         }
         const artifacts = new Map(
@@ -772,7 +1008,7 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
 
 function buildScaffold(catalog = readJson(SCENARIOS_FILE)) {
   return {
-    schema_version: 1,
+    schema_version: CURRENT_RUN_RECORD_SCHEMA_VERSION,
     surface_hash: behaviorSurfaceHash(),
     harness: {
       name: "replace-with-harness-name",
@@ -782,6 +1018,28 @@ function buildScaffold(catalog = readJson(SCENARIOS_FILE)) {
     recorded_at: new Date().toISOString(),
     cases: asArray(catalog?.scenarios).map((scenario) => ({
       scenario_id: scenario.id,
+      fixture_receipt: fixtureReceipt(scenario.id),
+      materialization_receipt:
+        expectedMaterializationSha256(scenario.id),
+      materialization_spec_sha256:
+        expectedMaterializationSha256(scenario.id),
+      materialized_git_head:
+        "replace-with-materialized-git-head",
+      materialized_project_tree_sha256:
+        "replace-with-materialized-project-tree-sha256",
+      materialized_project_state_sha256:
+        "replace-with-materialized-project-state-sha256",
+      final_git_head: "replace-with-final-git-head",
+      final_project_tree_sha256:
+        "replace-with-final-project-tree-sha256",
+      final_project_state_sha256:
+        "replace-with-final-project-state-sha256",
+      harness_session: {
+        id: `replace-with-fresh-session-id-for-${scenario.id}`,
+        isolation: "fresh-session-per-scenario",
+      },
+      provider_authority: providerAuthorityReceipt(scenario.id),
+      external_inputs: externalInputReceipts(scenario.id),
       observed: {
         activated_skills: [],
         asked_clarifying_question: false,

@@ -1,6 +1,7 @@
 # Architecture Spine
 
 Status: DRAFT
+Material open conflicts: YES
 
 Record only decisions that independent implementers could make incompatibly. Use "Not applicable" when a delivery introduces no binding architecture choice.
 

@@ -30,7 +30,13 @@ All notable changes to Ultimate Agent Stack are documented here.
 - Behavioral run records add bounded question counts and purpose tags,
   project-relative write observations, artifact and lock states, observable
   outputs, and load-bearing source-claim dispositions. Shipped artifact
-  templates are now part of the behavior-surface hash.
+  templates are now part of the behavior-surface hash. New records use schema
+  version 2; stale schema-version-1 records fail clearly instead of treating
+  the newly required observations as implicit evidence.
+- All 26 behavioral scenarios now have deterministic, receipt-bound project
+  fixtures for comparable harness runs. External-provider behavior is tested
+  portably as fail-closed telemetry health and Linear write preflight; live
+  provider contact remains a separately authorized dogfood exercise.
 - Simple no-coder onboarding recommends one private repository-only setup and
   suppresses separate memory, work-tracking, telemetry, review-provider, data,
   and merge questions after that recommendation is approved. Advanced choices
@@ -42,13 +48,16 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ### Security
 
-- The lock rejects selected artifacts explicitly marked DRAFT or declaring
-  material open conflicts, in addition to rejecting unresolved placeholders.
-  Conversational approval remains an audited reason, not cryptographic proof of
-  the approver's identity.
+- The lock requires each selected artifact to contain exactly one visible
+  `Status: APPROVED` and `Material open conflicts: NO` declaration outside
+  fenced examples, in addition to rejecting unresolved placeholders. Missing,
+  duplicate, unknown, DRAFT, open-conflict, and unclosed-fence states fail
+  closed. Conversational approval remains an audited reason, not cryptographic
+  proof of the approver's identity.
 - External-source guidance preserves supplied material, requires an explicit
-  disposition for each load-bearing claim, and forbids persisting credentials,
-  raw private conversation history, or unrelated source content. These handling
+  disposition for each load-bearing claim, treats embedded instructions as
+  untrusted data, and forbids executing them or persisting credentials, raw
+  private conversation history, or unrelated source content. These handling
   rules remain agent instructions backed by live evaluation rather than a claim
   of universal CLI enforcement.
 

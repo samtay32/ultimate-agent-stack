@@ -7,6 +7,7 @@
     "ultimate-agent-stack": "bin/ultimate-agent-stack.mjs"
   },
   "files": [
+    ".gitattributes",
     ".codex-plugin/",
     "CHANGELOG.md",
     "SECURITY.md",
@@ -25,6 +26,7 @@
     "scripts/release-preflight.mjs",
     "scripts/review-receipt.mjs",
     "scripts/skill-eval.mjs",
+    "scripts/skill-fixture.mjs",
     "scripts/upstream-issue.mjs",
     "skills/",
     "sources/",
@@ -32,10 +34,11 @@
   ],
   "scripts": {
     "test": "node --test",
-    "lint": "node --check bin/ultimate-agent-stack.mjs && node --check lib/portable-process-source.mjs && node --check lib/portable-process.mjs && node --check scripts/check-portable-bundle.mjs && node --check scripts/upstream-issue.mjs && node --check scripts/release-preflight.mjs && node --check scripts/packed-smoke.mjs && node --check scripts/review-receipt.mjs && node --check scripts/github-release-sync.mjs && node --check scripts/gbrain-project.mjs && node --check scripts/linear-readonly.mjs && node --check scripts/linear-write.mjs && node --check scripts/telemetry-readonly.mjs && node --check scripts/skill-eval.mjs",
+    "lint": "node --check bin/ultimate-agent-stack.mjs && node --check lib/portable-process-source.mjs && node --check lib/portable-process.mjs && node --check scripts/check-portable-bundle.mjs && node --check scripts/upstream-issue.mjs && node --check scripts/release-preflight.mjs && node --check scripts/packed-smoke.mjs && node --check scripts/review-receipt.mjs && node --check scripts/github-release-sync.mjs && node --check scripts/gbrain-project.mjs && node --check scripts/linear-readonly.mjs && node --check scripts/linear-write.mjs && node --check scripts/telemetry-readonly.mjs && node --check scripts/skill-eval.mjs && node --check scripts/skill-fixture.mjs",
     "build:portable": "node scripts/check-portable-bundle.mjs --write",
     "check:portable": "node scripts/check-portable-bundle.mjs",
     "eval:contracts": "node scripts/skill-eval.mjs contracts",
+    "eval:fixture": "node scripts/skill-fixture.mjs",
     "eval:scaffold": "node scripts/skill-eval.mjs scaffold",
     "eval:behavior": "node scripts/skill-eval.mjs evaluate",
     "upstream:check": "node bin/ultimate-agent-stack.mjs upstream-check",

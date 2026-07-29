@@ -202,17 +202,41 @@ function fillLockArtifacts(directory) {
   const artifacts = join(directory, ".agent-stack", "artifacts");
   writeFileSync(
     join(artifacts, "DELIVERY.md"),
-    "# Delivery\n\nThe fixture remains runnable.\n",
+    [
+      "# Delivery",
+      "",
+      "Status: APPROVED",
+      "Material open conflicts: NO",
+      "",
+      "The fixture remains runnable.",
+      "",
+    ].join("\n"),
     "utf8",
   );
   writeFileSync(
     join(artifacts, "ARCHITECTURE.md"),
-    "# Architecture\n\nNo binding decision.\n",
+    [
+      "# Architecture",
+      "",
+      "Status: APPROVED",
+      "Material open conflicts: NO",
+      "",
+      "No binding decision.",
+      "",
+    ].join("\n"),
     "utf8",
   );
   writeFileSync(
     join(artifacts, "SECURITY.md"),
-    "# Security\n\nNo exposed security surface in the fixture.\n",
+    [
+      "# Security",
+      "",
+      "Status: APPROVED",
+      "Material open conflicts: NO",
+      "",
+      "No exposed security surface in the fixture.",
+      "",
+    ].join("\n"),
     "utf8",
   );
 }
@@ -760,6 +784,70 @@ test("artifact locks reject drafts, open conflicts, and mixed-case placeholders 
     const stateFile = join(fixture.directory, ".agent-stack", "state.json");
     const stateBeforeRejections = readFileSync(stateFile, "utf8");
 
+    for (const [content, expected] of [
+      [
+        "# Delivery\n\nComplete content without declarations.\n",
+        /exactly one visible Status: APPROVED/,
+      ],
+      [
+        [
+          "# Delivery",
+          "",
+          "Status: REVIEWED",
+          "Material open conflicts: NO",
+          "",
+          "Complete content.",
+          "",
+        ].join("\n"),
+        /exactly one visible Status: APPROVED/,
+      ],
+      [
+        [
+          "# Delivery",
+          "",
+          "Status: APPROVED",
+          "Status: APPROVED",
+          "Material open conflicts: NO",
+          "",
+          "Complete content.",
+          "",
+        ].join("\n"),
+        /exactly one visible Status: APPROVED/,
+      ],
+      [
+        [
+          "# Delivery",
+          "",
+          "Status: APPROVED",
+          "Material open conflicts: UNKNOWN",
+          "",
+          "Complete content.",
+          "",
+        ].join("\n"),
+        /exactly one visible Material open conflicts: NO/,
+      ],
+      [
+        [
+          "# Delivery",
+          "",
+          "Status: APPROVED",
+          "Material open conflicts: NO",
+          "Material open conflicts: NO",
+          "",
+          "Complete content.",
+          "",
+        ].join("\n"),
+        /exactly one visible Material open conflicts: NO/,
+      ],
+    ]) {
+      writeFileSync(delivery, content, "utf8");
+      assert.throws(
+        () => commandLock(fixture.directory, []),
+        expected,
+      );
+      assert.equal(readFileSync(stateFile, "utf8"), stateBeforeRejections);
+    }
+
     writeFileSync(
       delivery,
       [
@@ -816,6 +904,110 @@ test("artifact locks reject drafts, open conflicts, and mixed-case placeholders 
     assert.throws(
       () => commandLock(fixture.directory, []),
       /material open conflicts remain/,
+    );
+    assert.equal(readFileSync(stateFile, "utf8"), stateBeforeRejections);
+
+    writeFileSync(
+      delivery,
+      [
+        "# Delivery",
+        "",
+        "Status: APPROVED",
+        "Material open conflicts: NO",
+        "",
+        "## Misplaced Declaration",
+        "",
+        "Status: DRAFT",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    assert.throws(
+      () => commandLock(fixture.directory, []),
+      /artifact status is DRAFT/,
+    );
+    assert.equal(readFileSync(stateFile, "utf8"), stateBeforeRejections);
+
+    writeFileSync(
+      delivery,
+      [
+        "# Delivery",
+        "",
+        "Status: APPROVED",
+        "Material open conflicts: NO",
+        "",
+        "## Misplaced Declaration",
+        "",
+        "Material open conflicts: YES",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    assert.throws(
+      () => commandLock(fixture.directory, []),
+      /material open conflicts remain/,
+    );
+    assert.equal(readFileSync(stateFile, "utf8"), stateBeforeRejections);
+
+    writeFileSync(
+      delivery,
+      [
+        "# Delivery",
+        "",
+        "Status: APPROVED",
+        "Material open conflicts: NO",
+        "",
+        "```text",
+        "An unfinished historical example.",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    assert.throws(
+      () => commandLock(fixture.directory, []),
+      /unclosed fenced code block/,
+    );
+    assert.equal(readFileSync(stateFile, "utf8"), stateBeforeRejections);
+
+    writeFileSync(
+      delivery,
+      [
+        "# Delivery",
+        "",
+        "Status: APPROVED",
+        "Material open conflicts: NO",
+        "",
+        "```invalid`info",
+        "Status: DRAFT",
+        "```",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    assert.throws(
+      () => commandLock(fixture.directory, []),
+      /invalid backtick in fenced code info string/,
+    );
+    assert.equal(readFileSync(stateFile, "utf8"), stateBeforeRejections);
+
+    writeFileSync(
+      delivery,
+      [
+        "# Delivery",
+        "",
+        "Status: APPROVED",
+        "Material open conflicts: NO",
+        "",
+        "\t```text",
+        "Status: DRAFT",
+        "```",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    assert.throws(
+      () => commandLock(fixture.directory, []),
+      /unclosed fenced code block/,
     );
     assert.equal(readFileSync(stateFile, "utf8"), stateBeforeRejections);
 

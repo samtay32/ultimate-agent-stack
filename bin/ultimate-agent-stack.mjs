@@ -107,9 +107,10 @@ const DEFAULT_ARTIFACTS = [
   ".agent-stack/artifacts/SECURITY.md",
 ];
 const PLACEHOLDER = /\[\[[^\]\r\n]*\]\]/g;
-const DRAFT_ARTIFACT_STATUS = /^\s*Status:\s*DRAFT\s*$/im;
-const OPEN_MATERIAL_CONFLICTS =
-  /^\s*Material open conflicts:\s*YES\s*$/im;
+const ARTIFACT_STATUS_DECLARATION =
+  /^ {0,3}Status:[ \t]*(.*?)[ \t]*$/gim;
+const MATERIAL_CONFLICTS_DECLARATION =
+  /^ {0,3}Material open conflicts:[ \t]*(.*?)[ \t]*$/gim;
 const PROVIDER_UUID =
   /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const SECRET_ASSIGNMENT =
@@ -8513,6 +8514,52 @@ function commandCheckpoint(target, options) {
   };
 }
 
+function markdownOutsideFencedCode(content, artifact) {
+  const visible = [];
+  let fence = null;
+  for (const line of content.split(/\r?\n/)) {
+    if (fence) {
+      const closing = line.match(/^ {0,3}(`+|~+)[ \t]*$/);
+      if (
+        closing &&
+        closing[1][0] === fence.character &&
+        closing[1].length >= fence.length
+      ) {
+        fence = null;
+      }
+      visible.push("");
+      continue;
+    }
+    const opening = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if (opening) {
+      if (opening[1][0] === "`" && opening[2].includes("`")) {
+        throw new StackError(
+          `Cannot lock ${artifact}; invalid backtick in fenced code info string prevents safe declaration checks`,
+        );
+      }
+      fence = {
+        character: opening[1][0],
+        length: opening[1].length,
+      };
+      visible.push("");
+      continue;
+    }
+    visible.push(line);
+  }
+  if (fence) {
+    throw new StackError(
+      `Cannot lock ${artifact}; unclosed fenced code block prevents safe declaration checks`,
+    );
+  }
+  return visible.join("\n");
+}
+
+function artifactDeclarationValues(content, pattern) {
+  return [...content.matchAll(pattern)].map((match) =>
+    match[1].trim().toUpperCase(),
+  );
+}
+
 function commandLock(target, artifacts) {
   const config = loadConfig(target);
   const errors = validateConfig(config, target);
@@ -8527,17 +8574,33 @@ function commandLock(target, artifacts) {
       throw new StackError(`Cannot lock missing artifact: ${artifact}`);
     }
     const content = readFileSync(file, "utf8");
-    const firstSection = content.search(/^##(?:\s|$)/m);
-    const declarations =
-      firstSection === -1 ? content : content.slice(0, firstSection);
-    if (DRAFT_ARTIFACT_STATUS.test(declarations)) {
+    const declarations = markdownOutsideFencedCode(content, artifact);
+    const statuses = artifactDeclarationValues(
+      declarations,
+      ARTIFACT_STATUS_DECLARATION,
+    );
+    if (statuses.includes("DRAFT")) {
       throw new StackError(
         `Cannot lock ${artifact}; artifact status is DRAFT`,
       );
     }
-    if (OPEN_MATERIAL_CONFLICTS.test(declarations)) {
+    if (statuses.length !== 1 || statuses[0] !== "APPROVED") {
+      throw new StackError(
+        `Cannot lock ${artifact}; expected exactly one visible Status: APPROVED declaration`,
+      );
+    }
+    const conflicts = artifactDeclarationValues(
+      declarations,
+      MATERIAL_CONFLICTS_DECLARATION,
+    );
+    if (conflicts.includes("YES")) {
       throw new StackError(
         `Cannot lock ${artifact}; material open conflicts remain`,
+      );
+    }
+    if (conflicts.length !== 1 || conflicts[0] !== "NO") {
+      throw new StackError(
+        `Cannot lock ${artifact}; expected exactly one visible Material open conflicts: NO declaration`,
       );
     }
     const unresolvedPlaceholders = [

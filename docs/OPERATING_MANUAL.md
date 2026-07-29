@@ -486,9 +486,11 @@ node .agent-stack/bin/agent-stack.mjs verify
 
 This front-half update adds the optional working-brief template and one skill.
 Existing configurations and active locks remain readable. New lock attempts
-reject selected artifacts explicitly marked DRAFT or declaring material open
-conflicts. Changed managed guidance arrives as reconciliation proposals; a
-pre-existing project-owned `BRIEF.md` is preserved rather than overwritten.
+require exactly one visible `Status: APPROVED` and
+`Material open conflicts: NO` declaration in every selected artifact. Missing,
+duplicate, unknown, DRAFT, and open-conflict declarations fail closed. Changed
+managed guidance arrives as reconciliation proposals; a pre-existing
+project-owned `BRIEF.md` is preserved rather than overwritten.
 
 ## Dogfooding Before the Next Milestone
 

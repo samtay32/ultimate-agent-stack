@@ -525,14 +525,38 @@ test("working brief and lock guidance preserve honest promotion boundaries", () 
   }
   assert.match(
     trustGuide,
-    /rejects a selected artifact with an\s+explicit `Status: DRAFT` marker/,
+    /requires each selected artifact to\s+contain exactly one visible `Status: APPROVED`/,
   );
-  assert.match(trustGuide, /`Material open conflicts: YES`/);
+  assert.match(trustGuide, /`Material open conflicts: NO` declaration/);
   assert.match(trustGuide, /unresolved\s+double-bracket placeholders/);
   assert.match(trustGuide, /does not understand whether the prose is complete/);
   assert.match(trustGuide, /does not\s+cryptographically authenticate/);
   assert.match(briefContract, /does not understand the truth of prose/);
   assert.match(briefContract, /does not[\s\S]*authenticate the approver/);
+  for (const artifact of [
+    "ARCHITECTURE.md",
+    "BRIEF.md",
+    "DECISIONS.md",
+    "DELEGATION.md",
+    "DELIVERY.md",
+    "SECURITY.md",
+    "VERIFICATION.md",
+  ]) {
+    const source = readFileSync(
+      join(
+        PACKAGE_ROOT,
+        "assets/project-template/.agent-stack/artifacts",
+        artifact,
+      ),
+      "utf8",
+    );
+    assert.match(source, /^Status: DRAFT$/m, artifact);
+    assert.match(
+      source,
+      /^Material open conflicts: YES$/m,
+      artifact,
+    );
+  }
 });
 
 test("simple onboarding uses one combined recommendation only without a requested advanced provider", () => {
@@ -718,6 +742,7 @@ test("package has no install hooks and guards publication with prepublishOnly", 
       "scripts/release-preflight.mjs",
       "scripts/review-receipt.mjs",
       "scripts/skill-eval.mjs",
+      "scripts/skill-fixture.mjs",
       "scripts/upstream-issue.mjs",
     ],
   );
@@ -732,6 +757,11 @@ test("package has no install hooks and guards publication with prepublishOnly", 
     "package files must include STARTER_PROMPT.md",
   );
   assert.equal(
+    packageData.files.includes(".gitattributes"),
+    true,
+    "package files must include the LF policy hashed by behavioral evidence",
+  );
+  assert.equal(
     packageData.files.includes("SECURITY.md"),
     true,
     "package files must include the private vulnerability reporting policy",
@@ -742,10 +772,18 @@ test("package has no install hooks and guards publication with prepublishOnly", 
     packageData.scripts?.["eval:contracts"],
     "node scripts/skill-eval.mjs contracts",
   );
+  assert.equal(
+    packageData.scripts?.["eval:fixture"],
+    "node scripts/skill-fixture.mjs",
+  );
   assert.match(packageData.scripts?.["release:check"], /eval:contracts/);
   assert.match(packedSmoke, /packed\[0\]\.files/);
   assert.match(packedSmoke, /duplicate-copy paths/);
   assert.match(packedSmoke, /spawnNpm/);
+  assert.match(packedSmoke, /packed canonical fixture catalog is invalid/);
+  assert.match(packedSmoke, /packed behavioral contracts did not validate/);
+  assert.match(packedSmoke, /packed canonical fixture did not materialize/);
+  assert.match(packedSmoke, /packed canonical fixture inspection did not match/);
   assert.match(packedSmoke, /node --test tests\/smoke\.test\.mjs/);
   assert.equal(packageData.engines?.node, ">=22");
   assert.deepEqual(packageData.dependencies ?? {}, {});

@@ -1,5 +1,8 @@
 # Delegation Record
 
+Status: DRAFT
+Material open conflicts: YES
+
 Execution strategy: SERIAL
 
 The primary agent owns user communication, authority, integration, verification,

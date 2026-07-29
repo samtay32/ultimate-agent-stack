@@ -27,9 +27,11 @@ Use DRAFT until the product owner accepts the brief for promotion. Use NO for
 material conflicts only when no unresolved contradiction or consequential
 decision can change the current delivery outcome or risk.
 
-The CLI mechanically rejects selected artifacts explicitly marked DRAFT or
-with `Material open conflicts: YES`. It does not understand the truth of prose,
-authenticate the approver, or discover an omitted conflict.
+The CLI mechanically requires every selected lock artifact to contain exactly
+one visible `Status: APPROVED` and `Material open conflicts: NO` declaration.
+Missing, duplicate, unknown, DRAFT, or open-conflict declarations fail closed.
+It does not understand the truth of prose, authenticate the approver, or
+discover an omitted conflict.
 
 ## Content Kernel
 

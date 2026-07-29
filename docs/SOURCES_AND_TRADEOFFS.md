@@ -88,9 +88,10 @@ third-party workflow:
   stable source-claim ledger using `kept`, `tightened`, `rejected`, and
   `deferred`; repository reconciliation; and canonical closed decisions that
   are not reopened without product-owner instruction.
-- **Tightened:** the lock now rejects declared DRAFT state, declared material
-  open conflicts, and unresolved placeholders. This proves the selected bytes
-  satisfy those declared markers, not that an agent understood every semantic
+- **Tightened:** the lock now requires exactly one visible APPROVED/NO pair and
+  rejects missing, duplicate, unknown, DRAFT, open-conflict, and unresolved
+  placeholder state. This proves the selected bytes satisfy those declared
+  markers, not that an agent understood every semantic
   contradiction or authenticated the person who approved the brief.
 - **Rejected:** separate brainstorming/import/reconciliation personas,
   mandatory discovery for clear bounded work, a BRIEF requirement for every
