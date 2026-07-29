@@ -277,7 +277,7 @@
       },
       "expected": {
         "must_activate": [
-          "run-autonomous-delivery"
+          "close-review-loop"
         ],
         "must_not_activate": [],
         "question": "allowed",
