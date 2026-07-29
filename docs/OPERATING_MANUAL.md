@@ -48,9 +48,10 @@ accepted for compatibility. The agent then:
 2. reconciles any proposals instead of overwriting files;
 3. detects the project's real checks;
 4. detects review, knowledge, work, and telemetry capabilities;
-5. asks the plain-language repository-only versus optional local searchable
-   memory question, then asks only consequential profile, provider,
-   external-data, and authority questions;
+5. offers one combined private repository-only recommendation when it fits and
+   the user has not requested a relevant advanced provider, then reveals an
+   advanced provider question only when repository evidence, the user, or a real
+   requirement makes it relevant;
 6. inspects and approves argument arrays and delegated package-script
    definitions;
 7. applies `$secure-launch` to classify exposure and add proportionate gates;
@@ -70,8 +71,13 @@ session start.
 
 For a local prototype or straightforward project that does not require
 production release protection, external data, external memory, or delegated
-merge authority, the agent should recommend the simple setup. After you approve
-the recommendation, it records the choice with:
+merge authority, and where the user has not requested a relevant advanced
+provider, the agent should ask exactly one combined question:
+
+> I recommend the private repository-only setup. It uses no outside memory,
+> tracking, or telemetry, and you retain merge control. Use this?
+
+After you approve the recommendation, it records the choice with:
 
 ```bash
 node .agent-stack/bin/agent-stack.mjs configure \
@@ -84,6 +90,8 @@ You should not have to construct or interpret that command. The preset selects:
 - the standard project profile;
 - built-in repository review;
 - repository-owned project knowledge;
+- repository-owned work tracking;
+- no telemetry provider;
 - local-only data handling;
 - agent-owned routine execution;
 - human approval for merging.
@@ -91,7 +99,11 @@ You should not have to construct or interpret that command. The preset selects:
 The complete safety installation remains in place. Small work stays serial
 through the adaptive coordinator; safely isolated subagents remain available
 when they would materially help. Projects needing production release protection
-or an external provider use guided advanced configuration instead.
+or an external provider use guided advanced configuration instead. An explicit
+request for a relevant advanced provider takes precedence: ask only that one
+advanced choice rather than offering the simple preset first. Approval of the
+simple path ends provider questioning; it is recorded conversational
+authority, not cryptographic authentication of the approver.
 
 ## Account-Only Connections
 
@@ -120,6 +132,31 @@ The agent should research and recommend the implementation. Add constraints
 only when they are real. [../STARTER_PROMPT.md](../STARTER_PROMPT.md) provides a
 longer copy-and-paste contract for harnesses that need it.
 
+The controller accepts four front doors:
+
+1. **RESUME:** continue a valid non-complete checkpoint or active lock with an
+   unmet done/evidence condition from the first unmet condition without
+   reopening closed decisions.
+2. **EXTERNAL:** read substantial supplied material that defines product intent
+   or an existing plan completely; preserve it unchanged; audit its claims; and
+   reconcile it against the repository.
+3. **DISCOVER:** turn vague, contradictory, exploratory, or greenfield
+   product/system intent that needs development into an early unlocked
+   `BRIEF.md`, asking one consequential question at a time and withholding
+   product implementation.
+4. **DIRECT:** take a clear bounded testable request through the existing
+   micro-brief path without forcing extended discovery.
+
+A completed checkpoint and fully satisfied lock do not hijack a new request. A
+supporting screenshot, log, or attachment does not make an otherwise clear
+bounded request EXTERNAL, and bounded work remains DIRECT in a new repository.
+
+EXTERNAL and DISCOVER may stop after an approved brief when that is all the
+user requested. Otherwise `shape-project` promotes the approved brief into the
+canonical delivery, architecture, security, verification, and decision
+contracts. The brief remains provenance and audit context rather than a second
+binding state machine.
+
 ## Continuing in a New Conversation
 
 Ask the current Project Steward to checkpoint and hand off before leaving. Then
@@ -147,10 +184,13 @@ The agent runs:
 node .agent-stack/bin/agent-stack.mjs capabilities
 ```
 
-It then recommends a project profile and provider combination. The portable
-baseline uses built-in review plus repository knowledge. Production profiles
-require either CodeRabbit or an explicitly allowed GitHub human reviewer.
-GBrain is optional and requires approval for external data. The agent asks:
+The simple path already selects the portable baseline: built-in review,
+repository knowledge and work, no telemetry, local-only data, and human merge
+authority. Advanced setup considers a provider only when the repository already
+uses it and it is relevant, the user explicitly requests it, or a real
+requirement cannot be met locally. Production profiles require an allowed
+current independent reviewer. GBrain remains optional and requires approval for
+external data. When it is relevant, the agent may ask:
 
 > Should this project remember progress only in its repository files, or also
 > use a private local searchable memory for easier continuation across
@@ -443,6 +483,35 @@ package files. The agent resolves proposals, then runs:
 node .agent-stack/bin/agent-stack.mjs doctor --human
 node .agent-stack/bin/agent-stack.mjs verify
 ```
+
+This front-half update adds the optional working-brief template and one skill.
+Existing configurations and active locks remain readable. New lock attempts
+reject selected artifacts explicitly marked DRAFT or declaring material open
+conflicts. Changed managed guidance arrives as reconciliation proposals; a
+pre-existing project-owned `BRIEF.md` is preserved rather than overwritten.
+
+## Dogfooding Before the Next Milestone
+
+Before expanding the workflow, exercise this milestone through:
+
+1. a vague greenfield no-coder idea;
+2. an elaborate outside brief;
+3. an elaborate brief reconciled with an existing repository;
+4. a clear direct change followed by resume.
+
+Record time to first useful brief, question count, unnecessary questions,
+source claims lost or altered, contradictions found, manual interventions,
+lock or promotion failures, continuation success, user acceptance, harness,
+model, and behavior-surface hash. Revise this milestone if those journeys expose
+material friction.
+
+Milestone 2 remains a documented roadmap: inherited project definitions of
+done, risk overlays, real-versus-stub declarations, applicable UI evidence,
+guided no-coder acceptance testing, and provider-neutral launch readiness.
+Milestone 3 remains a documented roadmap: split the authoring CLI into deep
+internal modules while preserving one dependency-free portable bundle and add
+only cost/run receipts the active harness can actually report. Neither
+milestone is implemented by this change.
 
 ## Daily Safety Rules
 

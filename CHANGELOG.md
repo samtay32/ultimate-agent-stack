@@ -4,6 +4,64 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ## Unreleased
 
+### Added
+
+- A focused `develop-project-brief` skill now develops vague seed ideas and
+  audits detailed outside PRDs, transcripts, outlines, notes, or plans into one
+  unlocked working brief before final delivery shaping.
+- The managed `BRIEF.md` artifact records intake mode, provenance, falsifiable
+  product standards, approaches and tradeoffs, capabilities, constraints,
+  assumptions, closed and open decisions, contradictions, production-versus-
+  stub behavior, material source changes, and promotion readiness.
+- Twelve flexible-intake behavioral cases expand the catalog to 26 scenarios
+  across 13 skills, covering discovery, brief-only work, detailed and complete
+  external sources, contradictions, existing-code reconciliation, direct
+  bypass, valid resume, draft-lock rejection, promotion, simple onboarding, and
+  credential redaction.
+
+### Changed
+
+- `run-autonomous-delivery` now routes intake in `RESUME`, `EXTERNAL`,
+  `DISCOVER`, then `DIRECT` order. Clear bounded changes retain the existing
+  micro-brief path, while valid unfinished checkpoints and locks resume without
+  reopening settled intent. Completed state, a fully satisfied lock, bounded
+  work in a new repository, and supporting screenshots/logs/attachments do not
+  force resume or extended brief development.
+- Behavioral run records add bounded question counts and purpose tags,
+  project-relative write observations, artifact and lock states, observable
+  outputs, and load-bearing source-claim dispositions. Shipped artifact
+  templates are now part of the behavior-surface hash.
+- Simple no-coder onboarding recommends one private repository-only setup and
+  suppresses separate memory, work-tracking, telemetry, review-provider, data,
+  and merge questions after that recommendation is approved. Advanced choices
+  remain available when repository evidence or an explicit requirement makes
+  them relevant.
+- Broad flexible-intake behavior claims require complete live evidence from
+  both Codex and Claude Code on the current surface. Other harnesses remain
+  explicitly untested unless their own complete records are attached.
+
+### Security
+
+- The lock rejects selected artifacts explicitly marked DRAFT or declaring
+  material open conflicts, in addition to rejecting unresolved placeholders.
+  Conversational approval remains an audited reason, not cryptographic proof of
+  the approver's identity.
+- External-source guidance preserves supplied material, requires an explicit
+  disposition for each load-bearing claim, and forbids persisting credentials,
+  raw private conversation history, or unrelated source content. These handling
+  rules remain agent instructions backed by live evaluation rather than a claim
+  of universal CLI enforcement.
+
+### Upgrade impact
+
+- `upgrade` installs the new managed skill and working-brief template when
+  their destinations are free. Existing differing files are preserved through
+  the normal versioned proposal and reconciliation flow.
+- Existing completed configurations and active locks remain valid. The working
+  brief is not added to the default lock set, so clear T0/T1 work keeps its
+  proportionate path. New or incomplete onboarding receives the combined simple
+  recommendation.
+
 ## 0.8.0 - 2026-07-29
 
 ### Added

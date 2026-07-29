@@ -43,6 +43,13 @@ Before the owner step, the agent must:
    metadata;
 7. stop and report the exact hash and remaining owner step.
 
+For a release that makes broad claims about the flexible-intake front half,
+step 5 requires complete current-surface records from both Codex and Claude
+Code. Evaluate them separately and list Gemini, Cursor, Grok, OpenCode, and any
+other supported harness not exercised by a complete run as untested. The
+release must not turn a deterministic contract pass or one harness result into
+a broader compatibility claim.
+
 The owner then:
 
 1. signs in to the npm account that will own the package;
@@ -97,6 +104,15 @@ The agent:
 5. starts **Publish npm package** with the exact
    `ultimate-agent-stack@VERSION` input.
 
+The flexible-intake Milestone 1 release contains 26 scenarios and 13 skills.
+Its broad front-half behavior claim requires complete current-surface evidence
+from both Codex and Claude Code. Each record must include activation and false
+activation, bounded question behavior, prohibited actions and project writes,
+artifact status and lock state, observable outputs, and load-bearing
+source-claim dispositions. The behavior-surface hash includes the shipped
+artifact templates, so a changed `BRIEF.md`, decision, delivery, architecture,
+security, or verification template invalidates older evidence.
+
 Deterministic unit tests prove the scenario schema, evaluator, package, and
 guardrails. They do not prove that a model selected the right skill or followed
 it. The live record supplies that separate behavioral evidence. A result
@@ -140,3 +156,12 @@ proposal, and verify the protected package files and project checks.
 An upgrade never overwrites an existing differing managed file. It writes a
 versioned proposal for the agent to reconcile and records removed package files
 as orphans without deleting them.
+
+The flexible-intake update adds the managed `develop-project-brief` skill and
+the unlocked `.agent-stack/artifacts/BRIEF.md` template. A new destination is
+installed normally; a pre-existing differing path is preserved for explicit
+reconciliation. Existing completed configuration and active locks remain
+valid, and direct small work does not add the working brief to the default lock
+set. New or incomplete simple onboarding uses one combined repository-only
+recommendation; advanced provider questions remain conditional on repository
+evidence, an explicit request, or a requirement that cannot be met locally.
