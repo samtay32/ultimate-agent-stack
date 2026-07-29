@@ -626,11 +626,21 @@ test("packed installs cover flexible intake and live evidence stays harness-scop
     assert.match(packedSmoke, new RegExp(packagedPath.replaceAll(".", "\\.")));
   }
   assert.match(packedSmoke, /rejected packed DRAFT lock wrote active state/);
+  for (const source of [readme, behavioralEvals, releaseGuide, trustGuide]) {
+    const normalized = source.replace(/\s+/g, " ");
+    assert.match(
+      normalized,
+      /at least two distinct primary supported harnesses/,
+    );
+    assert.match(
+      normalized,
+      /No named harness is privileged by this (?:release )?rule/,
+    );
+  }
   assert.match(
-    trustGuide,
-    /live runs from at least two\s+distinct primary supported harnesses/,
+    readme.replace(/\s+/g, " "),
+    /every other supported harness must be named as untested/,
   );
-  assert.match(trustGuide, /No named harness is privileged by this rule/);
   assert.match(trustGuide, /must not\s+be generalized to another harness/);
 });
 
