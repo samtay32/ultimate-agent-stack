@@ -220,9 +220,9 @@ blocked, or a consequential decision is required.
 Use `evidence report` when the user needs a compact state summary. Use
 `--format mermaid --output .agent-stack/reports/evidence.mmd` for a diagram.
 Keep `--max-nodes` proportionate to the review context. The renderer also caps
-edges at four per selected node. The report counts nodes excluded by the node
-bound and selected-node edges excluded by the edge cap. Those omissions are not
-lost evidence; they remain in the validated graph.
+the total edges at four times the selected-node count. The report counts nodes
+excluded by the node bound and selected-node edges excluded by that aggregate
+cap. Those omissions are not lost evidence; they remain in the validated graph.
 
 ## What Happens With Subagents
 

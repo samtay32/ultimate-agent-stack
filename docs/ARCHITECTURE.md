@@ -193,12 +193,12 @@ evidence navigation; the referenced artifacts remain authoritative.
 `evidence report` derives a provider-neutral summary from those two validated
 files. JSON output contains only counts and bounded identifier samples. Mermaid
 output uses generated aliases and sanitized labels, includes only edges between
-selected nodes, is capped at 500 nodes and four rendered edges per selected
-node, and reports node-bound and selected-node edge-cap omissions separately.
-Report output rejects symlinked path components observed before creation. It
-does not claim race-safe confinement against another process with checkout
-write access. Reports do not query providers and do not promote a reference
-into proof.
+selected nodes, is capped at 500 nodes, and applies an aggregate edge cap equal
+to four times the selected-node count. It reports node-bound and selected-node
+edge-cap omissions separately. Report output rejects symlinked path components
+observed before creation. It does not claim race-safe confinement against
+another process with checkout write access. Reports do not query providers and
+do not promote a reference into proof.
 
 The Linear adapter is not a second orchestrator. Its fixed, paginated query
 shape checks viewer authentication and configured team visibility. Optional
