@@ -839,6 +839,34 @@ test("artifact locks reject drafts, open conflicts, and mixed-case placeholders 
         ].join("\n"),
         /exactly one visible Material open conflicts: NO/,
       ],
+      [
+        [
+          "# Delivery",
+          "",
+          "- ```text",
+          "  Status: APPROVED",
+          "  Material open conflicts: NO",
+          "  ```",
+          "",
+          "Complete content.",
+          "",
+        ].join("\n"),
+        /exactly one visible Status: APPROVED/,
+      ],
+      [
+        [
+          "# Delivery",
+          "",
+          "> ```text",
+          "> Status: APPROVED",
+          "> Material open conflicts: NO",
+          "> ```",
+          "",
+          "Complete content.",
+          "",
+        ].join("\n"),
+        /exactly one visible Status: APPROVED/,
+      ],
     ]) {
       writeFileSync(delivery, content, "utf8");
       assert.throws(
