@@ -5,14 +5,18 @@ import { spawnSync } from "node:child_process";
 import {
   existsSync,
   lstatSync,
+  mkdtempSync,
   mkdirSync,
+  opendirSync,
   readFileSync,
   readdirSync,
   realpathSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -31,9 +35,32 @@ import {
 const SCRIPT_FILE = fileURLToPath(import.meta.url);
 const PACKAGE_ROOT = resolve(dirname(SCRIPT_FILE), "..");
 const FIXTURES_FILE = join(PACKAGE_ROOT, "evals", "fixtures.json");
+const FIXTURE_BASELINES_FILE = join(
+  PACKAGE_ROOT,
+  "evals",
+  "fixture-baselines.json",
+);
 const SCENARIOS_FILE = join(PACKAGE_ROOT, "evals", "scenarios.json");
 const FIXED_TIMESTAMP = "2026-01-01T00:00:00Z";
 const LIVE_LINEAR_SANDBOX_OPT_IN = "--allow-live-linear-sandbox-fixture";
+const GIT_COMMIT_ID = /^[a-f0-9]{40}$/;
+const SHA256_RECEIPT = /^sha256:[a-f0-9]{64}$/;
+const PROJECT_TREE_MAX_ENTRIES = 20_000;
+const PROJECT_TREE_MAX_FILES = 10_000;
+const PROJECT_TREE_MAX_FILE_BYTES = 16 * 1024 * 1024;
+const PROJECT_TREE_MAX_TOTAL_BYTES = 128 * 1024 * 1024;
+const EVALUATION_SCRUBBED_CREDENTIAL_ENVIRONMENT = Object.freeze([
+  "GH_TOKEN",
+  "GITHUB_TOKEN",
+  "NODE_AUTH_TOKEN",
+  "NPM_TOKEN",
+  "LINEAR_API_KEY",
+  "LINEAR_CREATE_API_KEY",
+  "LINEAR_COMMENT_API_KEY",
+  "POSTHOG_PERSONAL_API_KEY",
+  "SENTRY_AUTH_TOKEN",
+  "NEW_RELIC_USER_KEY",
+]);
 const EXPECTED_FIXTURE_IDS = new Set([
   "direct-setup",
   "direct-delivery",
@@ -102,42 +129,126 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function projectTreeSha256(target) {
-  const root = realpathSync(target);
-  const files = [];
-  const visit = (directory, prefix = "") => {
-    for (const entry of readdirSync(directory, { withFileTypes: true }).sort(
-      (left, right) =>
-        left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
-    )) {
-      const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
-      if (relativePath === ".git") {
-        continue;
-      }
-      const path = join(directory, entry.name);
-      if (entry.isSymbolicLink()) {
-        throw new Error(
-          `refusing to hash symlink in materialized project tree: ${relativePath}`,
-        );
-      }
-      if (entry.isDirectory()) {
-        visit(path, relativePath);
-        continue;
-      }
-      if (!entry.isFile()) {
-        throw new Error(
-          `refusing to hash unsupported project tree entry: ${relativePath}`,
-        );
-      }
-      files.push({ path: relativePath, bytes: readFileSync(path) });
+function projectTreeSha256(
+  target,
+  {
+    maxEntries = PROJECT_TREE_MAX_ENTRIES,
+    maxFiles = PROJECT_TREE_MAX_FILES,
+    maxFileBytes = PROJECT_TREE_MAX_FILE_BYTES,
+    maxTotalBytes = PROJECT_TREE_MAX_TOTAL_BYTES,
+  } = {},
+) {
+  for (const [label, value] of [
+    ["maxEntries", maxEntries],
+    ["maxFiles", maxFiles],
+    ["maxFileBytes", maxFileBytes],
+    ["maxTotalBytes", maxTotalBytes],
+  ]) {
+    if (!Number.isSafeInteger(value) || value < 1) {
+      throw new Error(`project-tree ${label} must be a positive safe integer`);
     }
-  };
-  visit(root);
+  }
+  const root = realpathSync(target);
   const hash = createHash("sha256");
-  for (const file of files) {
-    hash.update(file.path);
+  const pending = [{ type: "directory", path: root, prefix: "" }];
+  let entryCount = 0;
+  let fileCount = 0;
+  let totalBytes = 0;
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (current.type === "directory") {
+      const entries = [];
+      const directory = opendirSync(current.path);
+      try {
+        while (true) {
+          const entry = directory.readSync();
+          if (entry === null) {
+            break;
+          }
+          const relativePath = current.prefix
+            ? `${current.prefix}/${entry.name}`
+            : entry.name;
+          if (relativePath === ".git") {
+            continue;
+          }
+          entryCount += 1;
+          if (entryCount > maxEntries) {
+            throw new Error(
+              `refusing to hash project tree with more than ${maxEntries} entries`,
+            );
+          }
+          entries.push({
+            entry,
+            path: join(current.path, entry.name),
+            relativePath,
+          });
+        }
+      } finally {
+        directory.closeSync();
+      }
+      entries.sort((left, right) =>
+        left.entry.name < right.entry.name
+          ? -1
+          : left.entry.name > right.entry.name
+            ? 1
+            : 0,
+      );
+      for (let index = entries.length - 1; index >= 0; index -= 1) {
+        const { entry, path, relativePath } = entries[index];
+        if (entry.isSymbolicLink()) {
+          throw new Error(
+            `refusing to hash symlink in materialized project tree: ${relativePath}`,
+          );
+        }
+        if (entry.isDirectory()) {
+          pending.push({
+            type: "directory",
+            path,
+            prefix: relativePath,
+          });
+          continue;
+        }
+        if (!entry.isFile()) {
+          throw new Error(
+            `refusing to hash unsupported project tree entry: ${relativePath}`,
+          );
+        }
+        pending.push({ type: "file", path, relativePath });
+      }
+      continue;
+    }
+    fileCount += 1;
+    if (fileCount > maxFiles) {
+      throw new Error(
+        `refusing to hash project tree with more than ${maxFiles} files`,
+      );
+    }
+    const metadata = lstatSync(current.path);
+    if (metadata.isSymbolicLink()) {
+      throw new Error(
+        `refusing to hash symlink in materialized project tree: ${current.relativePath}`,
+      );
+    }
+    if (!metadata.isFile()) {
+      throw new Error(
+        `refusing to hash unsupported project tree entry: ${current.relativePath}`,
+      );
+    }
+    const size = metadata.size;
+    if (size > maxFileBytes) {
+      throw new Error(
+        `refusing to hash project file larger than ${maxFileBytes} bytes: ${current.relativePath}`,
+      );
+    }
+    totalBytes += size;
+    if (totalBytes > maxTotalBytes) {
+      throw new Error(
+        `refusing to hash project tree larger than ${maxTotalBytes} bytes`,
+      );
+    }
+    hash.update(current.relativePath);
     hash.update("\0");
-    hash.update(file.bytes);
+    hash.update(readFileSync(current.path));
     hash.update("\0");
   }
   return `sha256:${hash.digest("hex")}`;
@@ -173,7 +284,7 @@ function validateFixtureProviderBoundary(fixture) {
     providerExecution !== undefined &&
     (
       providerExecution?.provider !== "linear" ||
-      !["live-write", "preflight-only"].includes(
+      !["live-write", "readiness-only"].includes(
         providerExecution?.mode,
       ) ||
       providerExecution?.requires_explicit_sandbox_opt_in !==
@@ -181,7 +292,7 @@ function validateFixtureProviderBoundary(fixture) {
     )
   ) {
     throw new Error(
-      `${fixture.scenario_id}.provider_execution must declare a valid Linear preflight or explicit sandbox live-write boundary`,
+      `${fixture.scenario_id}.provider_execution must declare a valid Linear readiness-only or explicit sandbox live-write boundary`,
     );
   }
 }
@@ -259,6 +370,56 @@ function fixtureCatalog() {
     throw new Error("fixture catalog must cover exactly all current scenarios");
   }
   return catalog;
+}
+
+function fixtureBaselineCatalog() {
+  const catalog = readJson(FIXTURE_BASELINES_FILE);
+  if (catalog.schema_version !== 1 || !Array.isArray(catalog.baselines)) {
+    throw new Error(
+      "evals/fixture-baselines.json must be a schema-version 1 baseline catalog",
+    );
+  }
+  const seen = new Set();
+  for (const baseline of catalog.baselines) {
+    if (
+      !baseline ||
+      typeof baseline !== "object" ||
+      Array.isArray(baseline) ||
+      !EXPECTED_FIXTURE_IDS.has(baseline.scenario_id) ||
+      !GIT_COMMIT_ID.test(baseline.git_head ?? "") ||
+      !SHA256_RECEIPT.test(baseline.project_tree_sha256 ?? "")
+    ) {
+      throw new Error(
+        "fixture baseline catalog contains an unknown or malformed baseline",
+      );
+    }
+    if (seen.has(baseline.scenario_id)) {
+      throw new Error(
+        `fixture baseline scenario duplicates: ${baseline.scenario_id}`,
+      );
+    }
+    seen.add(baseline.scenario_id);
+  }
+  if (
+    seen.size !== EXPECTED_FIXTURE_IDS.size ||
+    [...EXPECTED_FIXTURE_IDS].some((id) => !seen.has(id))
+  ) {
+    throw new Error(
+      "fixture baseline catalog must cover exactly all current scenarios",
+    );
+  }
+  return catalog;
+}
+
+function expectedFixtureBaseline(scenarioId) {
+  fixtureById(scenarioId);
+  const baseline = fixtureBaselineCatalog().baselines.find(
+    (candidate) => candidate.scenario_id === scenarioId,
+  );
+  if (!baseline) {
+    throw new Error(`missing canonical fixture baseline: ${scenarioId}`);
+  }
+  return structuredClone(baseline);
 }
 
 function fixtureById(scenarioId) {
@@ -585,19 +746,56 @@ function normalizeActiveCoordinator(target, scenarioId, owner) {
   return owner === "harness" ? token : undefined;
 }
 
+function fixtureGitEnvironment() {
+  const environment = {};
+  for (const name of [
+    "PATH",
+    "Path",
+    "PATHEXT",
+    "SystemRoot",
+    "SYSTEMROOT",
+    "WINDIR",
+    "COMSPEC",
+    "TMP",
+    "TEMP",
+    "TMPDIR",
+    "LANG",
+    "LC_ALL",
+  ]) {
+    if (typeof process.env[name] === "string") {
+      environment[name] = process.env[name];
+    }
+  }
+  return {
+    ...environment,
+    GIT_AUTHOR_NAME: "Ultimate Agent Stack Fixture",
+    GIT_AUTHOR_EMAIL: "fixture@example.invalid",
+    GIT_COMMITTER_NAME: "Ultimate Agent Stack Fixture",
+    GIT_COMMITTER_EMAIL: "fixture@example.invalid",
+    GIT_AUTHOR_DATE: "2000-01-01T00:00:00Z",
+    GIT_COMMITTER_DATE: "2000-01-01T00:00:00Z",
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null",
+    GIT_TERMINAL_PROMPT: "0",
+  };
+}
+
 function runGit(target, args) {
-  const result = spawnSync("git", args, {
+  const protectedArgs = existsSync(join(target, ".git"))
+    ? [
+        "-c",
+        `core.hooksPath=${join(target, ".git", "disabled-hooks")}`,
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        "core.untrackedCache=false",
+        ...args,
+      ]
+    : args;
+  const result = spawnSync("git", protectedArgs, {
     cwd: target,
     encoding: "utf8",
-    env: {
-      ...process.env,
-      GIT_AUTHOR_NAME: "Ultimate Agent Stack Fixture",
-      GIT_AUTHOR_EMAIL: "fixture@example.invalid",
-      GIT_COMMITTER_NAME: "Ultimate Agent Stack Fixture",
-      GIT_COMMITTER_EMAIL: "fixture@example.invalid",
-      GIT_AUTHOR_DATE: "2000-01-01T00:00:00Z",
-      GIT_COMMITTER_DATE: "2000-01-01T00:00:00Z",
-    },
+    env: fixtureGitEnvironment(),
   });
   if (result.status !== 0) {
     throw new Error(`git ${args.join(" ")} failed: ${result.stderr.trim()}`);
@@ -605,8 +803,70 @@ function runGit(target, args) {
   return result.stdout.trim();
 }
 
+function gitIsAncestor(target, ancestor, descendant) {
+  const protectedPrefix = [
+    "-c",
+    `core.hooksPath=${join(target, ".git", "disabled-hooks")}`,
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "core.untrackedCache=false",
+  ];
+  const objectCheck = spawnSync(
+    "git",
+    [
+      ...protectedPrefix,
+      "rev-parse",
+      "--verify",
+      "--quiet",
+      `${ancestor}^{commit}`,
+    ],
+    {
+      cwd: target,
+      encoding: "utf8",
+      env: fixtureGitEnvironment(),
+    },
+  );
+  if (objectCheck.status === 1) {
+    return false;
+  }
+  if (objectCheck.status !== 0) {
+    throw new Error(
+      `git rev-parse baseline failed: ${objectCheck.stderr.trim()}`,
+    );
+  }
+  const result = spawnSync(
+    "git",
+    [
+      ...protectedPrefix,
+      "merge-base",
+      "--is-ancestor",
+      ancestor,
+      descendant,
+    ],
+    {
+      cwd: target,
+      encoding: "utf8",
+      env: fixtureGitEnvironment(),
+    },
+  );
+  if (result.status === 0) {
+    return true;
+  }
+  if (result.status === 1) {
+    return false;
+  }
+  throw new Error(
+    `git merge-base --is-ancestor failed: ${result.stderr.trim()}`,
+  );
+}
+
 function createDeterministicGitBaseline(target, scenarioId) {
   runGit(target, ["init", "-q", "--initial-branch=main"]);
+  mkdirSync(join(target, ".git", "disabled-hooks"), {
+    recursive: true,
+    mode: 0o700,
+  });
   runGit(target, ["config", "core.autocrlf", "false"]);
   runGit(target, ["config", "core.filemode", "false"]);
   runGit(target, ["add", "-A"]);
@@ -712,10 +972,13 @@ function projectStateSha256({
   }))}`;
 }
 
-function materializeFixture(
+function materializeFixtureInternal(
   scenarioId,
   targetInput,
-  { allowLiveLinearSandboxFixture = false } = {},
+  {
+    allowLiveLinearSandboxFixture = false,
+    verifyBaseline = true,
+  } = {},
 ) {
   const fixture = fixtureById(scenarioId);
   const providerExecution = fixture.provider_execution;
@@ -793,6 +1056,17 @@ function materializeFixture(
   const materializationSpecSha256 =
     expectedMaterializationSha256(scenarioId);
   const treeSha256 = projectTreeSha256(target);
+  if (verifyBaseline) {
+    const expectedBaseline = expectedFixtureBaseline(scenarioId);
+    if (
+      gitHead !== expectedBaseline.git_head ||
+      treeSha256 !== expectedBaseline.project_tree_sha256
+    ) {
+      throw new Error(
+        `${scenarioId} materialization does not match its protected canonical baseline`,
+      );
+    }
+  }
   const stateSha256 = projectStateSha256({
     materializationSpecSha256,
     gitHead,
@@ -821,8 +1095,65 @@ function materializeFixture(
   };
 }
 
+function withoutAmbientGitControl(callback) {
+  const original = new Map(
+    Object.entries(process.env).filter(([name]) =>
+      name.toUpperCase().startsWith("GIT_"),
+    ),
+  );
+  for (const name of original.keys()) {
+    delete process.env[name];
+  }
+  try {
+    return callback();
+  } finally {
+    for (const name of Object.keys(process.env)) {
+      if (name.toUpperCase().startsWith("GIT_")) {
+        delete process.env[name];
+      }
+    }
+    for (const [name, value] of original) {
+      process.env[name] = value;
+    }
+  }
+}
+
+function materializeFixture(
+  scenarioId,
+  targetInput,
+  options = {},
+) {
+  return withoutAmbientGitControl(() =>
+    materializeFixtureInternal(scenarioId, targetInput, options),
+  );
+}
+
+function proposeFixtureBaselines() {
+  const root = mkdtempSync(join(tmpdir(), "uas-fixture-baselines-"));
+  try {
+    return {
+      schema_version: 1,
+      baselines: fixtureCatalog().fixtures.map((fixture) => {
+        const result = materializeFixture(
+          fixture.scenario_id,
+          join(root, fixture.scenario_id),
+          { verifyBaseline: false },
+        );
+        return {
+          scenario_id: fixture.scenario_id,
+          git_head: result.git.head,
+          project_tree_sha256:
+            result.receipt.project_tree_sha256,
+        };
+      }),
+    };
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
 function inspectFixtureProject(scenarioId, targetInput) {
-  fixtureById(scenarioId);
+  const expectedBaseline = expectedFixtureBaseline(scenarioId);
   const target = resolve(targetInput);
   if (
     !existsSync(target) ||
@@ -833,11 +1164,26 @@ function inspectFixtureProject(scenarioId, targetInput) {
       "fixture inspection target must be an existing non-symlink directory",
     );
   }
+  const gitMetadata = join(target, ".git");
+  if (
+    !existsSync(gitMetadata) ||
+    lstatSync(gitMetadata).isSymbolicLink() ||
+    !statSync(gitMetadata).isDirectory()
+  ) {
+    throw new Error(
+      "fixture inspection requires project-contained non-symlink Git metadata",
+    );
+  }
   const materializationSpecSha256 =
     expectedMaterializationSha256(scenarioId);
   const gitHead = runGit(target, ["rev-parse", "--verify", "HEAD"]);
-  if (!/^[a-f0-9]{40}$/.test(gitHead)) {
+  if (!GIT_COMMIT_ID.test(gitHead)) {
     throw new Error("fixture inspection could not read an exact Git commit");
+  }
+  if (!gitIsAncestor(target, expectedBaseline.git_head, gitHead)) {
+    throw new Error(
+      `fixture inspection target does not descend from the canonical ${scenarioId} baseline`,
+    );
   }
   const treeSha256 = projectTreeSha256(target);
   return {
@@ -856,6 +1202,8 @@ function inspectFixtureProject(scenarioId, targetInput) {
     },
     git: {
       head: gitHead,
+      baseline_head: expectedBaseline.git_head,
+      baseline_ancestor: true,
     },
   };
 }
@@ -907,6 +1255,9 @@ function main() {
         scenarios: fixtureCatalog().fixtures.map((fixture) => ({
           scenario_id: fixture.scenario_id,
           fixture_receipt: receiptForFixture(fixture),
+          expected_baseline: expectedFixtureBaseline(
+            fixture.scenario_id,
+          ),
           ...(fixture.provider_execution?.requires_explicit_sandbox_opt_in
             ? {
                 prerequisite: {
@@ -919,6 +1270,13 @@ function main() {
             : {}),
         })),
       }, null, 2)}\n`,
+    );
+    return;
+  }
+  if (command === "propose-baselines") {
+    parseCommandArguments(args);
+    process.stdout.write(
+      `${JSON.stringify(proposeFixtureBaselines(), null, 2)}\n`,
     );
     return;
   }
@@ -988,7 +1346,7 @@ function main() {
     return;
   }
   throw new Error(
-    `usage: skill-fixture.mjs list | external-inputs --scenario ID | materialize --scenario ID --target DIR [${LIVE_LINEAR_SANDBOX_OPT_IN}] | inspect --scenario ID --target DIR`,
+    `usage: skill-fixture.mjs list | propose-baselines | external-inputs --scenario ID | materialize --scenario ID --target DIR [${LIVE_LINEAR_SANDBOX_OPT_IN}] | inspect --scenario ID --target DIR`,
   );
 }
 
@@ -1005,14 +1363,18 @@ if (isEntryPoint) {
 }
 
 export {
+  EVALUATION_SCRUBBED_CREDENTIAL_ENVIRONMENT,
   EXPECTED_FIXTURE_IDS,
   LIVE_LINEAR_SANDBOX_OPT_IN,
   expectedMaterializationSha256,
+  expectedFixtureBaseline,
   externalInputsForFixture,
+  fixtureBaselineCatalog,
   fixtureCatalog,
   fixtureReceipt,
   inspectFixtureProject,
   materializeFixture,
+  proposeFixtureBaselines,
   projectStateSha256,
   projectTreeSha256,
   validateFixtureProviderBoundary,

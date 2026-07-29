@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
@@ -15,7 +14,11 @@ import {
   validateRunRecord,
   validateScenarioCatalog,
 } from "../scripts/skill-eval.mjs";
-import { projectStateSha256 } from "../scripts/skill-fixture.mjs";
+import {
+  EVALUATION_SCRUBBED_CREDENTIAL_ENVIRONMENT,
+  expectedFixtureBaseline,
+  projectStateSha256,
+} from "../scripts/skill-fixture.mjs";
 
 const PACKAGE_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const catalog = JSON.parse(
@@ -34,20 +37,11 @@ function passingRecord() {
   };
   record.cases = catalog.scenarios.map((scenario) => {
     const scaffold = scaffoldCases.get(scenario.id);
-    const initialGitHead = createHash("sha256")
-      .update(`initial:${scenario.id}`)
-      .digest("hex")
-      .slice(0, 40);
-    const initialProjectTreeSha256 = `sha256:${createHash("sha256")
-      .update(`initial-tree:${scenario.id}`)
-      .digest("hex")}`;
-    const finalGitHead = createHash("sha256")
-      .update(`final:${scenario.id}`)
-      .digest("hex")
-      .slice(0, 40);
-    const finalProjectTreeSha256 = `sha256:${createHash("sha256")
-      .update(`final-tree:${scenario.id}`)
-      .digest("hex")}`;
+    const baseline = expectedFixtureBaseline(scenario.id);
+    const initialGitHead = baseline.git_head;
+    const initialProjectTreeSha256 = baseline.project_tree_sha256;
+    const finalGitHead = baseline.git_head;
+    const finalProjectTreeSha256 = baseline.project_tree_sha256;
     return {
       scenario_id: scenario.id,
       fixture_receipt: scaffold.fixture_receipt,
@@ -70,9 +64,19 @@ function passingRecord() {
         gitHead: finalGitHead,
         projectTreeSha256: finalProjectTreeSha256,
       }),
+      final_baseline_ancestor: true,
       harness_session: {
         id: `test-session:${scenario.id}`,
         isolation: "fresh-session-per-scenario",
+        execution_boundary: {
+          tool_network_access: "disabled",
+          user_configuration: "disabled",
+          isolated_package_surface_hash: record.surface_hash,
+          external_provider_credentials: "scrubbed",
+          scrubbed_environment_variables: [
+            ...EVALUATION_SCRUBBED_CREDENTIAL_ENVIRONMENT,
+          ],
+        },
       },
       provider_authority:
         structuredClone(scaffold.provider_authority),
@@ -378,6 +382,57 @@ test("live run cases retain materialization, provider, and external-input receip
   assert.match(
     JSON.stringify(result),
     /materialized_project_state_sha256 must bind/,
+  );
+
+  const reassignedFixture = passingRecord();
+  const direct = reassignedFixture.cases.find(
+    (item) => item.scenario_id === "direct-delivery",
+  );
+  const wrongBaseline = expectedFixtureBaseline(
+    "flexible-vague-discovery",
+  );
+  direct.materialized_git_head = wrongBaseline.git_head;
+  direct.materialized_project_tree_sha256 =
+    wrongBaseline.project_tree_sha256;
+  direct.materialized_project_state_sha256 = projectStateSha256({
+    materializationSpecSha256: direct.materialization_spec_sha256,
+    gitHead: wrongBaseline.git_head,
+    projectTreeSha256: wrongBaseline.project_tree_sha256,
+  });
+  result = validateRunRecord(reassignedFixture, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /must equal the canonical direct-delivery baseline/,
+  );
+
+  const detachedFinal = passingRecord();
+  detachedFinal.cases[0].final_baseline_ancestor = false;
+  result = validateRunRecord(detachedFinal, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /final_baseline_ancestor must confirm/,
+  );
+
+  const ambientCredentials = passingRecord();
+  ambientCredentials.cases[0].harness_session.execution_boundary
+    .external_provider_credentials = "inherited";
+  result = validateRunRecord(ambientCredentials, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /external_provider_credentials must equal scrubbed/,
+  );
+
+  const wrongMount = passingRecord();
+  wrongMount.cases[0].harness_session.execution_boundary
+    .isolated_package_surface_hash = `sha256:${"0".repeat(64)}`;
+  result = validateRunRecord(wrongMount, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /isolated_package_surface_hash must equal/,
   );
 
   const reusedSession = passingRecord();

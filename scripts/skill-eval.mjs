@@ -13,7 +13,9 @@ import { fileURLToPath } from "node:url";
 
 import { startPromptPolicySurface } from "../bin/ultimate-agent-stack.mjs";
 import {
+  EVALUATION_SCRUBBED_CREDENTIAL_ENVIRONMENT,
   LIVE_LINEAR_SANDBOX_OPT_IN,
+  expectedFixtureBaseline,
   expectedMaterializationSha256,
   externalInputsForFixture,
   fixtureCatalog,
@@ -156,6 +158,7 @@ function behaviorSurfaceEntries() {
     "assets/project-template/.opencode/agents/uas-researcher.md",
     "assets/project-template/AGENTS.md",
     "assets/project-template/GEMINI.md",
+    "evals/fixture-baselines.json",
     "evals/fixtures.json",
     "evals/scenarios.json",
     "scripts/skill-fixture.mjs",
@@ -640,6 +643,7 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
       }
       const expectedMaterializationReceipt =
         expectedMaterializationSha256(scenario.id);
+      const expectedBaseline = expectedFixtureBaseline(scenario.id);
       if (
         item.materialization_receipt !== expectedMaterializationReceipt
       ) {
@@ -655,18 +659,17 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
           `materialization_spec_sha256 must equal ${expectedMaterializationReceipt}`,
         );
       }
-      if (!GIT_COMMIT_ID.test(item.materialized_git_head ?? "")) {
+      if (item.materialized_git_head !== expectedBaseline.git_head) {
         findings.push(
-          "materialized_git_head must be the exact 40-character fixture Git commit",
+          `materialized_git_head must equal the canonical ${scenario.id} baseline commit`,
         );
       }
       if (
-        !SHA256_RECEIPT.test(
-          item.materialized_project_tree_sha256 ?? "",
-        )
+        item.materialized_project_tree_sha256 !==
+        expectedBaseline.project_tree_sha256
       ) {
         findings.push(
-          "materialized_project_tree_sha256 must be the exact fixture project-tree receipt",
+          `materialized_project_tree_sha256 must equal the canonical ${scenario.id} baseline tree receipt`,
         );
       }
       if (
@@ -690,6 +693,11 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
       if (!GIT_COMMIT_ID.test(item.final_git_head ?? "")) {
         findings.push(
           "final_git_head must be the exact 40-character post-run Git commit",
+        );
+      }
+      if (item.final_baseline_ancestor !== true) {
+        findings.push(
+          "final_baseline_ancestor must confirm that the final HEAD descends from the canonical scenario baseline",
         );
       }
       if (
@@ -725,6 +733,49 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
       ) {
         findings.push(
           "harness_session.isolation must equal fresh-session-per-scenario",
+        );
+      }
+      if (
+        item?.harness_session?.execution_boundary?.tool_network_access !==
+        "disabled"
+      ) {
+        findings.push(
+          "harness_session.execution_boundary.tool_network_access must equal disabled",
+        );
+      }
+      if (
+        item?.harness_session?.execution_boundary?.user_configuration !==
+        "disabled"
+      ) {
+        findings.push(
+          "harness_session.execution_boundary.user_configuration must equal disabled",
+        );
+      }
+      if (
+        item?.harness_session?.execution_boundary
+          ?.isolated_package_surface_hash !== record?.surface_hash
+      ) {
+        findings.push(
+          "harness_session.execution_boundary.isolated_package_surface_hash must equal the evaluated behavior-surface hash",
+        );
+      }
+      if (
+        item?.harness_session?.execution_boundary
+          ?.external_provider_credentials !== "scrubbed"
+      ) {
+        findings.push(
+          "harness_session.execution_boundary.external_provider_credentials must equal scrubbed",
+        );
+      }
+      if (
+        JSON.stringify(
+          item?.harness_session?.execution_boundary
+            ?.scrubbed_environment_variables,
+        ) !==
+        JSON.stringify(EVALUATION_SCRUBBED_CREDENTIAL_ENVIRONMENT)
+      ) {
+        findings.push(
+          "harness_session.execution_boundary.scrubbed_environment_variables must equal the canonical credential denylist",
         );
       }
       const expectedProviderAuthority =
@@ -1024,19 +1075,35 @@ function buildScaffold(catalog = readJson(SCENARIOS_FILE)) {
       materialization_spec_sha256:
         expectedMaterializationSha256(scenario.id),
       materialized_git_head:
-        "replace-with-materialized-git-head",
+        expectedFixtureBaseline(scenario.id).git_head,
       materialized_project_tree_sha256:
-        "replace-with-materialized-project-tree-sha256",
+        expectedFixtureBaseline(scenario.id).project_tree_sha256,
       materialized_project_state_sha256:
-        "replace-with-materialized-project-state-sha256",
+        projectStateSha256({
+          materializationSpecSha256:
+            expectedMaterializationSha256(scenario.id),
+          gitHead: expectedFixtureBaseline(scenario.id).git_head,
+          projectTreeSha256:
+            expectedFixtureBaseline(scenario.id).project_tree_sha256,
+        }),
       final_git_head: "replace-with-final-git-head",
       final_project_tree_sha256:
         "replace-with-final-project-tree-sha256",
       final_project_state_sha256:
         "replace-with-final-project-state-sha256",
+      final_baseline_ancestor: false,
       harness_session: {
         id: `replace-with-fresh-session-id-for-${scenario.id}`,
         isolation: "fresh-session-per-scenario",
+        execution_boundary: {
+          tool_network_access: "disabled",
+          user_configuration: "disabled",
+          isolated_package_surface_hash: behaviorSurfaceHash(),
+          external_provider_credentials: "scrubbed",
+          scrubbed_environment_variables: [
+            ...EVALUATION_SCRUBBED_CREDENTIAL_ENVIRONMENT,
+          ],
+        },
       },
       provider_authority: providerAuthorityReceipt(scenario.id),
       external_inputs: externalInputReceipts(scenario.id),

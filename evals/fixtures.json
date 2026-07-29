@@ -65,7 +65,7 @@
       "artifact_files": [],
       "provider_execution": {
         "provider": "linear",
-        "mode": "preflight-only",
+        "mode": "readiness-only",
         "requires_explicit_sandbox_opt_in": false
       },
       "state": {
