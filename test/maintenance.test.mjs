@@ -577,7 +577,10 @@ test("work and evidence contracts remain portable and provider-neutral", () => {
   const linearWriteHash = portableTextSha256(linearWriteHelper);
   assert.match(packageCliSource, new RegExp(linearWriteHash));
   assert.match(linearReceiptedWrites, /disabled by default/i);
-  assert.match(linearReceiptedWrites, /repository ledger is\s+still/i);
+  assert.match(
+    linearReceiptedWrites,
+    /repository ledger[\s\S]{0,80}(?:portable work contract|authoritative|source of truth)/i,
+  );
   assert.match(linearReceiptedWrites, /LINEAR_CREATE_API_KEY/);
   assert.match(linearReceiptedWrites, /LINEAR_COMMENT_API_KEY/);
   assert.doesNotMatch(
@@ -597,6 +600,18 @@ test("work and evidence contracts remain portable and provider-neutral", () => {
     "stopped",
   ]);
   assert.equal(campaignStateSchema.properties.max_iterations.maximum, 25);
+  assert.equal(campaignStateSchema.properties.max_iterations.minimum, 1);
+  assert.match(
+    campaignStateSchema.properties.iterations_completed.description,
+    /must not exceed max_iterations/i,
+  );
+  assert.ok(
+    campaignStateSchema.allOf.some(
+      (rule) =>
+        rule.if?.properties?.status?.const === "active" &&
+        rule.else?.properties?.active_work_item?.type === "null",
+    ),
+  );
   assert.deepEqual(
     providerReceiptSchema.properties.result.enum,
     ["succeeded", "not-needed", "failed", "decision-needed"],

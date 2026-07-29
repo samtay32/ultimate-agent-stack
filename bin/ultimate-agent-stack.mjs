@@ -44,7 +44,7 @@ const PACKAGE_JSON = existsSync(join(PACKAGE_ROOT, "package.json"))
     };
 const PACKAGE_NAME = PACKAGE_JSON.name;
 const PACKAGE_VERSION = PACKAGE_JSON.version;
-const CONFIG_SCHEMA_VERSION = 6;
+const CONFIG_SCHEMA_VERSION = 7;
 const WORK_LEDGER_PATH = ".agent-stack/work-items.json";
 const EVIDENCE_GRAPH_PATH = ".agent-stack/evidence-graph.json";
 const PROVIDER_RECEIPTS_PATH = ".agent-stack/provider-receipts";
@@ -73,11 +73,11 @@ const GBRAIN_HOME_PATH = ".agent-stack/gbrain-home";
 const GBRAIN_LAUNCHER_PATH = ".agent-stack/bin/gbrain-project.mjs";
 const LINEAR_READONLY_PATH = ".agent-stack/bin/linear-readonly.mjs";
 const LINEAR_READONLY_SOURCE_HASH =
-  "368de8295aa8126ad98429d761591447f37a07a7a2c2d38a2637d06a80d0a571";
+  "1b80dff43ae40adbf724f392a735b697011ca956e8748aba3ca52ebd269a4aad";
 const LINEAR_CREDENTIAL_ENV = "LINEAR_API_KEY";
 const LINEAR_WRITE_PATH = ".agent-stack/bin/linear-write.mjs";
 const LINEAR_WRITE_SOURCE_HASH =
-  "16fcb660fb3b885fe76f96ab155b31d405518de16e0f3c9840693be69568ad9a";
+  "147428fb3a0487ba08fa7d0814f0e7eff198963dea5f61c38eaec0a5a662a3ca";
 const LINEAR_CREATE_CREDENTIAL_ENV = "LINEAR_CREATE_API_KEY";
 const LINEAR_COMMENT_CREDENTIAL_ENV = "LINEAR_COMMENT_API_KEY";
 const GBRAIN_CHECKPOINT_SLUG = "projects/ultimate-agent-stack/checkpoint";
@@ -1110,6 +1110,7 @@ function defaultConfig(target, detected) {
         sync_mode: "repository_only",
         write_policy: "repository_only",
         repository_fallback: true,
+        linear_idempotency_namespace: randomBytes(32).toString("hex"),
         connection: null,
       },
     },
@@ -1237,11 +1238,22 @@ function migrateConfig(config, target = undefined) {
     typeof config.capabilities.work === "object" &&
     !Array.isArray(config.capabilities.work)
   ) {
+    const legacyLinearNamespace =
+      previousSchema < 7 &&
+      typeof config.capabilities.work.connection?.writes
+        ?.idempotency_namespace === "string" &&
+      /^[a-f0-9]{64}$/.test(
+        config.capabilities.work.connection.writes.idempotency_namespace,
+      )
+        ? config.capabilities.work.connection.writes.idempotency_namespace
+        : null;
     config.capabilities.work.provider ??= "repository";
     config.capabilities.work.required ??= false;
     config.capabilities.work.sync_mode ??= "repository_only";
     config.capabilities.work.write_policy ??= "repository_only";
     config.capabilities.work.repository_fallback ??= true;
+    config.capabilities.work.linear_idempotency_namespace ??=
+      legacyLinearNamespace ?? randomBytes(32).toString("hex");
     config.capabilities.work.connection ??= null;
     if (
       config.capabilities.work.connection &&
@@ -1249,6 +1261,15 @@ function migrateConfig(config, target = undefined) {
       !Array.isArray(config.capabilities.work.connection)
     ) {
       config.capabilities.work.connection.writes ??= null;
+      if (
+        previousSchema < 7 &&
+        config.capabilities.work.connection.writes &&
+        typeof config.capabilities.work.connection.writes === "object" &&
+        !Array.isArray(config.capabilities.work.connection.writes)
+      ) {
+        delete config.capabilities.work.connection.writes
+          .idempotency_namespace;
+      }
     }
   }
   config.learning ??= {};
@@ -1961,6 +1982,7 @@ function validateConfig(config, target = undefined) {
         "sync_mode",
         "write_policy",
         "repository_fallback",
+        "linear_idempotency_namespace",
         "connection",
       ]),
       "capabilities.work",
@@ -1984,6 +2006,14 @@ function validateConfig(config, target = undefined) {
     if (work.repository_fallback !== true) {
       errors.push(
         "capabilities.work.repository_fallback must remain true",
+      );
+    }
+    if (
+      typeof work.linear_idempotency_namespace !== "string" ||
+      !/^[a-f0-9]{64}$/.test(work.linear_idempotency_namespace)
+    ) {
+      errors.push(
+        "capabilities.work.linear_idempotency_namespace must be a non-secret 64-character hex namespace",
       );
     }
     if (work.provider === "repository") {
@@ -2072,7 +2102,6 @@ function validateConfig(config, target = undefined) {
               "operations",
               "create_credential_env",
               "comment_credential_env",
-              "idempotency_namespace",
             ]),
             "capabilities.work.connection.writes",
           );
@@ -2124,14 +2153,6 @@ function validateConfig(config, target = undefined) {
                   ? LINEAR_COMMENT_CREDENTIAL_ENV
                   : "null"
               }`,
-            );
-          }
-          if (
-            typeof writes.idempotency_namespace !== "string" ||
-            !/^[a-f0-9]{64}$/.test(writes.idempotency_namespace)
-          ) {
-            errors.push(
-              "capabilities.work.connection.writes.idempotency_namespace must be a non-secret 64-character hex namespace",
             );
           }
         }
@@ -3941,6 +3962,12 @@ function loadConfig(target) {
   );
 }
 
+function linearOperationCredentialEnv(operation) {
+  return operation === "issue_create"
+    ? LINEAR_CREATE_CREDENTIAL_ENV
+    : LINEAR_COMMENT_CREDENTIAL_ENV;
+}
+
 function commandCapabilities(target) {
   const config = projectExists(target, CONFIG_PATH, "project config")
     ? loadConfig(target)
@@ -4021,24 +4048,17 @@ function commandCapabilities(target) {
           credential_environment: LINEAR_CREDENTIAL_ENV,
           writes:
             config?.capabilities?.work?.connection?.writes?.operations?.map(
-              (operation) => ({
-                operation,
-                credential_environment:
-                  operation === "issue_create"
-                    ? LINEAR_CREATE_CREDENTIAL_ENV
-                    : LINEAR_COMMENT_CREDENTIAL_ENV,
-                available:
-                  typeof process.env[
-                    operation === "issue_create"
-                      ? LINEAR_CREATE_CREDENTIAL_ENV
-                      : LINEAR_COMMENT_CREDENTIAL_ENV
-                  ] === "string" &&
-                  process.env[
-                    operation === "issue_create"
-                      ? LINEAR_CREATE_CREDENTIAL_ENV
-                      : LINEAR_COMMENT_CREDENTIAL_ENV
-                  ].length > 0,
-              }),
+              (operation) => {
+                const environment =
+                  linearOperationCredentialEnv(operation);
+                return {
+                  operation,
+                  credential_environment: environment,
+                  available:
+                    typeof process.env[environment] === "string" &&
+                    process.env[environment].length > 0,
+                };
+              },
             ) ?? [],
           detail:
             config?.capabilities?.work?.connection?.writes?.operations
@@ -4433,6 +4453,7 @@ function linearLookup(target, args, operation) {
   if (
     operation === "resolve-comment" &&
     typeof value.found === "boolean" &&
+    typeof value.provider_id === "string" &&
     PROVIDER_UUID.test(value.provider_id)
   ) {
     if (!value.found) {
@@ -4444,7 +4465,10 @@ function linearLookup(target, args, operation) {
         provider_id: value.provider_id,
       };
     }
-    if (PROVIDER_UUID.test(value.issue_id)) {
+    if (
+      typeof value.issue_id === "string" &&
+      PROVIDER_UUID.test(value.issue_id)
+    ) {
       return {
         ok: true,
         provider: "linear",
@@ -4643,10 +4667,7 @@ function linearWriteReadiness(target, config) {
   }
   const protectedIssue = protectedProjectFileIssue(target, LINEAR_WRITE_PATH);
   const checks = operations.map((operation) => {
-    const environment =
-      operation === "issue_create"
-        ? LINEAR_CREATE_CREDENTIAL_ENV
-        : LINEAR_COMMENT_CREDENTIAL_ENV;
+    const environment = linearOperationCredentialEnv(operation);
     return {
       operation,
       credential_environment: environment,
@@ -5042,7 +5063,7 @@ function commandLinearIssueCreate(
     );
   }
   const digest = sha256(
-    `${context.writes.idempotency_namespace}\0issue_create\0${context.item.id}`,
+    `${context.work.linear_idempotency_namespace}\0issue_create\0${context.item.id}`,
   );
   const idempotencyKey = `sha256:${digest}`;
   const issueId = deterministicUuid(digest);
@@ -5244,7 +5265,7 @@ function commandLinearEvidenceComment(
     options,
   );
   const issueDigest = sha256(
-    `${context.writes.idempotency_namespace}\0issue_create\0${context.item.id}`,
+    `${context.work.linear_idempotency_namespace}\0issue_create\0${context.item.id}`,
   );
   const issueId = deterministicUuid(issueDigest);
   if (
@@ -5255,21 +5276,6 @@ function commandLinearEvidenceComment(
   ) {
     throw new StackError(
       "Evidence comments require the work item's receipted Linear issue link.",
-      3,
-    );
-  }
-  const issue = provider.lookup(
-    target,
-    ["resolve-issue", "--id", issueId],
-    "resolve-issue",
-  );
-  if (
-    !issue.ok ||
-    !issue.found ||
-    !context.work.connection.team_keys.includes(issue.team_key)
-  ) {
-    throw new StackError(
-      "The linked Linear issue could not be verified in an approved team.",
       3,
     );
   }
@@ -5287,20 +5293,68 @@ function commandLinearEvidenceComment(
     }),
   );
   const digest = sha256(
-    `${context.writes.idempotency_namespace}\0evidence_comment\0${context.item.id}\0${evidenceSnapshot}`,
+    `${context.work.linear_idempotency_namespace}\0evidence_comment\0${context.item.id}\0${evidenceSnapshot}`,
   );
   const idempotencyKey = `sha256:${digest}`;
   const commentId = deterministicUuid(digest);
+  const issue = provider.lookup(
+    target,
+    ["resolve-issue", "--id", issueId],
+    "resolve-issue",
+  );
+  if (
+    !issue.ok ||
+    !issue.found ||
+    !context.work.connection.team_keys.includes(issue.team_key)
+  ) {
+    const receipt = providerReceipt({
+      provider: "linear",
+      operation: "evidence_comment",
+      workItemId: context.item.id,
+      providerReference: commentId,
+      before: "linked issue lookup failed",
+      after: null,
+      authoritySource: context.authoritySource,
+      idempotencyKey,
+      revision: context.revision,
+      result: "failed",
+    });
+    return {
+      ok: false,
+      provider: "linear",
+      operation: "evidence_comment",
+      result: "failed",
+      receipt: writeProviderReceipt(target, receipt),
+      error:
+        "The linked Linear issue could not be verified in an approved team. No write occurred.",
+    };
+  }
   let comment = provider.lookup(
     target,
     ["resolve-comment", "--id", commentId],
     "resolve-comment",
   );
   if (!comment.ok) {
-    throw new StackError(
-      "Linear comment preflight failed. No write occurred.",
-      3,
-    );
+    const receipt = providerReceipt({
+      provider: "linear",
+      operation: "evidence_comment",
+      workItemId: context.item.id,
+      providerReference: commentId,
+      before: "comment lookup failed",
+      after: null,
+      authoritySource: context.authoritySource,
+      idempotencyKey,
+      revision: context.revision,
+      result: "failed",
+    });
+    return {
+      ok: false,
+      provider: "linear",
+      operation: "evidence_comment",
+      result: "failed",
+      receipt: writeProviderReceipt(target, receipt),
+      error: "Linear comment preflight failed. No write occurred.",
+    };
   }
   let result = "not-needed";
   let before = "existing provider comment";
@@ -5892,13 +5946,12 @@ function commandConfigure(target, options) {
 
   const config = loadConfig(target);
   const existingIdempotencyNamespace =
-    config.capabilities.work?.provider === "linear" &&
-    typeof config.capabilities.work.connection?.writes
-      ?.idempotency_namespace === "string" &&
+    typeof config.capabilities.work?.linear_idempotency_namespace ===
+      "string" &&
     /^[a-f0-9]{64}$/.test(
-      config.capabilities.work.connection.writes.idempotency_namespace,
+      config.capabilities.work.linear_idempotency_namespace,
     )
-      ? config.capabilities.work.connection.writes.idempotency_namespace
+      ? config.capabilities.work.linear_idempotency_namespace
       : randomBytes(32).toString("hex");
   const normalizedReviewers = [
     ...new Set(
@@ -5952,6 +6005,7 @@ function commandConfigure(target, options) {
                 ? "receipted_create_and_comment"
                 : "receipted_create",
           repository_fallback: true,
+          linear_idempotency_namespace: existingIdempotencyNamespace,
           connection: {
             kind: "linear_api_key",
             credential_env: LINEAR_CREDENTIAL_ENV,
@@ -5967,7 +6021,6 @@ function commandConfigure(target, options) {
                     )
                       ? LINEAR_COMMENT_CREDENTIAL_ENV
                       : null,
-                    idempotency_namespace: existingIdempotencyNamespace,
                   },
           },
         }
@@ -5977,6 +6030,7 @@ function commandConfigure(target, options) {
           sync_mode: "repository_only",
           write_policy: "repository_only",
           repository_fallback: true,
+          linear_idempotency_namespace: existingIdempotencyNamespace,
           connection: null,
         };
   config.learning = {

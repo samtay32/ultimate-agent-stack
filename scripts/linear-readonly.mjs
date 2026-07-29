@@ -40,6 +40,23 @@ function boundedRateLimit(headers) {
   return result;
 }
 
+function linearEntityMissing(payload, field) {
+  return (
+    payload?.data?.[field] === null &&
+    Array.isArray(payload.errors) &&
+    payload.errors.length > 0 &&
+    payload.errors.every(
+      (error) =>
+        (typeof error?.message === "string" &&
+          /\b(?:entity )?not found\b|\bdoes not exist\b/i.test(
+            error.message,
+          )) ||
+        (typeof error?.extensions?.code === "string" &&
+          /^(?:ENTITY_)?NOT_FOUND$/i.test(error.extensions.code)),
+    )
+  );
+}
+
 async function readBoundedResponse(response, maximumBytes) {
   const declaredLength = response.headers.get("content-length");
   if (
@@ -454,6 +471,15 @@ async function linearResolveIssue({
         error: "Linear returned invalid JSON",
       };
     }
+    if (response.ok && linearEntityMissing(payload, "issue")) {
+      return {
+        ok: true,
+        provider: "linear",
+        operation: "resolve-issue",
+        found: false,
+        provider_id: issueId,
+      };
+    }
     if (
       !response.ok ||
       (Array.isArray(payload.errors) && payload.errors.length > 0)
@@ -567,6 +593,15 @@ async function linearResolveComment({
         provider: "linear",
         operation: "resolve-comment",
         error: "Linear returned invalid JSON",
+      };
+    }
+    if (response.ok && linearEntityMissing(payload, "comment")) {
+      return {
+        ok: true,
+        provider: "linear",
+        operation: "resolve-comment",
+        found: false,
+        provider_id: commentId,
       };
     }
     if (

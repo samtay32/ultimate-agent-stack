@@ -253,9 +253,15 @@ test("Linear read-only lookups return only bounded provider identifiers", async 
         { status: 200 },
       ),
   });
-  assert.equal(issue.found, true);
-  assert.equal(issue.provider_identifier, "ENG-42");
-  assert.equal(issue.title, undefined);
+  assert.deepEqual(issue, {
+    ok: true,
+    provider: "linear",
+    operation: "resolve-issue",
+    found: true,
+    provider_id: "123e4567-e89b-52d3-a456-426614174000",
+    provider_identifier: "ENG-42",
+    team_key: "ENG",
+  });
 
   const comment = await linearResolveComment({
     apiKey: TEST_KEY,
@@ -273,12 +279,14 @@ test("Linear read-only lookups return only bounded provider identifiers", async 
         { status: 200 },
       ),
   });
-  assert.equal(comment.found, true);
-  assert.equal(
-    comment.issue_id,
-    "123e4567-e89b-52d3-a456-426614174000",
-  );
-  assert.equal(comment.body, undefined);
+  assert.deepEqual(comment, {
+    ok: true,
+    provider: "linear",
+    operation: "resolve-comment",
+    found: true,
+    provider_id: "123e4567-e89b-52d3-a456-426614174002",
+    issue_id: "123e4567-e89b-52d3-a456-426614174000",
+  });
 });
 
 test("Linear read-only lookups distinguish a missing provider object", async () => {
@@ -297,4 +305,61 @@ test("Linear read-only lookups distinguish a missing provider object", async () 
     found: false,
     provider_id: "123e4567-e89b-52d3-a456-426614174000",
   });
+
+  const missingWithError = await linearResolveIssue({
+    apiKey: TEST_KEY,
+    issueId: "123e4567-e89b-52d3-a456-426614174000",
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify({
+          data: { issue: null },
+          errors: [{ message: "Entity not found" }],
+        }),
+        { status: 200 },
+      ),
+  });
+  assert.deepEqual(missingWithError, issue);
+
+  const comment = await linearResolveComment({
+    apiKey: TEST_KEY,
+    commentId: "123e4567-e89b-52d3-a456-426614174002",
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify({
+          data: { comment: null },
+          errors: [
+            {
+              message: "Comment does not exist",
+              extensions: { code: "ENTITY_NOT_FOUND" },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+  });
+  assert.deepEqual(comment, {
+    ok: true,
+    provider: "linear",
+    operation: "resolve-comment",
+    found: false,
+    provider_id: "123e4567-e89b-52d3-a456-426614174002",
+  });
+
+  const unrelatedError = await linearResolveIssue({
+    apiKey: TEST_KEY,
+    issueId: "123e4567-e89b-52d3-a456-426614174000",
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify({
+          data: { issue: null },
+          errors: [{ message: "Rate limit exceeded" }],
+        }),
+        { status: 200 },
+      ),
+  });
+  assert.equal(unrelatedError.ok, false);
+  assert.equal(
+    unrelatedError.error,
+    "Linear GraphQL returned one or more errors",
+  );
 });
