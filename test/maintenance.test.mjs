@@ -387,6 +387,10 @@ test("repository and installed receipt workflows preserve trusted controls", () 
     assert.match(workflow, /concurrency:/);
     assert.match(
       workflow,
+      /group: review-receipt-\$\{\{ github\.event\.pull_request\.number \|\| github\.event\.issue\.number \|\| inputs\.pr_number \}\}/,
+    );
+    assert.match(
+      workflow,
       /ref: \$\{\{ github\.event\.repository\.default_branch \}\}/,
     );
     assert.match(
