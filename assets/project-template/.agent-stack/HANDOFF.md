@@ -25,21 +25,21 @@ This repository uses Ultimate Agent Stack.
    node .agent-stack/bin/agent-stack.mjs capabilities
    ```
 
-   If onboarding is pending or provider choices changed, inspect the repository,
-   ask one consequential decision at a time with one recommendation and at most
-   one safe alternative, then record the approved profile and providers with
-   `configure`. For a local or straightforward project that does not require
-   production release protection, external data, external memory, or delegated
-   merge authority, recommend the `simple` preset. Use advanced configuration
-   when repository evidence requires stronger or external capabilities.
-4. If onboarding is pending, the approved memory/provider profile is missing,
-   or that profile changed, ask the memory decision in plain language.
-   Otherwise reuse the stored choice without asking again. Recommend
-   repository-only memory for a short or simple project. Recommend optional
-   project-scoped local GBrain for a long-running build likely to cross
-   conversations. Explain that repository checkpoints remain authoritative and
-   work still resumes when GBrain is unavailable. If a new decision is required
-   and GBrain is approved, run:
+   If onboarding is pending or provider choices changed, inspect the repository.
+   First offer one combined recommendation only when its constraints fit and
+   the user has not requested a relevant advanced provider:
+
+   > I recommend the private repository-only setup. It uses no outside memory,
+   > tracking, or telemetry, and you retain merge control. Use this?
+
+   Approval means run `configure --preset simple` and do not ask separate
+   memory, work, telemetry, review-provider, data-policy, or merge-authority
+   questions. Reveal only a relevant advanced choice when repository evidence
+   requires it, the user requests it, or a real requirement cannot be met
+   locally.
+4. When an advanced memory decision is actually required, explain that
+   repository checkpoints remain authoritative. If project-scoped local GBrain
+   is approved, run:
 
    ```bash
    node .agent-stack/bin/agent-stack.mjs memory-setup --harness HARNESS
@@ -57,7 +57,15 @@ This repository uses Ultimate Agent Stack.
      --reason "Inspected project-native quality command definitions"
    ```
 
-6. Use `$run-autonomous-delivery` for the user's request. It routes execution
+6. Use `$run-autonomous-delivery` for the user's request. Route intake in this
+   order: RESUME, EXTERNAL, DISCOVER, DIRECT. RESUME requires a valid
+   non-complete checkpoint or an active lock with an unmet done/evidence
+   condition. Apply `$develop-project-brief` only for substantial material that
+   defines intent/an existing plan or for genuine discovery. A supporting
+   screenshot, log, or attachment does not override DIRECT, and clear bounded
+   work remains DIRECT in a new or empty repository. Completed state does not
+   hijack a new request. Valid continuity resumes without reopening closed
+   decisions. The controller routes execution
    through `$coordinate-parallel-delivery`, which may use bounded native
    subagents when doing so is both safe and useful.
 7. The primary agent manages every worker and returns one integrated result.
@@ -73,9 +81,11 @@ This repository uses Ultimate Agent Stack.
 10. Apply `$manage-project-work`. Validate the repository work ledger and
     evidence graph, choose only ready bounded work, and link completion to real
     acceptance evidence. A provider status alone never proves completion.
-11. For a new or ambiguous project, inspect first and then ask one consequential
-   question at a time. Recommend one safe default, offer at most one genuinely
-   safe alternative, and explain the practical consequence.
+11. For EXTERNAL intake, read the supplied source completely, preserve it
+    unchanged, and reconcile it against repository reality. For DISCOVER
+    intake, write an early unlocked DRAFT and ask one consequential question at
+    a time. Recommend one safe default, offer at most one genuinely safe
+    alternative, and explain the practical consequence.
 12. Own routine research, design, implementation, tests, documentation, and
    review closure. Do not return only a plan.
 13. After verified milestones, write a deterministic checkpoint with

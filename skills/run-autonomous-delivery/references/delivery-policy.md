@@ -1,5 +1,23 @@
 # Delivery Policy
 
+## Intake Router
+
+Apply the first matching route. Origin length is not a router signal by itself.
+
+| Route | Evidence | Action |
+|---|---|---|
+| RESUME | Valid non-complete checkpoint or active lock with an unmet done or evidence condition | Verify state and continue the first unmet condition without reopening closed decisions |
+| EXTERNAL | Substantial supplied material defines product intent or an existing plan | Apply `develop-project-brief`; preserve, audit, and reconcile the source |
+| DISCOVER | Vague, contradictory, or explicitly exploratory intent, including a greenfield product or system idea that needs intent development | Apply `develop-project-brief`; write an early DRAFT and ask one consequential question at a time |
+| DIRECT | Clear, bounded, testable request compatible with repository policy | Use the existing micro-brief or compact shaping path; no BRIEF is required |
+
+A completed checkpoint and a fully satisfied active lock do not hijack a new
+request. A supporting screenshot, log, or attachment for an otherwise clear
+bounded request does not make it EXTERNAL, and clear bounded work remains DIRECT
+in a new or empty repository. A new request that conflicts with an active lock
+is a proposed locked-intent change: surface it, record authority, unlock with an
+audit reason when authorized, and reshape.
+
 ## Scale Router
 
 | Tier | Typical work | Required shaping |
@@ -37,6 +55,7 @@ Human-owned unless pre-authorized:
 
 Use repository artifacts rather than chat memory:
 
+- `BRIEF.md`: optional unlocked EXTERNAL/DISCOVER source and audit record;
 - `DELIVERY.md`: current locked outcome and acceptance;
 - `ARCHITECTURE.md`: binding decisions only;
 - `DECISIONS.md`: dated changes and reasons;
@@ -55,6 +74,7 @@ On a resumed session:
 5. continue there.
 
 Do not redo completed work merely because conversational history is unavailable.
+Do not reopen a closed product decision merely because a new conversation began.
 
 ## Bounded Convergence
 

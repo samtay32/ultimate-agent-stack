@@ -9,8 +9,11 @@ Evidence, not confidence, decides readiness.
 
 ## Verification Procedure
 
-1. Read the locked intent, diff, configured checks, deployment surface,
-   `.agent-stack/artifacts/SECURITY.md`, and prior evidence.
+1. Read the locked intent, canonical closed decisions in
+   `.agent-stack/artifacts/DECISIONS.md`, diff, configured checks, deployment
+   surface, `.agent-stack/artifacts/SECURITY.md`, and prior evidence. Verify the
+   implementation preserved each governing closed decision or followed an
+   audited unlock/change/relock record.
 2. Build a requirement-to-evidence matrix using [references/verification-matrix.md](references/verification-matrix.md).
    Apply `$secure-launch` when any classified security surface applies or
    remains unknown.

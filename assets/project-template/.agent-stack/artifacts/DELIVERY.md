@@ -1,6 +1,9 @@
 # Delivery Contract
 
 Status: DRAFT
+Material open conflicts: YES
+
+Working brief: none
 
 ## Outcome
 

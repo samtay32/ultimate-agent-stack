@@ -16,7 +16,10 @@ When selected, also read:
 
 ## Procedure
 
-1. Confirm branch, base, intended issue, current diff, full-gate evidence, and whether the user authorized push, PR creation, and merge.
+1. Confirm branch, base, intended issue, current diff, locked intent, canonical
+   closed decisions, full-gate evidence, and whether the user authorized push,
+   PR creation, and merge. A reviewer suggestion does not authorize reopening
+   a closed product decision.
 2. Rebase or merge the latest base according to repository policy. Re-run the full gate after resolving conflicts.
 3. Create or update a draft PR with:
    - outcome and scope;

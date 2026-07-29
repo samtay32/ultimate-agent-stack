@@ -106,7 +106,10 @@ const DEFAULT_ARTIFACTS = [
   ".agent-stack/artifacts/ARCHITECTURE.md",
   ".agent-stack/artifacts/SECURITY.md",
 ];
-const PLACEHOLDER = /\[\[[A-Z0-9_ -]+\]\]/g;
+const PLACEHOLDER = /\[\[[^\]\r\n]*\]\]/g;
+const DRAFT_ARTIFACT_STATUS = /^\s*Status:\s*DRAFT\s*$/im;
+const OPEN_MATERIAL_CONFLICTS =
+  /^\s*Material open conflicts:\s*YES\s*$/im;
 const PROVIDER_UUID =
   /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const SECRET_ASSIGNMENT =
@@ -8523,12 +8526,37 @@ function commandLock(target, artifacts) {
     if (!existsSync(file) || !statSync(file).isFile()) {
       throw new StackError(`Cannot lock missing artifact: ${artifact}`);
     }
-    const placeholders = [
-      ...new Set(readFileSync(file, "utf8").match(PLACEHOLDER) ?? []),
-    ].sort();
-    if (placeholders.length > 0) {
+    const content = readFileSync(file, "utf8");
+    const firstSection = content.search(/^##(?:\s|$)/m);
+    const declarations =
+      firstSection === -1 ? content : content.slice(0, firstSection);
+    if (DRAFT_ARTIFACT_STATUS.test(declarations)) {
       throw new StackError(
-        `Cannot lock ${artifact}; unresolved placeholders: ${placeholders.join(", ")}`,
+        `Cannot lock ${artifact}; artifact status is DRAFT`,
+      );
+    }
+    if (OPEN_MATERIAL_CONFLICTS.test(declarations)) {
+      throw new StackError(
+        `Cannot lock ${artifact}; material open conflicts remain`,
+      );
+    }
+    const unresolvedPlaceholders = [
+      ...new Set(content.match(PLACEHOLDER) ?? []),
+    ].sort();
+    if (unresolvedPlaceholders.length > 0) {
+      const placeholders = unresolvedPlaceholders
+        .slice(0, 20)
+        .map((placeholder) =>
+          placeholder.length > 200
+            ? `${placeholder.slice(0, 197)}...`
+            : placeholder,
+        );
+      const remainder =
+        unresolvedPlaceholders.length > placeholders.length
+          ? ` (+${unresolvedPlaceholders.length - placeholders.length} more)`
+          : "";
+      throw new StackError(
+        `Cannot lock ${artifact}; unresolved placeholders: ${placeholders.join(", ")}${remainder}`,
       );
     }
     hashes[artifact] = hashFile(file);
@@ -8777,6 +8805,65 @@ function commandStatus(target) {
   };
 }
 
+function onboardingStartPrompt(request) {
+  return `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, .agent-stack/config.json, and any valid .agent-stack/CHECKPOINT.md. Inspect the repository and run the capabilities command. Complete Ultimate Agent Stack onboarding before material implementation.\n\nAsk only consequential setup decisions, one at a time. For each decision use plain language, state one recommended choice, provide at most one genuinely safe alternative, explain the practical consequence, and accept "use the recommendation" as an answer. Never invent an unsafe alternative. Prefer repository evidence and safe defaults over questions.\n\nWhen repository evidence does not require an existing external provider or a production-specific review policy and the user has not requested a relevant advanced provider, make this one combined recommendation: "I recommend the private repository-only setup. It uses no outside memory, tracking, or telemetry, and you retain merge control. Use this?" If the user approves, run configure --preset simple with an approval reason and do not separately ask about GBrain, Linear, telemetry, review providers, data policy, or merge authority. The reason records conversational approval; it does not cryptographically authenticate the approver.\n\nReveal an advanced choice only when the project already uses it and repository evidence makes it relevant, the user explicitly requests it, or a real requirement cannot be met locally. Ask only that relevant question. Repository checkpoints remain authoritative if optional GBrain is selected. The repository work ledger remains authoritative if optional Linear is selected. Telemetry is limited to an existing reviewed provider needed for a concrete operational question; never install instrumentation implicitly. Provider credentials, external writes, billing, and broader data scope remain separate human authority steps.\n\nConfigure the approved choices with the non-interactive configure command. Then run doctor and continue with this request: ${request}`;
+}
+
+function deliveryStartPrompt({
+  request,
+  continuity,
+  workProvider,
+  knowledgeProvider,
+  knowledgeScope,
+  telemetryGuidance,
+}) {
+  return `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, .agent-stack/config.json, .agent-stack/work-items.json, .agent-stack/evidence-graph.json, any valid .agent-stack/CHECKPOINT.md, and the installed skills. Use $run-autonomous-delivery for this request: ${request}\n\n${continuity}\n\nInspect the project first. Apply $manage-project-work using the configured ${workProvider} provider; validate the repository ledger and graph, select only bounded ready work, and keep completion tied to real evidence. The start command already tested the configured work provider. If it is unavailable or unhealthy, continue from the repository ledger and record synchronization as pending; never block safe local delivery or infer remote state. Apply $use-project-knowledge using the configured ${knowledgeProvider} provider at ${knowledgeScope} scope, with repository evidence as the source of truth and fallback. The start command already tested configured memory; if its result is unhealthy or the checkpoint mirror is stale, continue from the repository and repair the optional adapter without blocking delivery. The start command also tested configured telemetry identity and scope; if it is unavailable or unhealthy, use repository evidence and do not broaden provider scope. ${telemetryGuidance} Use $coordinate-parallel-delivery to manage independent subagent work when it is safe and useful; keep it serial otherwise. You are the one Project Steward and integration owner. Do not give the coordinator token to subagents, and do not make the user manage workers.\n\nRoute intake in this order: RESUME for a valid non-complete checkpoint or active lock with an unmet done/evidence condition; EXTERNAL when substantial supplied material defines product intent or an existing plan; DISCOVER for vague, contradictory, exploratory, or greenfield product/system intent that needs development; DIRECT for a clear bounded testable request. Completed state does not hijack a new request. A supporting screenshot, log, or attachment does not turn bounded work into EXTERNAL, and clear bounded work remains DIRECT in a new or empty repository. Apply $develop-project-brief only for EXTERNAL or DISCOVER. DIRECT keeps the proportionate micro-brief path, and RESUME continues from the first unmet condition without reopening closed decisions. Research routine answers. Ask only consequential questions, one at a time. Each question must use plain language, recommend one safe choice, provide at most one genuinely useful safe alternative, explain the consequence, and allow "use the recommendation." Own all routine implementation and verification. Write a deterministic checkpoint after verified milestones and release the coordinator lease only at final handoff.`;
+}
+
+function checkpointContinuityPrompt(checkpoint) {
+  if (!checkpoint) {
+    return "No checkpoint exists yet. Create one after the first verified delivery milestone.";
+  }
+  if (checkpoint.status === "complete") {
+    return `Completed checkpoint ${checkpoint.checkpoint_id} is historical context only: ${checkpoint.summary} Do not resume it or let it hijack the current request. Route the current request normally unless a newer unfinished checkpoint or an active lock with an unmet done/evidence condition exists.`;
+  }
+  return `Resume checkpoint ${checkpoint.checkpoint_id}: ${checkpoint.summary} Next steps: ${checkpoint.next_steps.join("; ") || "none recorded"}.`;
+}
+
+function startPromptPolicySurface() {
+  const sampleCheckpoint = {
+    checkpoint_id: "<CHECKPOINT_ID>",
+    summary: "<CHECKPOINT_SUMMARY>",
+    next_steps: ["<NEXT_STEP>"],
+  };
+  return {
+    onboarding: onboardingStartPrompt("<REQUEST>"),
+    delivery: deliveryStartPrompt({
+      request: "<REQUEST>",
+      continuity: "<CONTINUITY>",
+      workProvider: "<WORK_PROVIDER>",
+      knowledgeProvider: "<KNOWLEDGE_PROVIDER>",
+      knowledgeScope: "<KNOWLEDGE_SCOPE>",
+      telemetryGuidance: "<TELEMETRY_GUIDANCE>",
+    }),
+    continuity: {
+      none: checkpointContinuityPrompt(undefined),
+      in_progress: checkpointContinuityPrompt({
+        ...sampleCheckpoint,
+        status: "in_progress",
+      }),
+      blocked: checkpointContinuityPrompt({
+        ...sampleCheckpoint,
+        status: "blocked",
+      }),
+      complete: checkpointContinuityPrompt({
+        ...sampleCheckpoint,
+        status: "complete",
+      }),
+    },
+  };
+}
+
 function commandStart(target, idea, coordinatorToken = undefined) {
   const installation = loadInstallation(target);
   if (!installation) {
@@ -8817,7 +8904,7 @@ function commandStart(target, idea, coordinatorToken = undefined) {
     return {
       ok: true,
       phase: "onboarding",
-      prompt: `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, .agent-stack/config.json, and any valid .agent-stack/CHECKPOINT.md. Inspect the repository and run the capabilities command. Complete Ultimate Agent Stack onboarding before material implementation.\n\nAsk only consequential setup decisions, one at a time. For each decision use plain language, state one recommended choice, provide at most one genuinely safe alternative, explain the practical consequence, and accept "use the recommendation" as an answer. Never invent an unsafe alternative. Prefer repository evidence and safe defaults over questions.\n\nAsk this memory decision in plain language: "Should this project remember progress only in its repository files, or also use a private local searchable memory for easier continuation across conversations?" Recommend repository memory for a short or simple project. Recommend project-scoped local GBrain for a long-running build likely to span conversations. Explain that GBrain is optional, repository checkpoints remain the source of truth, and work still resumes when GBrain is unavailable. If GBrain is approved, configure it, run memory-setup for the detected harness, perform the approved setup, and verify it with doctor.\n\nAsk this work-tracking decision in plain language: "Should this project keep its task list only in the repository, or also read approved work from Linear while keeping a portable repository copy?" Recommend repository work tracking for a solo, short, or early project. Offer Linear only when the team already uses it and can create a Read-permission API key for the approved team keys. Explain that Linear remains optional, read-only in this release, and never becomes proof of completion or grants delivery authority. If Linear is approved, configure it, run linear-setup, complete the human credential step, and verify it with doctor.\n\nAsk this telemetry decision in plain language: "Does this deployed project already use PostHog, Sentry, or New Relic for a concrete product, error, or service question, or should we rely only on repository and deployment evidence?" Recommend no telemetry provider for an early or undeployed project. Offer only an existing reviewed provider whose project or account scope is known. Explain that the adapter performs a fixed read-only identity check, stores no raw provider payload, cannot prove the upstream credential has no other permissions, never installs instrumentation, and never authorizes a change. If a provider is approved, configure it with --telemetry, run telemetry-setup, complete the human credential step, and verify it with doctor.\n\nConfigure the approved project profile, review provider, knowledge provider, work provider, telemetry providers, external-data policy, and authority mode with the non-interactive configure command. Then run doctor and continue with this request: ${request}`,
+      prompt: onboardingStartPrompt(request),
       pending: {
         onboarding_status: config.onboarding.status,
         configuration_approved: configurationApproved,
@@ -8829,9 +8916,7 @@ function commandStart(target, idea, coordinatorToken = undefined) {
       coordinator,
     };
   }
-  const continuity = checkpoint
-    ? `Resume checkpoint ${checkpoint.checkpoint_id}: ${checkpoint.summary} Next steps: ${checkpoint.next_steps.join("; ") || "none recorded"}.`
-    : "No checkpoint exists yet. Create one after the first verified delivery milestone.";
+  const continuity = checkpointContinuityPrompt(checkpoint);
   const telemetryProviders = config.capabilities.telemetry.providers.map(
     (provider) => provider.provider,
   );
@@ -8857,7 +8942,14 @@ function commandStart(target, idea, coordinatorToken = undefined) {
     work_provider: workProviderHealth,
     telemetry: telemetryHealth,
     coordinator,
-    prompt: `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, .agent-stack/config.json, .agent-stack/work-items.json, .agent-stack/evidence-graph.json, any valid .agent-stack/CHECKPOINT.md, and the installed skills. Use $run-autonomous-delivery for this request: ${request}\n\n${continuity}\n\nInspect the project first. Apply $manage-project-work using the configured ${config.capabilities.work.provider} provider; validate the repository ledger and graph, select only bounded ready work, and keep completion tied to real evidence. The start command already tested the configured work provider. If it is unavailable or unhealthy, continue from the repository ledger and record synchronization as pending; never block safe local delivery or infer remote state. Apply $use-project-knowledge using the configured ${config.capabilities.knowledge.provider} provider at ${config.capabilities.knowledge.scope} scope, with repository evidence as the source of truth and fallback. The start command already tested configured memory; if its result is unhealthy or the checkpoint mirror is stale, continue from the repository and repair the optional adapter without blocking delivery. The start command also tested configured telemetry identity and scope; if it is unavailable or unhealthy, use repository evidence and do not broaden provider scope. ${telemetryGuidance} Use $coordinate-parallel-delivery to manage independent subagent work when it is safe and useful; keep it serial otherwise. You are the one Project Steward and integration owner. Do not give the coordinator token to subagents, and do not make the user manage workers.\n\nBuild a living project brief. Research routine answers. Ask only consequential questions, one at a time. Each question must use plain language, recommend one safe choice, provide at most one genuinely useful safe alternative, explain the consequence, and allow "use the recommendation." Own all routine implementation and verification. Write a deterministic checkpoint after verified milestones and release the coordinator lease only at final handoff.`,
+    prompt: deliveryStartPrompt({
+      request,
+      continuity,
+      workProvider: config.capabilities.work.provider,
+      knowledgeProvider: config.capabilities.knowledge.provider,
+      knowledgeScope: config.capabilities.knowledge.scope,
+      telemetryGuidance,
+    }),
   };
 }
 
@@ -9467,6 +9559,7 @@ export {
   portableTextSha256,
   resolveConfigureOptions,
   resolveTarget,
+  startPromptPolicySurface,
   validateConfig,
   validateCampaignState,
   validateEvidenceGraph,

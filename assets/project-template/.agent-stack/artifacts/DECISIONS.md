@@ -1,11 +1,24 @@
 # Decision Log
 
-Record changes to locked intent or architecture. Append concise entries; do not use this as a progress journal.
+Record binding product decisions and changes to locked intent. This is not a
+progress journal. Promotion from a working brief makes this file the canonical
+decision record; do not maintain a second binding copy in the brief.
 
-## Entry Template
+## Closed Product Decisions
+
+### CD-1: [[DECISION]]
+
+- Forecloses: [[FORECLOSED_ALTERNATIVES]]
+- Evidence or authority: [[EVIDENCE_OR_AUTHORITY]]
+- Governing instruction: Do not reopen without product-owner instruction.
+
+## Changes to Previously Locked Intent
+
+### Change Entry Template
 
 - Date: [[DATE]]
-- Decision: [[DECISION]]
-- Evidence: [[EVIDENCE]]
+- Prior decision: [[PRIOR_DECISION]]
+- New decision: [[NEW_DECISION]]
+- Reason: [[REASON]]
+- Authority: [[AUTHORITY]]
 - Consequence: [[CONSEQUENCE]]
-- Authorized by: agent-default | user | repository-policy | specialist

@@ -36,6 +36,15 @@ Operating authority:
 
 Delivery contract:
 - Route the work by risk and ambiguity; do not over-specify a small clear change.
+- Route intake in this order: RESUME a valid non-complete checkpoint or active
+  lock with an unmet done/evidence condition; EXTERNAL substantial material
+  defining product intent or an existing plan; DISCOVER vague, contradictory,
+  exploratory, or greenfield product/system intent needing development; DIRECT
+  clear bounded work. Completed state does not hijack a new request. A
+  supporting screenshot, log, or attachment does not turn bounded work into
+  EXTERNAL, and bounded work remains DIRECT in a new repository. Use
+  `$develop-project-brief` only for EXTERNAL or DISCOVER. Preserve supplied
+  sources unchanged and reconcile them with repository reality.
 - Apply `$secure-launch`, classify every launch-security surface, and require
   deterministic evidence only for controls that actually apply.
 - Apply `$use-project-knowledge` with the configured provider. Treat memory as
@@ -49,27 +58,22 @@ Delivery contract:
 - Apply `$manage-project-work` to keep the portable repository work ledger and
   evidence graph valid. Choose only ready bounded work, use canonical states and
   relations, and require actual acceptance evidence before completion.
-- If onboarding is incomplete, ask whether this project should use repository
-  memory only or also private local searchable memory. Recommend repository
-  memory for a simple project and project-scoped local GBrain for a long build
-  likely to span conversations.
-- After that decision is resolved, ask whether work should stay in the portable
-  repository ledger or read approved Linear teams through the reviewed adapter.
-  Recommend the repository for a solo, short, or early project. Offer Linear
-  only when it is already the team's work surface; preserve the repository
-  mirror either way.
-- If Linear is selected, recommend read-only and ask separately whether to
-  allow only receipted issue creation or issue creation plus evidence comments.
-  Never enable a write implicitly. Every write requires the active coordinator
-  token, explicit confirmation, an authority source, and a validated receipt.
-- Also ask whether a deployed project already uses PostHog, Sentry, or New
-  Relic for a concrete product, error, or service question. Recommend no
-  provider for an early or undeployed project. Never install instrumentation
-  implicitly. For an approved existing provider, run `telemetry-setup`, wait
-  for its scoped credential, and require `telemetry-health` to verify the
-  configured project or account before using it.
+- If onboarding is incomplete, repository-only capabilities fit, and the user
+  has not requested a relevant advanced provider, make one combined
+  recommendation:
+  "I recommend the private repository-only setup. It uses no outside memory,
+  tracking, or telemetry, and you retain merge control. Use this?" Approval
+  selects the simple preset and ends provider questioning.
+- Reveal GBrain, Linear, telemetry, or an advanced review provider only when
+  repository evidence makes it relevant, I explicitly request it, or a real
+  requirement cannot be met locally. An explicit request for a relevant
+  advanced provider takes precedence over the simple preset. Ask only that
+  relevant decision. Never enable a provider or external write implicitly.
 - For ambiguous UX, state models, APIs, algorithms, or feasibility, use the smallest throwaway prototype or deterministic experiment that can answer the question, capture the decision, and keep prototype code out of production.
 - Lock the outcome, acceptance criteria, non-goals, assumptions, binding architecture decisions, launch-security gates, vertical slices, and verification evidence before material implementation.
+- Read canonical closed product decisions before proposing alternatives. A
+  change requires product-owner instruction plus the audited
+  unlock/change/relock path.
 - Implement end-to-end slices and preserve a fast red-capable feedback loop for changed behavior.
 - Cap parallel workers using `.agent-stack/config.json`; prohibit nested
   delegation and authority expansion; require verified isolated workspaces for

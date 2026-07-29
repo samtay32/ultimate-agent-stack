@@ -9,7 +9,10 @@ Produce the smallest end-to-end increment that proves user or operator value.
 
 ## Before Editing
 
-1. Read project instructions, the locked delivery artifact, relevant modules, nearby tests, and current diff.
+1. Read project instructions, the locked delivery artifact, canonical closed
+   decisions in `.agent-stack/artifacts/DECISIONS.md`, relevant modules, nearby
+   tests, and current diff. Do not reopen a closed product decision while
+   selecting an implementation alternative.
 2. State the slice outcome, public test seam, files likely affected, risks, and focused verification command.
 3. Check the artifact lock:
 

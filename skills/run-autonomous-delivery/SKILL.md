@@ -45,11 +45,36 @@ Do not say "done" until all applicable conditions hold:
    Run `node .agent-stack/bin/agent-stack.mjs doctor` before material work. If
    protected files drifted, proposals remain unresolved, or quality commands
    changed without review, repair setup before proceeding.
-2. **Route by scale.** Use [references/delivery-policy.md](references/delivery-policy.md). Small clear work gets a micro-brief. New systems, migrations, ambiguous UX, and high-risk changes get proportionate shaping.
-3. **Shape, secure, and lock.** Invoke `$shape-project` when intent or
-   acceptance is not already locked. Apply `$secure-launch` to classify
-   exposure and derive only applicable launch gates. Discover answers from the
-   repository and authoritative sources before asking. Lock with:
+2. **Route intake before scale.** Use
+   [references/delivery-policy.md](references/delivery-policy.md) and apply the
+   first matching route:
+   - **RESUME:** a valid non-complete checkpoint exists, or an active locked
+     contract has an unmet done or evidence condition. Verify it and continue
+     from the first unmet condition. A completed checkpoint and fully satisfied
+     lock do not swallow a new request. Do not restart discovery or reopen
+     closed decisions.
+   - **EXTERNAL:** substantial supplied material defines product intent or an
+     existing plan. Apply `$develop-project-brief`; read the source completely,
+     preserve it unchanged, audit it, and reconcile it with repository reality.
+     A supporting screenshot, log, or attachment for a clear bounded request
+     does not select this route.
+   - **DISCOVER:** intent is vague, contradictory, explicitly exploratory, or
+     is a greenfield product or system idea that needs intent development.
+     Apply `$develop-project-brief`; create an early unlocked draft and
+     collaborate one consequential question at a time. Clear bounded work
+     remains DIRECT even in a new or empty repository.
+   - **DIRECT:** the request is clear, bounded, testable, and compatible with
+     repository policy. Keep the existing micro-brief or compact shaping path.
+     Do not require `BRIEF.md`.
+3. **Shape, secure, and lock.** For an approved working brief, invoke
+   `$shape-project` to promote it into the canonical delivery, architecture,
+   security, verification, and decision contracts. Invoke `$shape-project`
+   directly for proportionate DIRECT work when needed. If the user requested
+   only a brief, stop after its approval without starting implementation.
+   Apply `$secure-launch` to classify exposure and derive only applicable
+   launch gates. Discover answers from the repository and authoritative
+   sources before asking. Read closed product decisions before proposing an
+   alternative. Lock with:
 
    ```bash
    node .agent-stack/bin/agent-stack.mjs lock
@@ -106,6 +131,9 @@ operations.
   is unavailable.
 - Treat tokens, elapsed time, and tool calls as costs. Optimize verified outcomes, not agent activity.
 - Persist decisions and evidence in the repository so a fresh session can resume.
+- Preserve user-supplied sources unchanged. Persist only bounded redacted
+  provenance and claim dispositions unless a repository copy is both needed
+  and authorized.
 - Keep work-item and evidence-graph references current at verified transitions;
   do not copy remote payloads into repository state.
 - Never give the coordinator token to a subagent. A subagent is a bounded
