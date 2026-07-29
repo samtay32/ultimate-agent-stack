@@ -9,11 +9,12 @@ project tests, CI, branch protection, built-in standards/intent review, or
 release authority.
 
 The Ultimate Agent Stack repository may temporarily select Qodo as its own
-protected reviewer with `--provider qodo`. A Qodo receipt requires both the
-bot-authored unified review updated for the exact head and the bot-authored
-exact-head completion marker. A processing acknowledgement, PR summary, slash
-command, reaction, or stale review does not qualify. Installed projects still
-use their configured `coderabbit`, `github-human`, or `builtin` provider.
+protected reviewer with `--provider qodo`. A Qodo receipt requires either the
+bot-authored terminal clean review containing the exact full head commit or the
+older paired unified-review and exact-head completion markers. A processing
+acknowledgement, PR summary, slash command, reaction, short commit prefix, or
+stale review does not qualify. Installed projects still use their configured
+`coderabbit`, `github-human`, or `builtin` provider.
 
 ## One-Time Repository Setup
 
@@ -71,10 +72,11 @@ For CodeRabbit, `COMMENTED` or `APPROVED` review submissions qualify, but a
 summary, reaction, top-level comment, or rate-limit message does not. For
 `github-human`, only `APPROVED` from an explicitly allowed login other than the
 pull-request author qualifies.
-For the repository's temporary Qodo mode, the protected evaluator requires the
-bot-authored unified `Code Review by Qodo` body, its exact-head results marker,
-the full head commit in that body, Qodo's exact-head completion marker, and no
-unresolved current Qodo thread. Qodo processing acknowledgements and PR
+For the repository's temporary Qodo mode, the protected evaluator accepts
+Qodo's current bot-authored terminal-clean `Code Review by Qodo` body when it
+contains the full exact head commit. It also supports Qodo's older paired
+unified-review and exact-head completion format. In both cases, no unresolved
+current Qodo thread may remain. Qodo processing acknowledgements and PR
 summaries do not count.
 Built-in review does not manufacture an external receipt requirement for
 profiles where external review is optional.

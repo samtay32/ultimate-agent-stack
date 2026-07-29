@@ -63,6 +63,19 @@ function qodoUnifiedReview(commit = HEAD, marker = "updated") {
   };
 }
 
+function qodoCurrentCleanReview(commit = HEAD) {
+  return {
+    author: { login: "qodo-code-review[bot]", __typename: "Bot" },
+    url: QODO_REVIEW_URL,
+    body:
+      "<h3>Code Review by Qodo</h3>\n" +
+      "<code>🐞 Bugs (0)</code>\n" +
+      "<h3>Great, no issues found!</h3>\n" +
+      "Qodo reviewed your code and found no material issues that require review\n" +
+      `<!-- https://github.com/owner/repository/commit/${commit} -->`,
+  };
+}
+
 function thread({
   login = "coderabbitai",
   resolved = false,
@@ -137,6 +150,50 @@ test("accepts completed exact-head Qodo unified review evidence", () => {
 
   assert.equal(result.ok, true);
   assert.deepEqual(result.detail.review_states, ["UNIFIED_COMMENT"]);
+});
+
+test("accepts Qodo's current exact-head terminal clean review", () => {
+  const result = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "qodo",
+    comments: [qodoCurrentCleanReview()],
+  });
+  const stale = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "qodo",
+    comments: [qodoCurrentCleanReview(OLD_HEAD)],
+  });
+  const summaryOnly = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "qodo",
+    comments: [
+      {
+        ...qodoCurrentCleanReview(),
+        body:
+          "<h3>PR Summary by Qodo</h3>\n" +
+          `<!-- https://github.com/owner/repository/commit/${HEAD} -->`,
+      },
+    ],
+  });
+  const nonTerminal = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "qodo",
+    comments: [
+      {
+        ...qodoCurrentCleanReview(),
+        body:
+          "<h3>Code Review by Qodo</h3>\n" +
+          "Qodo agents are working on the review.\n" +
+          `<!-- https://github.com/owner/repository/commit/${HEAD} -->`,
+      },
+    ],
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.detail.review_states, ["UNIFIED_COMMENT"]);
+  assert.equal(stale.ok, false);
+  assert.equal(summaryOnly.ok, false);
+  assert.equal(nonTerminal.ok, false);
 });
 
 test("accepts Qodo's exact-head full commit marker after an updated review", () => {
