@@ -9,6 +9,7 @@ const REVIEW_PAGE_LIMIT = 100;
 const PASSING_REVIEW_STATES = new Set(["APPROVED", "COMMENTED"]);
 const RATE_LIMIT_PATTERN =
   /\b(rate limit|review limit|review quota|reviews? remaining|refill)\b/i;
+const QODO_REVIEW_TITLE_PATTERN = /\bCode Review by Qodo\b/i;
 
 function normalizeLogin(login) {
   return String(login ?? "")
@@ -20,6 +21,41 @@ function isCodeRabbit(login) {
   return normalizeLogin(login) === "coderabbitai";
 }
 
+function isQodo(login) {
+  return normalizeLogin(login) === "qodo-code-review";
+}
+
+function escapedPattern(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function qodoCompletionMatches(comment, headOid, unifiedReviewUrl = undefined) {
+  if (!isQodo(comment.author?.login) || comment.author?.__typename !== "Bot") {
+    return false;
+  }
+  const commitPattern = escapedPattern(headOid);
+  const body = comment.body ?? "";
+  return (
+    new RegExp(
+      `\\bCode review\\b[\\s\\S]*\\bupdated up to the latest commit\\b[\\s\\S]*\\/commit\\/${commitPattern}(?:\\b|$)`,
+      "i",
+    ).test(body) &&
+    (unifiedReviewUrl === undefined || body.includes(unifiedReviewUrl))
+  );
+}
+
+function qodoUnifiedReviewMatches(comment, headOid) {
+  if (!isQodo(comment.author?.login) || comment.author?.__typename !== "Bot") {
+    return false;
+  }
+  const body = comment.body ?? "";
+  const shortCommit = escapedPattern(headOid.slice(0, 7));
+  return (
+    QODO_REVIEW_TITLE_PATTERN.test(body) &&
+    new RegExp(`\\bResults up to commit\\s+${shortCommit}\\b`, "i").test(body)
+  );
+}
+
 function reviewerPolicy(
   provider,
   allowedLogins = [],
@@ -29,6 +65,14 @@ function reviewerPolicy(
     return {
       label: "CodeRabbit",
       matches: (author) => isCodeRabbit(author?.login),
+      passingStates: PASSING_REVIEW_STATES,
+    };
+  }
+  if (provider === "qodo") {
+    return {
+      label: "Qodo",
+      matches: (author) =>
+        author?.__typename === "Bot" && isQodo(author?.login),
       passingStates: PASSING_REVIEW_STATES,
     };
   }
@@ -102,7 +146,7 @@ function evaluateReviewReceipt({
     return failure("GitHub did not return the pull request head commit.");
   }
   const relevantTruncation =
-    provider === "coderabbit"
+    provider === "coderabbit" || provider === "qodo"
       ? truncated
       : truncated.filter((connection) => connection !== "comments");
   if (relevantTruncation.length > 0) {
@@ -146,6 +190,47 @@ function evaluateReviewReceipt({
   const passingReviews = currentReviews.filter((review) =>
     policy.passingStates.has(review.state),
   );
+  if (provider === "qodo") {
+    const unifiedReview = comments.find((comment) =>
+      qodoUnifiedReviewMatches(comment, headOid),
+    );
+    const completion = comments.find((comment) =>
+      qodoCompletionMatches(comment, headOid, unifiedReview?.url),
+    );
+    if (!completion || !unifiedReview) {
+      if (providerReviews.length > 0) {
+        return failure(
+          "The latest Qodo review evidence is stale or incomplete; request a review of the current revision.",
+          {
+            reviewed_commits: providerReviews
+              .map((review) => review.commit?.oid)
+              .filter(Boolean),
+            exact_head_completion: Boolean(completion),
+            exact_head_unified_review: Boolean(unifiedReview),
+          },
+        );
+      }
+      return failure(
+        "No completed Qodo review was submitted for the current revision.",
+        {
+          exact_head_completion: Boolean(completion),
+          exact_head_unified_review: Boolean(unifiedReview),
+        },
+      );
+    }
+    return {
+      ok: true,
+      message: `Qodo reviewed current commit ${headOid.slice(0, 12)} with no unresolved current threads.`,
+      detail: {
+        provider,
+        reviewed_commit: headOid,
+        review_states:
+          passingReviews.length > 0
+            ? passingReviews.map((review) => review.state)
+            : ["UNIFIED_COMMENT"],
+      },
+    };
+  }
   if (passingReviews.length === 0) {
     const rateLimited = provider === "coderabbit" && comments.some(
       (comment) =>
@@ -335,6 +420,8 @@ async function fetchReviewEvidence({ owner, name, pullRequest, token }) {
               author { login __typename }
               body
               createdAt
+              updatedAt
+              url
             }
             pageInfo { hasNextPage }
           }
@@ -426,8 +513,11 @@ export {
   evaluateReviewReceipt,
   fetchReviewEvidence,
   isCodeRabbit,
+  isQodo,
   main,
   normalizeLogin,
+  qodoCompletionMatches,
+  qodoUnifiedReviewMatches,
   reviewerPolicy,
   resolveReviewSelection,
   resolveContext,

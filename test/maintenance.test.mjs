@@ -382,6 +382,7 @@ test("repository and installed receipt workflows preserve trusted controls", () 
     reviewReceiptWorkflow,
   ]) {
     assert.match(workflow, /workflow_dispatch:/);
+    assert.match(workflow, /issue_comment:/);
     assert.match(workflow, /pr_number:/);
     assert.match(workflow, /concurrency:/);
     assert.match(
@@ -394,6 +395,11 @@ test("repository and installed receipt workflows preserve trusted controls", () 
     );
   }
   assert.doesNotMatch(repositoryReviewReceiptWorkflow, /--config/);
+  assert.match(repositoryReviewReceiptWorkflow, /--provider qodo/);
+  assert.doesNotMatch(
+    repositoryReviewReceiptWorkflow,
+    /Require a current CodeRabbit review/,
+  );
   assert.match(
     reviewReceiptWorkflow,
     /--config \.agent-stack\/config\.json/,

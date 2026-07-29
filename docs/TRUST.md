@@ -133,8 +133,11 @@ a new lock.
 
 When project policy requires independent review, the protected receipt gate
 checks the current commit. Missing reviews, stale reviews, requested changes,
-unresolved actionable threads, incomplete API pagination, and CodeRabbit
-rate-limit comments do not count as approval.
+unresolved actionable threads, incomplete API pagination, processing-only
+messages, and CodeRabbit rate-limit comments do not count as approval. The
+Ultimate Agent Stack repository's temporary Qodo mode additionally requires
+Qodo's bot-authored unified review and completion marker to name the exact head
+commit; a PR summary alone does not qualify.
 
 ### Parallel work
 

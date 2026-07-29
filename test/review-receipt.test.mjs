@@ -22,7 +22,11 @@ function review({
   commit = HEAD,
   state = "COMMENTED",
   login = "coderabbitai[bot]",
-  type = login.toLowerCase().includes("coderabbit") ? "Bot" : "User",
+  type =
+    login.toLowerCase().includes("coderabbit") ||
+    login.toLowerCase().includes("qodo")
+      ? "Bot"
+      : "User",
 } = {}) {
   return {
     author: { login, __typename: type },
@@ -31,11 +35,37 @@ function review({
   };
 }
 
+const QODO_REVIEW_URL =
+  "https://github.com/owner/repository/pull/12#issuecomment-1";
+
+function qodoCompletion(commit = HEAD, reviewUrl = QODO_REVIEW_URL) {
+  return {
+    author: { login: "qodo-code-review[bot]", __typename: "Bot" },
+    body:
+      `[Code review](${reviewUrl}) ` +
+      `by qodo was updated up to the latest commit https://github.com/owner/repository/commit/${commit}`,
+  };
+}
+
+function qodoUnifiedReview(commit = HEAD) {
+  return {
+    author: { login: "qodo-code-review[bot]", __typename: "Bot" },
+    url: QODO_REVIEW_URL,
+    body:
+      "<h3>Code Review by Qodo</h3>\n" +
+      `<details><summary>Results up to commit ${commit.slice(0, 7)}</summary>`,
+  };
+}
+
 function thread({
   login = "coderabbitai",
   resolved = false,
   outdated = false,
-  type = login.toLowerCase().includes("coderabbit") ? "Bot" : "User",
+  type =
+    login.toLowerCase().includes("coderabbit") ||
+    login.toLowerCase().includes("qodo")
+      ? "Bot"
+      : "User",
 } = {}) {
   return {
     isResolved: resolved,
@@ -84,6 +114,126 @@ test("a rate-limit comment never counts as a review", () => {
 
   assert.equal(result.ok, false);
   assert.match(result.message, /review limit/);
+});
+
+test("accepts completed exact-head Qodo unified review evidence", () => {
+  const result = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "qodo",
+    reviews: [
+      review({
+        commit: OLD_HEAD,
+        login: "qodo-code-review[bot]",
+      }),
+    ],
+    comments: [qodoUnifiedReview(), qodoCompletion()],
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.detail.review_states, ["UNIFIED_COMMENT"]);
+});
+
+test("accepts Qodo exact-head review plus completed unified evidence", () => {
+  const result = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "qodo",
+    reviews: [review({ login: "qodo-code-review[bot]" })],
+    comments: [qodoUnifiedReview(), qodoCompletion()],
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.detail.review_states, ["COMMENTED"]);
+});
+
+test("Qodo processing, summaries, and partial evidence never count", () => {
+  const processing = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "qodo",
+    comments: [
+      {
+        author: { login: "qodo-code-review[bot]", __typename: "Bot" },
+        body: "Qodo agents are working on the review.",
+      },
+      {
+        author: { login: "qodo-code-review[bot]", __typename: "Bot" },
+        body: "<h3>PR Summary by Qodo</h3>",
+      },
+    ],
+  });
+  const completionOnly = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "qodo",
+    comments: [qodoCompletion()],
+  });
+  const unifiedOnly = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "qodo",
+    comments: [qodoUnifiedReview()],
+  });
+  const mismatchedReviewLink = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "qodo",
+    comments: [
+      qodoUnifiedReview(),
+      qodoCompletion(
+        HEAD,
+        "https://github.com/owner/repository/pull/12#issuecomment-2",
+      ),
+    ],
+  });
+
+  assert.equal(processing.ok, false);
+  assert.equal(completionOnly.ok, false);
+  assert.equal(unifiedOnly.ok, false);
+  assert.equal(mismatchedReviewLink.ok, false);
+});
+
+test("rejects stale, impersonated, unresolved, and truncated Qodo evidence", () => {
+  const stale = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "qodo",
+    reviews: [
+      review({
+        commit: OLD_HEAD,
+        login: "qodo-code-review[bot]",
+      }),
+    ],
+    comments: [qodoUnifiedReview(OLD_HEAD), qodoCompletion(OLD_HEAD)],
+  });
+  const impersonated = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "qodo",
+    comments: [
+      {
+        ...qodoUnifiedReview(),
+        author: { login: "qodo-code-review", __typename: "User" },
+      },
+      {
+        ...qodoCompletion(),
+        author: { login: "qodo-code-review", __typename: "User" },
+      },
+    ],
+  });
+  const unresolved = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "qodo",
+    comments: [qodoUnifiedReview(), qodoCompletion()],
+    threads: [thread({ login: "qodo-code-review[bot]" })],
+  });
+  const truncated = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "qodo",
+    comments: [qodoUnifiedReview(), qodoCompletion()],
+    truncated: ["comments"],
+  });
+
+  assert.equal(stale.ok, false);
+  assert.match(stale.message, /stale or incomplete/);
+  assert.equal(impersonated.ok, false);
+  assert.equal(unresolved.ok, false);
+  assert.match(unresolved.message, /1 unresolved/);
+  assert.equal(truncated.ok, false);
+  assert.match(truncated.message, /safety limit/);
 });
 
 test("rejects requested changes and unresolved current threads", () => {

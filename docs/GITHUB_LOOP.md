@@ -8,6 +8,13 @@ The selected provider adds an adversarial review surface. It does not replace
 project tests, CI, branch protection, built-in standards/intent review, or
 release authority.
 
+The Ultimate Agent Stack repository may temporarily select Qodo as its own
+protected reviewer with `--provider qodo`. A Qodo receipt requires both the
+bot-authored unified review updated for the exact head and the bot-authored
+exact-head completion marker. A processing acknowledgement, PR summary, slash
+command, reaction, or stale review does not qualify. Installed projects still
+use their configured `coderabbit`, `github-human`, or `builtin` provider.
+
 ## One-Time Repository Setup
 
 1. Select `coderabbit` or `github-human` during guided configuration when the
@@ -64,6 +71,11 @@ For CodeRabbit, `COMMENTED` or `APPROVED` review submissions qualify, but a
 summary, reaction, top-level comment, or rate-limit message does not. For
 `github-human`, only `APPROVED` from an explicitly allowed login other than the
 pull-request author qualifies.
+For the repository's temporary Qodo mode, the protected evaluator requires the
+bot-authored unified `Code Review by Qodo` body, its exact-head results marker,
+the full head commit in that body, Qodo's exact-head completion marker, and no
+unresolved current Qodo thread. Qodo processing acknowledgements and PR
+summaries do not count.
 Built-in review does not manufacture an external receipt requirement for
 profiles where external review is optional.
 
