@@ -734,6 +734,20 @@ test("any noncanonical artifact declaration fails without an expected state", ()
   );
 });
 
+test("scenario expectations cannot require an invalid artifact state", () => {
+  const broken = structuredClone(catalog);
+  const promotion = broken.scenarios.find(
+    (item) => item.id === "flexible-approved-promotion",
+  );
+  promotion.expected.required_artifact_states[0].status = "INVALID";
+  const result = validateScenarioCatalog(broken);
+  assert.equal(result.ok, false);
+  assert.match(
+    result.errors.join("\n"),
+    /status cannot be INVALID because every observed INVALID artifact fails closed/,
+  );
+});
+
 test("phase activation matches real workflow boundaries", () => {
   const incomplete = catalog.scenarios.find(
     (scenario) => scenario.id === "incomplete-product-idea",

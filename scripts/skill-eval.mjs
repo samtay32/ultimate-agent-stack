@@ -532,6 +532,15 @@ function validateScenarioCatalog(catalog = readJson(SCENARIOS_FILE)) {
       `${location}.expected.required_artifact_states`,
       errors,
     );
+    for (const [index, artifact] of asArray(
+      expected.required_artifact_states,
+    ).entries()) {
+      if (artifact?.status === "INVALID") {
+        errors.push(
+          `${location}.expected.required_artifact_states[${index}].status cannot be INVALID because every observed INVALID artifact fails closed`,
+        );
+      }
+    }
     if (
       mustActivateNames.length === 0 &&
       new Set(mustNotActivateNames).size === skills.size
