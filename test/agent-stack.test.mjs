@@ -1590,6 +1590,79 @@ test("telemetry configuration rejects duplicate, custom-host, and local-only spe
   }
 });
 
+test("telemetry health shares one aggregate provider probe budget", () => {
+  const fixture = temporaryProject();
+  const priorEnvironment = Object.fromEntries(
+    [
+      "POSTHOG_PERSONAL_API_KEY",
+      "SENTRY_AUTH_TOKEN",
+      "NEW_RELIC_USER_KEY",
+    ].map((name) => [name, process.env[name]]),
+  );
+  try {
+    initializeGit(fixture.directory);
+    createJavaScriptFixture(fixture.directory);
+    installOrUpgrade(fixture.directory, { mode: "init" });
+    commandConfigure(fixture.directory, {
+      profile: "standard",
+      review: "builtin",
+      knowledge: "repository",
+      work: "repository",
+      telemetrySpecs: [
+        "posthog@us:12345",
+        "sentry@de:acme/web-app",
+        "new-relic@eu:98765",
+      ],
+      externalData: "approved_providers",
+      reason: "Approved bounded telemetry health probes",
+    });
+    process.env.POSTHOG_PERSONAL_API_KEY = "posthog-test-key";
+    process.env.SENTRY_AUTH_TOKEN = "sentry-test-token";
+    process.env.NEW_RELIC_USER_KEY = "new-relic-test-key";
+
+    let elapsed = 0;
+    const calls = [];
+    const health = commandTelemetryHealth(
+      fixture.directory,
+      undefined,
+      {
+        now: () => elapsed,
+        runTelemetry: (_target, provider, timeout) => {
+          calls.push({ provider: provider.provider, timeout });
+          elapsed += provider.provider === "new-relic" ? 15_000 : 5_000;
+          return {
+            ok: false,
+            status: 124,
+            reason: "timeout",
+            raw_stdout: "",
+            stdout: "",
+            stderr: "",
+          };
+        },
+      },
+    );
+
+    assert.deepEqual(calls, [
+      { provider: "new-relic", timeout: 20_000 },
+      { provider: "posthog", timeout: 5_000 },
+    ]);
+    assert.match(
+      health.providers.find((provider) => provider.provider === "sentry")
+        .error,
+      /aggregate time budget was exhausted/,
+    );
+  } finally {
+    for (const [name, value] of Object.entries(priorEnvironment)) {
+      if (value === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
+    }
+    fixture.cleanup();
+  }
+});
+
 test("telemetry health refuses a modified helper even when its manifest hash is spoofed", () => {
   const fixture = temporaryProject();
   const outside = `${fixture.directory}-telemetry-helper-proof`;
