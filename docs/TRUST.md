@@ -257,10 +257,11 @@ harness. The evaluator does not authenticate a collector's claims; reviewers
 must inspect the named run evidence. See
 [Behavioral Evaluations](BEHAVIORAL_EVALS.md).
 
-Flexible-intake release evidence must include live runs from Codex and at least
-one other primary supported harness before behavior is described as broadly
-supported. A passing deterministic contract or a run from one harness must not
-be generalized to another harness, model, version, prompt, or tool environment.
+Flexible-intake release evidence must include live runs from at least two
+distinct primary supported harnesses before behavior is described as broadly
+supported. No named harness is privileged by this rule. A passing deterministic
+contract or a run from one harness must not be generalized to another harness,
+model, version, prompt, or tool environment.
 
 The implementation lives in
 [`bin/ultimate-agent-stack.mjs`](../bin/ultimate-agent-stack.mjs), the protected
