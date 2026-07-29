@@ -44,11 +44,11 @@ Before the owner step, the agent must:
 7. stop and report the exact hash and remaining owner step.
 
 For a release that makes broad claims about the flexible-intake front half,
-step 5 requires complete current-surface records from both Codex and Claude
-Code. Evaluate them separately and list Gemini, Cursor, Grok, OpenCode, and any
-other supported harness not exercised by a complete run as untested. The
-release must not turn a deterministic contract pass or one harness result into
-a broader compatibility claim.
+step 5 requires complete current-surface records from Codex and at least one
+other primary supported harness. Evaluate them separately and list every
+supported harness not exercised by a complete run as untested. The release must
+not turn a deterministic contract pass or one harness result into a broader
+compatibility claim.
 
 The owner then:
 
@@ -106,12 +106,12 @@ The agent:
 
 The flexible-intake Milestone 1 release contains 26 scenarios and 13 skills.
 Its broad front-half behavior claim requires complete current-surface evidence
-from both Codex and Claude Code. Each record must include activation and false
-activation, bounded question behavior, prohibited actions and project writes,
-artifact status and lock state, observable outputs, and load-bearing
-source-claim dispositions. The behavior-surface hash includes the shipped
-artifact templates, so a changed `BRIEF.md`, decision, delivery, architecture,
-security, or verification template invalidates older evidence.
+from Codex and at least one other primary supported harness. Each record must
+include activation and false activation, bounded question behavior, prohibited
+actions and project writes, artifact status and lock state, observable outputs,
+and load-bearing source-claim dispositions. The behavior-surface hash includes
+the shipped artifact templates, so a changed `BRIEF.md`, decision, delivery,
+architecture, security, or verification template invalidates older evidence.
 
 Deterministic unit tests prove the scenario schema, evaluator, package, and
 guardrails. They do not prove that a model selected the right skill or followed
