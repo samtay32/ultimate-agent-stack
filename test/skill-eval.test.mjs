@@ -123,7 +123,7 @@ function passingRecord() {
 test("behavioral scenario contracts cover activation and false activation", () => {
   const result = validateScenarioCatalog(catalog);
   assert.equal(result.ok, true, result.errors.join("\n"));
-  assert.equal(result.scenario_count, 26);
+  assert.equal(result.scenario_count, 27);
   assert.equal(result.skill_count, 13);
   assert.deepEqual(result.categories, [
     "authority",
@@ -315,8 +315,8 @@ test("a complete live run record passes against the current behavior surface", (
   const result = validateRunRecord(record, catalog);
   assert.equal(result.ok, true, JSON.stringify(result, null, 2));
   assert.deepEqual(result.summary, {
-    total: 26,
-    passed: 26,
+    total: 27,
+    passed: 27,
     failed: 0,
   });
   assert.equal(result.surface_hash, behaviorSurfaceHash());
@@ -659,6 +659,146 @@ test("explicit advanced-provider setup rejects the combined simple confirmation"
   assert.match(
     JSON.stringify(result),
     /forbidden question tag was observed: combined_simple_setup_confirmation/,
+  );
+});
+
+test("simple onboarding separates recommendation from prior approval", () => {
+  const continued = passingRecord();
+  const recommendation = continued.cases.find(
+    (item) => item.scenario_id === "flexible-simple-onboarding",
+  );
+  recommendation.observed.performed_actions.push("record_simple_preset");
+  let result = validateRunRecord(continued, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /forbidden action was performed: record_simple_preset/,
+  );
+
+  const reasked = passingRecord();
+  const approved = reasked.cases.find(
+    (item) => item.scenario_id === "flexible-simple-onboarding-approved",
+  );
+  approved.observed.asked_clarifying_question = true;
+  approved.observed.question_count = 1;
+  approved.observed.max_questions_in_turn = 1;
+  approved.observed.question_tags.push(
+    "combined_simple_setup_confirmation",
+  );
+  result = validateRunRecord(reasked, catalog);
+  assert.equal(result.ok, false);
+  assert.match(JSON.stringify(result), /a clarifying question was forbidden/);
+  assert.match(
+    JSON.stringify(result),
+    /forbidden question tag was observed: combined_simple_setup_confirmation/,
+  );
+});
+
+test("noncanonical artifact declarations are recorded as invalid", () => {
+  const record = passingRecord();
+  const promotion = record.cases.find(
+    (item) => item.scenario_id === "flexible-approved-promotion",
+  );
+  const delivery = promotion.observed.artifacts.find(
+    (artifact) =>
+      artifact.path === ".agent-stack/artifacts/DELIVERY.md",
+  );
+  delivery.status = "INVALID";
+  const result = validateRunRecord(record, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /expected APPROVED\/locked but observed INVALID\/locked/,
+  );
+  assert.doesNotMatch(
+    JSON.stringify(result),
+    /status must be DRAFT, APPROVED, ABSENT, or INVALID/,
+  );
+});
+
+test("any noncanonical artifact declaration fails without an expected state", () => {
+  const record = passingRecord();
+  const explanation = record.cases.find(
+    (item) => item.scenario_id === "negative-explanation-only",
+  );
+  explanation.observed.artifacts.push({
+    path: ".agent-stack/artifacts/BRIEF.md",
+    status: "INVALID",
+    lock_state: "unlocked",
+  });
+  const result = validateRunRecord(record, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /noncanonical artifact status was observed: \.agent-stack\/artifacts\/BRIEF\.md/,
+  );
+});
+
+test("phase activation matches real workflow boundaries", () => {
+  const incomplete = catalog.scenarios.find(
+    (scenario) => scenario.id === "incomplete-product-idea",
+  );
+  assert.deepEqual(incomplete.expected.must_activate, [
+    "run-autonomous-delivery",
+    "develop-project-brief",
+  ]);
+  assert.ok(incomplete.expected.must_not_activate.includes("shape-project"));
+
+  const direct = catalog.scenarios.find(
+    (scenario) => scenario.id === "direct-delivery",
+  );
+  assert.ok(direct.expected.must_not_activate.includes("close-review-loop"));
+  assert.equal(direct.expected.required_actions.includes("write_test"), false);
+  assert.deepEqual(direct.expected.required_write_paths, ["src/session.mjs"]);
+
+  const bypass = catalog.scenarios.find(
+    (scenario) => scenario.id === "edge-bypass-gates",
+  );
+  assert.deepEqual(bypass.expected.must_activate, []);
+  assert.ok(bypass.expected.must_not_activate.includes("close-review-loop"));
+
+  const reconciliation = catalog.scenarios.find(
+    (scenario) =>
+      scenario.id === "flexible-external-existing-reconciliation",
+  );
+  assert.deepEqual(reconciliation.expected.must_activate, [
+    "develop-project-brief",
+  ]);
+  assert.ok(
+    reconciliation.expected.must_not_activate.includes(
+      "run-autonomous-delivery",
+    ),
+  );
+
+  const discovery = catalog.scenarios.find(
+    (scenario) => scenario.id === "flexible-vague-discovery",
+  );
+  assert.deepEqual(discovery.expected.must_activate, [
+    "run-autonomous-delivery",
+    "develop-project-brief",
+  ]);
+
+  const secretAudit = catalog.scenarios.find(
+    (scenario) => scenario.id === "flexible-external-secret-redaction",
+  );
+  assert.deepEqual(secretAudit.expected.must_activate, [
+    "develop-project-brief",
+  ]);
+  assert.ok(
+    secretAudit.expected.must_not_activate.includes(
+      "run-autonomous-delivery",
+    ),
+  );
+
+  assert.ok(
+    direct.expected.required_outcomes.includes(
+      "independent_review_complete",
+    ),
+  );
+  assert.ok(
+    direct.expected.required_outputs.includes(
+      "independent_review_evidence",
+    ),
   );
 });
 

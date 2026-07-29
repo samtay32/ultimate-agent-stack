@@ -423,6 +423,14 @@
       "state": {}
     },
     {
+      "scenario_id": "flexible-simple-onboarding-approved",
+      "configuration": "uninstalled",
+      "project_kind": "empty-greenfield",
+      "files": [],
+      "artifact_files": [],
+      "state": {}
+    },
+    {
       "scenario_id": "flexible-external-secret-redaction",
       "configuration": "configured",
       "project_kind": "empty-greenfield",

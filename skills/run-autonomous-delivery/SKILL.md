@@ -66,6 +66,10 @@ Do not say "done" until all applicable conditions hold:
    - **DIRECT:** the request is clear, bounded, testable, and compatible with
      repository policy. Keep the existing micro-brief or compact shaping path.
      Do not require `BRIEF.md`.
+   A request explicitly limited to brief refinement, source audit, or
+   reconciliation invokes `$develop-project-brief` directly instead of this
+   controller and stops before delivery. Explanation-only work invokes neither
+   skill.
 3. **Shape, secure, and lock.** For an approved working brief, invoke
    `$shape-project` to promote it into the canonical delivery, architecture,
    security, verification, and decision contracts. Invoke `$shape-project`
@@ -90,11 +94,13 @@ Do not say "done" until all applicable conditions hold:
 8. **Review adversarially.** Review two axes independently:
    - standards: correctness, security, reliability, performance, maintainability, operations;
    - intent: acceptance criteria, non-goals, UX, migrations, documentation, compatibility.
+   This independent pre-PR review does not activate `$close-review-loop`.
 9. **Open or update the PR.** Use a draft while material work remains. Include intent, decisions, test evidence, migration/rollback notes, screenshots or recordings when visual behavior changed, and known risks.
 10. **Close feedback.** Apply `$close-review-loop` with the configured review
-    provider. Repair in bounded batches, re-run the full gate, push, re-trigger
-    review when the provider supports it, and repeat until the closure contract
-    is met.
+    provider only for an existing pull request or an external provider or human
+    review thread. Repair in bounded batches, re-run the full gate, push,
+    re-trigger review when the provider supports it, and repeat until the
+    closure contract is met.
 11. **Checkpoint and preserve learning.** After verified milestones, use
     `checkpoint --coordinator-token TOKEN` to record the objective, concise
     summary, completed work, decisions, next steps, blockers, and existing
@@ -114,6 +120,10 @@ operations.
 ## Control Rules
 
 - Make reasonable, reversible, evidence-backed implementation choices without interrupting the user.
+- A question asking the user to accept a recommendation ends the turn. Never
+  continue as if the agent's own recommendation were approval.
+- A prior explicit instruction such as "use the recommendation" is approval for
+  that recommendation and should not trigger the same question again.
 - Ask one consequential question at a time for a new or ambiguous project.
   Recommend the safest default in plain language, provide at most one genuinely
   safe alternative when useful, explain the consequence, and accept "use the
@@ -134,6 +144,11 @@ operations.
 - Preserve user-supplied sources unchanged. Persist only bounded redacted
   provenance and claim dispositions unless a repository copy is both needed
   and authorized.
+- Artifact status is only `DRAFT` or `APPROVED`; lock state exists only in the
+  protected CLI state. A rejected guard does not authorize editing its
+  prerequisites. Claims that something was added, fully read, reviewed,
+  locked, or made ready require the corresponding path and command/result
+  evidence.
 - Keep work-item and evidence-graph references current at verified transitions;
   do not copy remote payloads into repository state.
 - Never give the coordinator token to a subagent. A subagent is a bounded

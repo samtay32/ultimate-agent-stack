@@ -149,6 +149,15 @@ discover an omitted conflict, decide whether a source claim was normalized
 correctly, or prove that the person approving a brief has a particular legal
 identity.
 
+Installed instructions restrict artifact status to `DRAFT` or `APPROVED`,
+define lock state as protected CLI state, require an acceptance question to end
+the turn, and forbid treating a guard refusal as permission to rewrite its
+prerequisites. These are instruction-level rules. The CLI mechanically rejects
+a visible DRAFT at lock time, but it cannot prevent a model with ordinary file
+write access from dishonestly rewriting the artifact and trying again. Live
+behavioral evidence is therefore reported per exact harness and model rather
+than presented as a universal guarantee.
+
 For DISCOVER and EXTERNAL intake, the instructed workflow preserves source
 provenance and assigns every load-bearing source claim one of four dispositions:
 `kept`, `tightened`, `rejected`, or `deferred`. It reconciles those claims

@@ -13,7 +13,7 @@ All notable changes to Ultimate Agent Stack are documented here.
   product standards, approaches and tradeoffs, capabilities, constraints,
   assumptions, closed and open decisions, contradictions, production-versus-
   stub behavior, material source changes, and promotion readiness.
-- Twelve flexible-intake behavioral cases expand the catalog to 26 scenarios
+- Thirteen flexible-intake behavioral cases expand the catalog to 27 scenarios
   across 13 skills, covering discovery, brief-only work, detailed and complete
   external sources, contradictions, existing-code reconciliation, direct
   bypass, valid resume, draft-lock rejection, promotion, simple onboarding, and
@@ -33,7 +33,7 @@ All notable changes to Ultimate Agent Stack are documented here.
   templates are now part of the behavior-surface hash. New records use schema
   version 2; stale schema-version-1 records fail clearly instead of treating
   the newly required observations as implicit evidence.
-- All 26 behavioral scenarios now have deterministic, receipt-bound project
+- All 27 behavioral scenarios now have deterministic, receipt-bound project
   fixtures for comparable harness runs. External-provider behavior is tested
   portably as fail-closed telemetry health and Linear write preflight; live
   provider contact remains a separately authorized dogfood exercise.
@@ -42,9 +42,17 @@ All notable changes to Ultimate Agent Stack are documented here.
   and merge questions after that recommendation is approved. Advanced choices
   remain available when repository evidence or an explicit requirement makes
   them relevant.
+- Recommendation and approval are now separate behavioral boundaries: an agent
+  that asks for confirmation must wait, while an already explicit "use the
+  recommendation" request must not be asked again.
+- One route-aware workflow-loading contract now governs every harness adapter.
+  Brief-only work does not falsely start end-to-end delivery, implementation
+  and verification load their phase skills, and PR review closure starts only
+  after a pull request or review actually exists.
 - Broad flexible-intake behavior claims require complete live evidence from
-  both Codex and Claude Code on the current surface. Other harnesses remain
-  explicitly untested unless their own complete records are attached.
+  at least two distinct primary supported harnesses on the current surface. No
+  named harness is privileged; other supported harnesses remain explicitly
+  untested or limited unless their own complete records are attached.
 
 ### Security
 

@@ -93,14 +93,14 @@ function git(target, args) {
   return result.stdout.trim();
 }
 
-test("canonical catalog covers exactly all 26 current scenarios", () => {
+test("canonical catalog covers exactly all 27 current scenarios", () => {
   const catalog = fixtureCatalog();
   const fixtureIds = catalog.fixtures.map((fixture) => fixture.scenario_id);
   const scenarioIds = scenarios.scenarios.map((scenario) => scenario.id);
-  assert.equal(fixtureIds.length, 26);
-  assert.equal(EXPECTED_FIXTURE_IDS.size, 26);
+  assert.equal(fixtureIds.length, 27);
+  assert.equal(EXPECTED_FIXTURE_IDS.size, 27);
   assert.deepEqual(new Set(fixtureIds), new Set(scenarioIds));
-  assert.equal(fixtureIds.filter((id) => id.startsWith("flexible-")).length, 12);
+  assert.equal(fixtureIds.filter((id) => id.startsWith("flexible-")).length, 13);
   for (const id of fixtureIds) {
     assert.match(fixtureReceipt(id), /^sha256:[a-f0-9]{64}$/);
     assert.match(
@@ -227,6 +227,7 @@ test("all canonical fixtures materialize with deterministic base and git state",
         "indirect-setup",
         "existing-project-reconciliation",
         "flexible-simple-onboarding",
+        "flexible-simple-onboarding-approved",
       ].includes(scenario.id);
       assert.equal(
         existsSync(join(target, ".agent-stack", "installation.json")),
@@ -624,6 +625,7 @@ test("draft, approved promotion, onboarding, providers, and work evidence match 
       "indirect-setup",
       "existing-project-reconciliation",
       "flexible-simple-onboarding",
+      "flexible-simple-onboarding-approved",
     ]) {
       const target = join(temporary.directory, id);
       materializeFixture(id, target);

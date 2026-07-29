@@ -49,6 +49,11 @@ Resolve decisions that would otherwise cause rework. Do not turn every task into
     `Status: APPROVED` and `Material open conflicts: NO` only when those
     declarations are truthful. Lock before implementation.
 
+Only `DRAFT` and `APPROVED` are valid artifact status values. Promotion leaves
+an approved working brief `APPROVED`; it does not mark it `PROMOTED`. Mechanical
+lock state comes only from the protected `lock` command and must be confirmed
+with `check-lock` before it is reported.
+
 ## Quality Bar
 
 - Requirements describe observable behavior and have stable IDs where cross-file traceability matters.

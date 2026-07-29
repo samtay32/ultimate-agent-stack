@@ -20,6 +20,12 @@ cannot guarantee that every coding agent will follow conversational
 instructions, and it does not replace the agent harness's sandbox, repository
 permissions, backups, human judgment, or production access controls.
 
+The package is provider-neutral, not magically model-independent. Every
+adapter points to the same repository contract; no adapter receives weaker
+authority or evidence rules. Current live evidence identifies the exact
+harness and model tested. If a model cannot follow the shared contract safely,
+maintainers report the limitation instead of adding a vendor-specific bypass.
+
 ## First-Time Setup
 
 Open a dedicated project folder in Codex or another capable coding agent and
@@ -84,6 +90,11 @@ node .agent-stack/bin/agent-stack.mjs configure \
   --preset simple \
   --reason "Approved the recommended simple project configuration"
 ```
+
+The recommendation and its acceptance are separate turns unless your request
+already says to use the recommendation. A question asking "Use this?" ends the
+turn. A prior explicit instruction to use the recommended safe setup is the
+single approval and must not be asked again.
 
 You should not have to construct or interpret that command. The preset selects:
 

@@ -47,6 +47,46 @@ proportionate micro-brief path. RESUME continues the first unmet condition
 without reopening closed product decisions; completed state and a fully
 satisfied lock do not hijack a new request.
 
+## Workflow Loading
+
+Use one route-aware workflow contract across capable coding harnesses:
+
+- explanation-only work loads no delivery skill;
+- a request explicitly limited to brief refinement, source audit, or
+  reconciliation loads `$develop-project-brief` directly and stops before
+  delivery;
+- end-to-end delivery and RESUME load `$run-autonomous-delivery`;
+- entering implementation loads `$build-vertical-slice`;
+- entering verification loads `$verify-change`;
+- `$close-review-loop` loads only for an existing pull request or an external
+  provider or human review thread;
+- work readiness, evidence reports, and bounded campaign requests load
+  `$manage-project-work`.
+
+When the harness supports native skills, activate the applicable skill before
+acting. When it does not, read the same installed `SKILL.md` and retain its path
+and content hash as equivalent evidence. If the harness can do neither safely,
+report that capability limitation and stop the affected route; do not force a
+vendor-specific substitute or pretend activation occurred. Never report a
+skill as loaded merely because its name appeared in a prompt.
+
+In behavioral evidence, `activated_skills` may name either a native activation
+or a hash-bound read of that installed skill. The trace must retain which mode
+occurred plus the path and hash for a file load; never call a file read a native
+activation.
+
+A question that asks the user to accept a recommendation ends the turn. Do not
+continue as though the recommendation approved itself. A prior explicit
+instruction such as "use the recommendation" is approval and should not trigger
+the same question again.
+
+Artifact status is only `DRAFT` or `APPROVED`. "Locked" is state written by the
+protected CLI, not an artifact status. A failed guard command never authorizes
+editing its prerequisites. Do not claim that a test was added, a source was
+read completely, a review was closed, an artifact was locked, or a result is
+ready without the corresponding path and command/result evidence. Preserve
+verification receipts needed by the current handoff.
+
 ## Delivery Rules
 
 - Prefer the simplest production-grade solution.

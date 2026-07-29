@@ -37,7 +37,12 @@ const SOURCE_CLAIM_DISPOSITIONS = new Set([
 const CURRENT_RUN_RECORD_SCHEMA_VERSION = 2;
 const SHA256_RECEIPT = /^sha256:[a-f0-9]{64}$/;
 const GIT_COMMIT_ID = /^[a-f0-9]{40}$/;
-const ARTIFACT_STATUSES = new Set(["DRAFT", "APPROVED", "ABSENT"]);
+const ARTIFACT_STATUSES = new Set([
+  "DRAFT",
+  "APPROVED",
+  "ABSENT",
+  "INVALID",
+]);
 const ARTIFACT_LOCK_STATES = new Set([
   "unlocked",
   "locked",
@@ -323,7 +328,7 @@ function validateArtifactStates(value, location, errors) {
     }
     if (!ARTIFACT_STATUSES.has(artifact.status)) {
       errors.push(
-        `${itemLocation}.status must be DRAFT, APPROVED, or ABSENT`,
+        `${itemLocation}.status must be DRAFT, APPROVED, ABSENT, or INVALID`,
       );
     }
     if (!ARTIFACT_LOCK_STATES.has(artifact.lock_state)) {
@@ -864,6 +869,13 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
           "artifacts",
           findings,
         );
+        for (const artifact of asArray(observed.artifacts)) {
+          if (artifact?.status === "INVALID") {
+            findings.push(
+              `noncanonical artifact status was observed: ${artifact.path}`,
+            );
+          }
+        }
         validateSourceClaimDispositions(
           observed.source_claim_dispositions,
           "source_claim_dispositions",
