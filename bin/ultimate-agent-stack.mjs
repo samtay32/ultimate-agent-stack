@@ -461,6 +461,11 @@ function sha256(data) {
   return createHash("sha256").update(data).digest("hex");
 }
 
+function portableTextSha256(data) {
+  const text = Buffer.isBuffer(data) ? data.toString("utf8") : String(data);
+  return sha256(text.replaceAll("\r\n", "\n"));
+}
+
 function hashFile(file) {
   return sha256(readFileSync(file));
 }
@@ -4369,15 +4374,15 @@ function protectedProjectFileIssue(target, destination) {
   ) {
     return `${destination} is not recorded as an intact protected file`;
   }
-  if (
-    destination === LINEAR_READONLY_PATH &&
-    manifestEntry.source_hash !== LINEAR_READONLY_SOURCE_HASH
-  ) {
-    return `${destination} does not match the hash pinned in the protected CLI`;
-  }
   const file = pathInside(target, destination, "protected provider helper");
   if (!existsSync(file) || hashFile(file) !== manifestEntry.source_hash) {
     return `${destination} is missing or modified`;
+  }
+  if (
+    destination === LINEAR_READONLY_PATH &&
+    portableTextSha256(readFileSync(file)) !== LINEAR_READONLY_SOURCE_HASH
+  ) {
+    return `${destination} does not match the hash pinned in the protected CLI`;
   }
   if (existsSync(join(PACKAGE_ROOT, ".codex-plugin/plugin.json"))) {
     const claude = installation.harnesses?.includes("claude") ?? false;
@@ -6481,6 +6486,7 @@ export {
   main,
   normalizeWindowsExtensions,
   pathInside,
+  portableTextSha256,
   resolveConfigureOptions,
   resolveTarget,
   validateConfig,

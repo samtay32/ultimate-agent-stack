@@ -543,7 +543,7 @@ test("work and evidence contracts remain portable and provider-neutral", () => {
   assert.doesNotMatch(linearReadonlyHelper, /\bmutation\b/i);
   assert.match(linearReadonlyHelper, /https:\/\/api\.linear\.app\/graphql/);
   const linearReadonlyHash = createHash("sha256")
-    .update(linearReadonlyHelper)
+    .update(linearReadonlyHelper.replaceAll("\r\n", "\n"))
     .digest("hex");
   assert.match(packageCliSource, new RegExp(linearReadonlyHash));
   assert.equal(workItemSchema.additionalProperties, false);

@@ -59,6 +59,7 @@ import {
   loadInstallation,
   normalizeWindowsExtensions,
   pathInside,
+  portableTextSha256,
   resolveTarget,
   validateConfig,
   validateEvidenceGraph,
@@ -99,6 +100,17 @@ function readJson(file) {
 function hashText(text) {
   return createHash("sha256").update(text).digest("hex");
 }
+
+test("portable text hashes accept only line-ending differences", () => {
+  assert.equal(
+    portableTextSha256("one\ntwo\n"),
+    portableTextSha256("one\r\ntwo\r\n"),
+  );
+  assert.notEqual(
+    portableTextSha256("one\ntwo\n"),
+    portableTextSha256("one\nchanged\n"),
+  );
+});
 
 function safeParallelPolicy(overrides = {}) {
   return {
