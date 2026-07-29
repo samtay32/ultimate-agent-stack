@@ -11,11 +11,26 @@ import {
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { startPromptPolicySurface } from "../bin/ultimate-agent-stack.mjs";
+
 const SCRIPT_FILE = fileURLToPath(import.meta.url);
 const PACKAGE_ROOT = resolve(dirname(SCRIPT_FILE), "..");
 const SCENARIOS_FILE = join(PACKAGE_ROOT, "evals", "scenarios.json");
 const SKILLS_ROOT = join(PACKAGE_ROOT, "skills");
 const QUESTION_POLICIES = new Set(["allowed", "forbidden", "required"]);
+const SOURCE_CLAIM_DISPOSITIONS = new Set([
+  "kept",
+  "tightened",
+  "rejected",
+  "deferred",
+]);
+const ARTIFACT_STATUSES = new Set(["DRAFT", "APPROVED", "ABSENT"]);
+const ARTIFACT_LOCK_STATES = new Set([
+  "unlocked",
+  "locked",
+  "rejected",
+  "absent",
+]);
 const REQUIRED_CATEGORIES = new Set([
   "direct",
   "indirect",
@@ -112,6 +127,13 @@ function behaviorSurfaceEntries() {
   for (const projectPath of [
     "STARTER_PROMPT.md",
     "assets/project-template/.agent-stack/core-policy.json",
+    "assets/project-template/.agent-stack/HANDOFF.md",
+    "assets/project-template/.agent-stack/artifacts/ARCHITECTURE.md",
+    "assets/project-template/.agent-stack/artifacts/BRIEF.md",
+    "assets/project-template/.agent-stack/artifacts/DECISIONS.md",
+    "assets/project-template/.agent-stack/artifacts/DELIVERY.md",
+    "assets/project-template/.agent-stack/artifacts/SECURITY.md",
+    "assets/project-template/.agent-stack/artifacts/VERIFICATION.md",
     "assets/project-template/.claude/agents/uas-researcher.md",
     "assets/project-template/.codex/agents/uas_researcher.toml",
     "assets/project-template/.cursor/commands/deliver.md",
@@ -130,6 +152,10 @@ function behaviorSurfaceEntries() {
   entries.push([
     ".codex-plugin/plugin.behavior.json",
     Buffer.from(`${JSON.stringify(plugin, null, 2)}\n`),
+  ]);
+  entries.push([
+    ".agent-stack/start-prompt-policy.json",
+    Buffer.from(`${JSON.stringify(startPromptPolicySurface(), null, 2)}\n`),
   ]);
   return entries.sort(([left], [right]) => left.localeCompare(right));
 }
@@ -181,6 +207,102 @@ function stringArray(value) {
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
+}
+
+function nonNegativeInteger(value) {
+  return Number.isInteger(value) && value >= 0;
+}
+
+function safeScenarioPath(value, allowPattern = false) {
+  if (
+    !isNonEmptyString(value) ||
+    value.includes("\\") ||
+    value.startsWith("/") ||
+    /^[A-Za-z]:/.test(value) ||
+    value.includes("\0")
+  ) {
+    return false;
+  }
+  const path = allowPattern && value.endsWith("/**")
+    ? value.slice(0, -3)
+    : value;
+  return (
+    path.length > 0 &&
+    path.split("/").every((part) => part && part !== "." && part !== "..")
+  );
+}
+
+function matchesPathPattern(path, pattern) {
+  return pattern.endsWith("/**")
+    ? path === pattern.slice(0, -3) ||
+        path.startsWith(`${pattern.slice(0, -3)}/`)
+    : path === pattern;
+}
+
+function validateArtifactStates(value, location, errors) {
+  if (value === undefined) {
+    return;
+  }
+  if (!Array.isArray(value)) {
+    errors.push(`${location} must be an array`);
+    return;
+  }
+  const paths = new Set();
+  for (const [index, artifact] of value.entries()) {
+    const itemLocation = `${location}[${index}]`;
+    if (
+      !artifact ||
+      typeof artifact !== "object" ||
+      Array.isArray(artifact)
+    ) {
+      errors.push(`${itemLocation} must be an object`);
+      continue;
+    }
+    if (!safeScenarioPath(artifact.path)) {
+      errors.push(`${itemLocation}.path must be a safe project-relative path`);
+    } else if (paths.has(artifact.path)) {
+      errors.push(`${location} duplicates artifact path ${artifact.path}`);
+    } else {
+      paths.add(artifact.path);
+    }
+    if (!ARTIFACT_STATUSES.has(artifact.status)) {
+      errors.push(
+        `${itemLocation}.status must be DRAFT, APPROVED, or ABSENT`,
+      );
+    }
+    if (!ARTIFACT_LOCK_STATES.has(artifact.lock_state)) {
+      errors.push(
+        `${itemLocation}.lock_state must be unlocked, locked, rejected, or absent`,
+      );
+    }
+  }
+}
+
+function validateSourceClaimDispositions(value, location, errors) {
+  if (!Array.isArray(value)) {
+    errors.push(`${location} must be an array`);
+    return;
+  }
+  const ids = new Set();
+  for (const [index, claim] of value.entries()) {
+    const itemLocation = `${location}[${index}]`;
+    if (!claim || typeof claim !== "object" || Array.isArray(claim)) {
+      errors.push(`${itemLocation} must be an object`);
+      continue;
+    }
+    if (!isNonEmptyString(claim.id)) {
+      errors.push(`${itemLocation}.id must be a non-empty string`);
+    } else if (ids.has(claim.id)) {
+      errors.push(`${location} duplicates source claim ${claim.id}`);
+    } else {
+      ids.add(claim.id);
+    }
+    if (!SOURCE_CLAIM_DISPOSITIONS.has(claim.disposition)) {
+      errors.push(
+        `${itemLocation}.disposition must be kept, tightened, rejected, or deferred`,
+      );
+    }
+  }
 }
 
 function validateScenarioCatalog(catalog = readJson(SCENARIOS_FILE)) {
@@ -262,6 +384,57 @@ function validateScenarioCatalog(catalog = readJson(SCENARIOS_FILE)) {
         `${location}.expected.question must be allowed, forbidden, or required`,
       );
     }
+    for (const field of [
+      "required_question_tags",
+      "forbidden_question_tags",
+      "forbidden_write_paths",
+      "required_outputs",
+      "required_source_claim_ids",
+    ]) {
+      if (
+        expected[field] !== undefined &&
+        !stringArray(expected[field])
+      ) {
+        errors.push(
+          `${location}.expected.${field} must be a unique string array`,
+        );
+      }
+    }
+    for (const pattern of asArray(expected.forbidden_write_paths)) {
+      if (!safeScenarioPath(pattern, true)) {
+        errors.push(
+          `${location}.expected.forbidden_write_paths contains an unsafe pattern`,
+        );
+      }
+    }
+    for (const field of [
+      "minimum_questions",
+      "maximum_questions",
+      "maximum_questions_per_turn",
+    ]) {
+      if (
+        expected[field] !== undefined &&
+        !nonNegativeInteger(expected[field])
+      ) {
+        errors.push(
+          `${location}.expected.${field} must be a non-negative integer`,
+        );
+      }
+    }
+    if (
+      nonNegativeInteger(expected.minimum_questions) &&
+      nonNegativeInteger(expected.maximum_questions) &&
+      expected.minimum_questions > expected.maximum_questions
+    ) {
+      errors.push(
+        `${location}.expected minimum_questions cannot exceed maximum_questions`,
+      );
+    }
+    validateArtifactStates(
+      expected.required_artifact_states,
+      `${location}.expected.required_artifact_states`,
+      errors,
+    );
     if (
       mustActivateNames.length === 0 &&
       new Set(mustNotActivateNames).size === skills.size
@@ -358,6 +531,9 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
           "activated_skills",
           "performed_actions",
           "outcome_tags",
+          "question_tags",
+          "written_paths",
+          "observable_outputs",
         ]) {
           if (!stringArray(observed[field])) {
             findings.push(`${field} must be a unique string array`);
@@ -366,6 +542,59 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
         if (typeof observed.asked_clarifying_question !== "boolean") {
           findings.push("asked_clarifying_question must be boolean");
         }
+        if (!nonNegativeInteger(observed.question_count)) {
+          findings.push("question_count must be a non-negative integer");
+        }
+        if (!nonNegativeInteger(observed.max_questions_in_turn)) {
+          findings.push(
+            "max_questions_in_turn must be a non-negative integer",
+          );
+        }
+        if (
+          nonNegativeInteger(observed.question_count) &&
+          observed.asked_clarifying_question !==
+            (observed.question_count > 0)
+        ) {
+          findings.push(
+            "asked_clarifying_question must agree with question_count",
+          );
+        }
+        if (
+          nonNegativeInteger(observed.question_count) &&
+          nonNegativeInteger(observed.max_questions_in_turn) &&
+          observed.max_questions_in_turn > observed.question_count
+        ) {
+          findings.push(
+            "max_questions_in_turn cannot exceed question_count",
+          );
+        }
+        if (
+          nonNegativeInteger(observed.question_count) &&
+          nonNegativeInteger(observed.max_questions_in_turn) &&
+          observed.question_count > 0 &&
+          observed.max_questions_in_turn === 0
+        ) {
+          findings.push(
+            "max_questions_in_turn must be at least 1 when question_count is positive",
+          );
+        }
+        for (const path of asArray(observed.written_paths)) {
+          if (!safeScenarioPath(path)) {
+            findings.push(
+              `written_paths contains an unsafe project-relative path: ${path}`,
+            );
+          }
+        }
+        validateArtifactStates(
+          observed.artifacts,
+          "artifacts",
+          findings,
+        );
+        validateSourceClaimDispositions(
+          observed.source_claim_dispositions,
+          "source_claim_dispositions",
+          findings,
+        );
         const activated = new Set(asArray(observed.activated_skills));
         for (const name of activated) {
           if (!skills.has(name)) {
@@ -394,6 +623,48 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
         ) {
           findings.push("a clarifying question was forbidden");
         }
+        if (
+          nonNegativeInteger(scenario?.expected?.minimum_questions) &&
+          observed.question_count < scenario.expected.minimum_questions
+        ) {
+          findings.push(
+            `at least ${scenario.expected.minimum_questions} question(s) were required`,
+          );
+        }
+        if (
+          nonNegativeInteger(scenario?.expected?.maximum_questions) &&
+          observed.question_count > scenario.expected.maximum_questions
+        ) {
+          findings.push(
+            `at most ${scenario.expected.maximum_questions} question(s) were allowed`,
+          );
+        }
+        if (
+          nonNegativeInteger(
+            scenario?.expected?.maximum_questions_per_turn,
+          ) &&
+          observed.max_questions_in_turn >
+            scenario.expected.maximum_questions_per_turn
+        ) {
+          findings.push(
+            `at most ${scenario.expected.maximum_questions_per_turn} question(s) were allowed per turn`,
+          );
+        }
+        const questionTags = new Set(asArray(observed.question_tags));
+        for (const tag of asArray(
+          scenario?.expected?.required_question_tags,
+        )) {
+          if (!questionTags.has(tag)) {
+            findings.push(`required question tag was not observed: ${tag}`);
+          }
+        }
+        for (const tag of asArray(
+          scenario?.expected?.forbidden_question_tags,
+        )) {
+          if (questionTags.has(tag)) {
+            findings.push(`forbidden question tag was observed: ${tag}`);
+          }
+        }
         const actions = new Set(asArray(observed.performed_actions));
         for (const action of asArray(scenario?.expected?.forbidden_actions)) {
           if (actions.has(action)) {
@@ -404,6 +675,63 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
         for (const outcome of asArray(scenario?.expected?.required_outcomes)) {
           if (!outcomes.has(outcome)) {
             findings.push(`required outcome was not observed: ${outcome}`);
+          }
+        }
+        for (const pattern of asArray(
+          scenario?.expected?.forbidden_write_paths,
+        )) {
+          for (const path of asArray(observed.written_paths)) {
+            if (matchesPathPattern(path, pattern)) {
+              findings.push(
+                `forbidden write path was observed: ${path} matched ${pattern}`,
+              );
+            }
+          }
+        }
+        const artifacts = new Map(
+          asArray(observed.artifacts).map((artifact) => [
+            artifact?.path,
+            artifact,
+          ]),
+        );
+        for (const required of asArray(
+          scenario?.expected?.required_artifact_states,
+        )) {
+          const actual = artifacts.get(required.path);
+          if (!actual) {
+            findings.push(
+              `required artifact state was not observed: ${required.path}`,
+            );
+          } else if (
+            actual.status !== required.status ||
+            actual.lock_state !== required.lock_state
+          ) {
+            findings.push(
+              `artifact ${required.path} expected ${required.status}/${required.lock_state} but observed ${actual.status}/${actual.lock_state}`,
+            );
+          }
+        }
+        const outputs = new Set(asArray(observed.observable_outputs));
+        for (const output of asArray(
+          scenario?.expected?.required_outputs,
+        )) {
+          if (!outputs.has(output)) {
+            findings.push(`required observable output was absent: ${output}`);
+          }
+        }
+        const claimDispositions = new Map(
+          asArray(observed.source_claim_dispositions).map((claim) => [
+            claim?.id,
+            claim?.disposition,
+          ]),
+        );
+        for (const claimId of asArray(
+          scenario?.expected?.required_source_claim_ids,
+        )) {
+          if (!claimDispositions.has(claimId)) {
+            findings.push(
+              `required source claim was not accounted for: ${claimId}`,
+            );
           }
         }
       }
@@ -457,8 +785,15 @@ function buildScaffold(catalog = readJson(SCENARIOS_FILE)) {
       observed: {
         activated_skills: [],
         asked_clarifying_question: false,
+        question_count: 0,
+        max_questions_in_turn: 0,
+        question_tags: [],
         performed_actions: [],
+        written_paths: [],
+        artifacts: [],
         outcome_tags: [],
+        observable_outputs: [],
+        source_claim_dispositions: [],
       },
       evidence: {
         summary: "Replace with a concise observation grounded in the run.",
@@ -525,6 +860,7 @@ if (isEntryPoint) {
 }
 
 export {
+  behaviorSurfaceEntries,
   behaviorSurfaceHash,
   buildScaffold,
   hashBehaviorEntries,

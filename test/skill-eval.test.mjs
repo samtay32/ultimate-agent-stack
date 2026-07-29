@@ -5,6 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  behaviorSurfaceEntries,
   behaviorSurfaceHash,
   buildScaffold,
   hashBehaviorEntries,
@@ -31,9 +32,31 @@ function passingRecord() {
     observed: {
       activated_skills: [...scenario.expected.must_activate],
       asked_clarifying_question:
-        scenario.expected.question === "required",
+        (scenario.expected.minimum_questions ??
+          (scenario.expected.question === "required" ? 1 : 0)) > 0,
+      question_count:
+        scenario.expected.minimum_questions ??
+        (scenario.expected.question === "required" ? 1 : 0),
+      max_questions_in_turn:
+        (scenario.expected.minimum_questions ??
+          (scenario.expected.question === "required" ? 1 : 0)) > 0
+          ? 1
+          : 0,
+      question_tags: [
+        ...(scenario.expected.required_question_tags ?? []),
+      ],
       performed_actions: [],
+      written_paths: [],
+      artifacts: structuredClone(
+        scenario.expected.required_artifact_states ?? [],
+      ),
       outcome_tags: [...scenario.expected.required_outcomes],
+      observable_outputs: [
+        ...(scenario.expected.required_outputs ?? []),
+      ],
+      source_claim_dispositions: (
+        scenario.expected.required_source_claim_ids ?? []
+      ).map((id) => ({ id, disposition: "kept" })),
     },
     evidence: {
       summary: `Observed ${scenario.id} in the test harness.`,
@@ -46,8 +69,8 @@ function passingRecord() {
 test("behavioral scenario contracts cover activation and false activation", () => {
   const result = validateScenarioCatalog(catalog);
   assert.equal(result.ok, true, result.errors.join("\n"));
-  assert.equal(result.scenario_count, 14);
-  assert.equal(result.skill_count, 12);
+  assert.equal(result.scenario_count, 26);
+  assert.equal(result.skill_count, 13);
   assert.deepEqual(result.categories, [
     "authority",
     "continuity",
@@ -152,6 +175,37 @@ test("behavior surface paths fail with a clear missing-path error", () => {
   );
 });
 
+test("behavior surface includes installed handoff and runtime start prompts", () => {
+  const entries = behaviorSurfaceEntries();
+  const paths = new Set(entries.map(([path]) => path));
+  assert.ok(
+    paths.has("assets/project-template/.agent-stack/HANDOFF.md"),
+  );
+  assert.ok(paths.has(".agent-stack/start-prompt-policy.json"));
+  const promptEntry = entries.find(
+    ([path]) => path === ".agent-stack/start-prompt-policy.json",
+  );
+  const promptPolicy = JSON.parse(promptEntry[1].toString("utf8"));
+  assert.match(promptPolicy.continuity.in_progress, /Resume checkpoint/);
+  assert.doesNotMatch(promptPolicy.continuity.complete, /Resume checkpoint/);
+  assert.match(promptPolicy.continuity.complete, /historical context only/);
+  assert.match(
+    promptPolicy.continuity.complete,
+    /Do not resume it or let it hijack the current request/,
+  );
+
+  const changedPrompt = entries.map(([path, content]) => [
+    path,
+    path === ".agent-stack/start-prompt-policy.json"
+      ? Buffer.from(`${content.toString("utf8")}\nchanged prompt policy\n`)
+      : content,
+  ]);
+  assert.notEqual(
+    hashBehaviorEntries(changedPrompt),
+    hashBehaviorEntries(entries),
+  );
+});
+
 test("skill metadata and surface hashes are stable across line endings", () => {
   const lf = "---\nname: example\ndescription: Example skill.\n---\n";
   const crlf = lf.replaceAll("\n", "\r\n");
@@ -183,8 +237,8 @@ test("a complete live run record passes against the current behavior surface", (
   const result = validateRunRecord(passingRecord(), catalog);
   assert.equal(result.ok, true, JSON.stringify(result, null, 2));
   assert.deepEqual(result.summary, {
-    total: 14,
-    passed: 14,
+    total: 26,
+    passed: 26,
     failed: 0,
   });
   assert.equal(result.surface_hash, behaviorSurfaceHash());
@@ -216,11 +270,18 @@ test("telemetry diagnosis requires explicit activation and rejects project write
   telemetry.observed = {
     activated_skills: ["use-project-telemetry"],
     asked_clarifying_question: false,
+    question_count: 0,
+    max_questions_in_turn: 0,
+    question_tags: [],
     performed_actions: [],
+    written_paths: [],
+    artifacts: [],
     outcome_tags: [
       "telemetry_scope_health",
       "telemetry_observation_receipt",
     ],
+    observable_outputs: [],
+    source_claim_dispositions: [],
   };
   assert.equal(validateRunRecord(record, catalog).ok, true);
 
@@ -290,6 +351,147 @@ test("incomplete intent fails when the agent does not ask a question", () => {
   assert.match(
     JSON.stringify(result),
     /required clarifying question was not asked/,
+  );
+});
+
+test("flexible intake enforces one-question bounds and rejects provider-tour questions", () => {
+  const record = passingRecord();
+  const discovery = record.cases.find(
+    (item) => item.scenario_id === "flexible-vague-discovery",
+  );
+  discovery.observed.max_questions_in_turn = 2;
+  discovery.observed.question_tags.push("provider_tour");
+  const result = validateRunRecord(record, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /at most 1 question\(s\) were allowed per turn/,
+  );
+  assert.match(
+    JSON.stringify(result),
+    /forbidden question tag was observed: provider_tour/,
+  );
+});
+
+test("router boundary cases fail on brief false activation or completed-work resume", () => {
+  const record = passingRecord();
+  const direct = record.cases.find(
+    (item) => item.scenario_id === "flexible-direct-bypass",
+  );
+  direct.observed.activated_skills.push("develop-project-brief");
+  direct.observed.performed_actions.push("resume_completed_work");
+  const result = validateRunRecord(record, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /forbidden skill activated: develop-project-brief/,
+  );
+  assert.match(
+    JSON.stringify(result),
+    /forbidden action was performed: resume_completed_work/,
+  );
+});
+
+test("explicit advanced-provider setup rejects the combined simple confirmation", () => {
+  const record = passingRecord();
+  const setup = record.cases.find(
+    (item) => item.scenario_id === "indirect-setup",
+  );
+  setup.observed.question_tags.push("combined_simple_setup_confirmation");
+  const result = validateRunRecord(record, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /forbidden question tag was observed: combined_simple_setup_confirmation/,
+  );
+});
+
+test("flexible intake evaluates prohibited writes, artifact state, and observable output", () => {
+  const record = passingRecord();
+  const reconciliation = record.cases.find(
+    (item) =>
+      item.scenario_id === "flexible-external-existing-reconciliation",
+  );
+  reconciliation.observed.written_paths.push("docs/source-prd.md");
+  reconciliation.observed.artifacts[0].status = "APPROVED";
+  reconciliation.observed.observable_outputs =
+    reconciliation.observed.observable_outputs.filter(
+      (output) => output !== "material_conflict_report",
+    );
+  const result = validateRunRecord(record, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /forbidden write path was observed: docs\/source-prd\.md/,
+  );
+  assert.match(
+    JSON.stringify(result),
+    /expected DRAFT\/unlocked but observed APPROVED\/unlocked/,
+  );
+  assert.match(
+    JSON.stringify(result),
+    /required observable output was absent: material_conflict_report/,
+  );
+});
+
+test("external intake requires one valid disposition for every load-bearing source claim", () => {
+  const missing = passingRecord();
+  const detailed = missing.cases.find(
+    (item) => item.scenario_id === "flexible-external-detailed-prd",
+  );
+  detailed.observed.source_claim_dispositions.pop();
+  let result = validateRunRecord(missing, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /required source claim was not accounted for: SRC-3/,
+  );
+
+  const duplicated = passingRecord();
+  const duplicatedDetailed = duplicated.cases.find(
+    (item) => item.scenario_id === "flexible-external-detailed-prd",
+  );
+  duplicatedDetailed.observed.source_claim_dispositions.push({
+    id: "SRC-1",
+    disposition: "invented",
+  });
+  result = validateRunRecord(duplicated, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /duplicates source claim SRC-1/,
+  );
+  assert.match(
+    JSON.stringify(result),
+    /disposition must be kept, tightened, rejected, or deferred/,
+  );
+});
+
+test("flexible-intake scenario expectations reject unsafe paths and malformed bounds", () => {
+  const broken = structuredClone(catalog);
+  const discovery = broken.scenarios.find(
+    (item) => item.id === "flexible-vague-discovery",
+  );
+  discovery.expected.forbidden_write_paths = [
+    "../outside",
+    "C:/outside",
+  ];
+  discovery.expected.minimum_questions = 2;
+  discovery.expected.maximum_questions = 1;
+  discovery.expected.required_artifact_states[0].lock_state = "pretend";
+  const result = validateScenarioCatalog(broken);
+  assert.equal(result.ok, false);
+  assert.match(
+    result.errors.join("\n"),
+    /forbidden_write_paths contains an unsafe pattern/,
+  );
+  assert.match(
+    result.errors.join("\n"),
+    /minimum_questions cannot exceed maximum_questions/,
+  );
+  assert.match(
+    result.errors.join("\n"),
+    /lock_state must be unlocked, locked, rejected, or absent/,
   );
 });
 
@@ -366,6 +568,7 @@ test("malformed run arrays fail closed with structured findings", () => {
   malformedObserved.cases[0].observed.activated_skills = {};
   malformedObserved.cases[0].observed.performed_actions = {};
   malformedObserved.cases[0].observed.outcome_tags = {};
+  malformedObserved.cases[0].observed.max_questions_in_turn = 1;
   result = validateRunRecord(malformedObserved, catalog);
   assert.equal(result.ok, false);
   assert.match(
@@ -379,6 +582,21 @@ test("malformed run arrays fail closed with structured findings", () => {
   assert.match(
     JSON.stringify(result),
     /outcome_tags must be a unique string array/,
+  );
+  assert.match(
+    JSON.stringify(result),
+    /max_questions_in_turn cannot exceed question_count/,
+  );
+
+  const hiddenQuestionBurst = passingRecord();
+  hiddenQuestionBurst.cases[0].observed.asked_clarifying_question = true;
+  hiddenQuestionBurst.cases[0].observed.question_count = 1;
+  hiddenQuestionBurst.cases[0].observed.max_questions_in_turn = 0;
+  result = validateRunRecord(hiddenQuestionBurst, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /max_questions_in_turn must be at least 1 when question_count is positive/,
   );
 });
 

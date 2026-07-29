@@ -84,6 +84,57 @@ const runDeliverySkill = readFileSync(
   join(PACKAGE_ROOT, "skills/run-autonomous-delivery/SKILL.md"),
   "utf8",
 );
+const deliveryPolicy = readFileSync(
+  join(
+    PACKAGE_ROOT,
+    "skills/run-autonomous-delivery/references/delivery-policy.md",
+  ),
+  "utf8",
+);
+const developBriefSkill = readFileSync(
+  join(PACKAGE_ROOT, "skills/develop-project-brief/SKILL.md"),
+  "utf8",
+);
+const briefContract = readFileSync(
+  join(
+    PACKAGE_ROOT,
+    "skills/develop-project-brief/references/brief-contract.md",
+  ),
+  "utf8",
+);
+const intakeReconciliation = readFileSync(
+  join(
+    PACKAGE_ROOT,
+    "skills/develop-project-brief/references/intake-and-reconciliation.md",
+  ),
+  "utf8",
+);
+const briefTemplate = readFileSync(
+  join(
+    PACKAGE_ROOT,
+    "assets/project-template/.agent-stack/artifacts/BRIEF.md",
+  ),
+  "utf8",
+);
+const decisionsTemplate = readFileSync(
+  join(
+    PACKAGE_ROOT,
+    "assets/project-template/.agent-stack/artifacts/DECISIONS.md",
+  ),
+  "utf8",
+);
+const shapeProjectSkill = readFileSync(
+  join(PACKAGE_ROOT, "skills/shape-project/SKILL.md"),
+  "utf8",
+);
+const buildSliceSkill = readFileSync(
+  join(PACKAGE_ROOT, "skills/build-vertical-slice/SKILL.md"),
+  "utf8",
+);
+const verifyChangeSkill = readFileSync(
+  join(PACKAGE_ROOT, "skills/verify-change/SKILL.md"),
+  "utf8",
+);
 const setupProjectSkill = readFileSync(
   join(PACKAGE_ROOT, "skills/setup-autonomous-project/SKILL.md"),
   "utf8",
@@ -111,11 +162,23 @@ const starterPrompt = readFileSync(
   join(PACKAGE_ROOT, "STARTER_PROMPT.md"),
   "utf8",
 );
+const handoffTemplate = readFileSync(
+  join(PACKAGE_ROOT, "assets/project-template/.agent-stack/HANDOFF.md"),
+  "utf8",
+);
 const projectAgents = readFileSync(
   join(PACKAGE_ROOT, "assets/project-template/AGENTS.md"),
   "utf8",
 );
 const readme = readFileSync(join(PACKAGE_ROOT, "README.md"), "utf8");
+const trustGuide = readFileSync(
+  join(PACKAGE_ROOT, "docs/TRUST.md"),
+  "utf8",
+);
+const sourcesAndTradeoffs = readFileSync(
+  join(PACKAGE_ROOT, "docs/SOURCES_AND_TRADEOFFS.md"),
+  "utf8",
+);
 const behavioralEvals = readFileSync(
   join(PACKAGE_ROOT, "docs/BEHAVIORAL_EVALS.md"),
   "utf8",
@@ -380,6 +443,170 @@ test("plain-language entry skills permit implicit activation", () => {
   for (const adapter of plainLanguageEntryAdapters) {
     assert.match(adapter, /allow_implicit_invocation:\s*true\b/);
   }
+});
+
+test("flexible intake stays ordered, proportionate, and source preserving", () => {
+  for (const source of [
+    runDeliverySkill,
+    deliveryPolicy,
+    packageCliSource,
+    starterPrompt,
+    projectAgents,
+    handoffTemplate,
+  ]) {
+    let previous = -1;
+    for (const marker of ["RESUME", "EXTERNAL", "DISCOVER", "DIRECT"]) {
+      const current = source.indexOf(marker, previous + 1);
+      assert.ok(
+        current > previous,
+        `${marker} must follow the preceding intake mode`,
+      );
+      previous = current;
+    }
+  }
+
+  assert.match(developBriefSkill, /references\/brief-contract\.md/);
+  assert.match(developBriefSkill, /references\/intake-and-reconciliation\.md/);
+  assert.match(
+    developBriefSkill,
+    /brief-only request may invoke this skill directly without starting the\s+delivery controller/,
+  );
+  assert.match(
+    developBriefSkill,
+    /RESUME and clear bounded DIRECT delivery do not create/,
+  );
+  assert.match(developBriefSkill, /preserve the source unchanged/);
+  assert.match(intakeReconciliation, /already implemented/);
+  assert.match(intakeReconciliation, /material conflict/);
+  assert.match(
+    intakeReconciliation,
+    /Do not edit it unless the user explicitly asks/,
+  );
+  assert.match(briefContract, /does not replace[\s\S]*`DELIVERY\.md`/);
+  assert.match(briefContract, /Do not keep two independently editable binding copies/);
+
+  for (const source of [
+    runDeliverySkill,
+    deliveryPolicy,
+    packageCliSource,
+    starterPrompt,
+    projectAgents,
+    handoffTemplate,
+    readme,
+    operatingManual,
+  ]) {
+    assert.match(
+      source,
+      /unmet\s+(?:done(?:\s+or\s+|\/)evidence|done\/evidence|condition)/i,
+    );
+    assert.match(
+      source,
+      /supporting\s+screenshot, log, or\s+attachment|screenshot, log, or\s+attachment that merely supports/i,
+    );
+    assert.match(
+      source,
+      /clear\s+bounded\s+work\s+remains DIRECT|bounded\s+work\s+remains direct/i,
+    );
+  }
+});
+
+test("working brief and lock guidance preserve honest promotion boundaries", () => {
+  for (const marker of [
+    "Status: DRAFT",
+    "Intake mode: DISCOVER",
+    "Material open conflicts: YES",
+  ]) {
+    assert.match(briefTemplate, new RegExp(marker));
+  }
+  for (const disposition of ["kept", "tightened", "rejected", "deferred"]) {
+    assert.match(briefContract, new RegExp(`\\b${disposition}\\b`));
+    assert.match(briefTemplate, new RegExp(`\\b${disposition}\\b`, "i"));
+    assert.match(sourcesAndTradeoffs, new RegExp(`\\b${disposition}\\b`, "i"));
+  }
+  assert.match(
+    trustGuide,
+    /rejects a selected artifact with an\s+explicit `Status: DRAFT` marker/,
+  );
+  assert.match(trustGuide, /`Material open conflicts: YES`/);
+  assert.match(trustGuide, /unresolved\s+double-bracket placeholders/);
+  assert.match(trustGuide, /does not understand whether the prose is complete/);
+  assert.match(trustGuide, /does not\s+cryptographically authenticate/);
+  assert.match(briefContract, /does not understand the truth of prose/);
+  assert.match(briefContract, /does not[\s\S]*authenticate the approver/);
+});
+
+test("simple onboarding uses one combined recommendation only without a requested advanced provider", () => {
+  const combinedRecommendation =
+    /I recommend the private repository-only setup\. It uses no outside memory,\s+tracking, or telemetry, and you retain merge control\. Use this\?/;
+  for (const source of [
+    setupProjectSkill,
+    packageCliSource,
+    readme,
+    starterPrompt,
+    handoffTemplate,
+  ]) {
+    const withoutMarkdownQuotes = source.replace(/^\s*>\s?/gm, "");
+    assert.match(withoutMarkdownQuotes, combinedRecommendation);
+    assert.match(
+      source,
+      /user\s+has not requested a relevant advanced provider/i,
+    );
+  }
+  for (const source of [
+    setupProjectSkill,
+    packageCliSource,
+    starterPrompt,
+    readme,
+    operatingManual,
+  ]) {
+    assert.match(
+      source,
+      /explicit(?:ly)? request(?:s| for)?(?: a)? relevant\s+advanced provider|user explicitly requests it|explicit request for a relevant\s+advanced provider takes precedence/i,
+    );
+  }
+  assert.match(
+    setupProjectSkill,
+    /Do not then ask separate questions about GBrain, Linear, telemetry/,
+  );
+  assert.match(
+    packageCliSource,
+    /do not separately ask about GBrain, Linear, telemetry/,
+  );
+});
+
+test("closed decisions remain canonical and are consumed downstream", () => {
+  assert.match(decisionsTemplate, /## Closed Product Decisions/);
+  assert.match(decisionsTemplate, /Do not reopen without product-owner instruction/);
+  assert.match(decisionsTemplate, /## Changes to Previously Locked Intent/);
+  for (const source of [
+    shapeProjectSkill,
+    buildSliceSkill,
+    verifyChangeSkill,
+  ]) {
+    assert.match(source, /\.agent-stack\/artifacts\/DECISIONS\.md/);
+  }
+  for (const source of [shapeProjectSkill, buildSliceSkill]) {
+    assert.match(source, /Do not reopen|do not reopen/);
+  }
+  assert.match(verifyChangeSkill, /preserved each governing closed decision/);
+  assert.match(closeReviewSkill, /closed decisions/);
+});
+
+test("packed installs cover flexible intake and live evidence stays harness-scoped", () => {
+  for (const packagedPath of [
+    "assets/project-template/.agent-stack/artifacts/BRIEF.md",
+    "skills/develop-project-brief/SKILL.md",
+    "skills/develop-project-brief/references/brief-contract.md",
+    "skills/develop-project-brief/references/intake-and-reconciliation.md",
+  ]) {
+    assert.match(packedSmoke, new RegExp(packagedPath.replaceAll(".", "\\.")));
+  }
+  assert.match(packedSmoke, /rejected packed DRAFT lock wrote active state/);
+  assert.match(
+    trustGuide,
+    /live runs from Codex and at least\s+one other primary supported harness/,
+  );
+  assert.match(trustGuide, /must not\s+be generalized to another harness/);
 });
 
 test("review receipt workflow never executes the pull request copy of its gate", () => {

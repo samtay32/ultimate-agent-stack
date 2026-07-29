@@ -564,12 +564,31 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
     );
     assert.equal(onboardingStart.phase, "onboarding");
     assert.match(onboardingStart.prompt, /at most one genuinely safe alternative/);
-    assert.match(onboardingStart.prompt, /private local searchable memory/);
-    assert.match(onboardingStart.prompt, /also read approved work from Linear/);
     assert.match(
       onboardingStart.prompt,
-      /already use PostHog, Sentry, or New Relic/,
+      /I recommend the private repository-only setup\. It uses no outside memory, tracking, or telemetry, and you retain merge control\. Use this\?/,
     );
+    assert.match(
+      onboardingStart.prompt,
+      /user has not requested a relevant advanced provider/,
+    );
+    assert.match(
+      onboardingStart.prompt,
+      /user explicitly requests it/,
+    );
+    assert.doesNotMatch(
+      onboardingStart.prompt,
+      /Should this project remember progress/,
+    );
+    assert.doesNotMatch(
+      onboardingStart.prompt,
+      /Should this project keep its task list/,
+    );
+    assert.doesNotMatch(
+      onboardingStart.prompt,
+      /Does this deployed project already use/,
+    );
+    assert.equal(onboardingStart.prompt.match(/\?/g)?.length, 1);
 
     const capabilities = commandCapabilities(fixture.directory);
     assert.equal(capabilities.available.review.builtin.available, true);
@@ -641,7 +660,16 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
     assert.match(start.prompt, /\$run-autonomous-delivery/);
     assert.match(start.prompt, /\$coordinate-parallel-delivery/);
     assert.match(start.prompt, /\$use-project-knowledge/);
+    assert.match(start.prompt, /RESUME[\s\S]*EXTERNAL[\s\S]*DISCOVER[\s\S]*DIRECT/);
+    assert.match(start.prompt, /\$develop-project-brief only for EXTERNAL or DISCOVER/);
+    assert.match(start.prompt, /active lock with an unmet done\/evidence condition/);
+    assert.match(start.prompt, /supporting screenshot, log, or attachment/);
+    assert.match(
+      start.prompt,
+      /clear bounded work remains DIRECT in a new or empty repository/,
+    );
     assert.match(start.prompt, /at most one genuinely useful safe alternative/);
+    assert.doesNotMatch(start.prompt, /private repository-only setup/);
   } finally {
     fixture.cleanup();
   }
@@ -715,6 +743,134 @@ test("one active Project Steward owns a checkout and stale leases recover", () =
   }
 });
 
+test("artifact locks reject drafts, open conflicts, and mixed-case placeholders without mutating the active lock", () => {
+  const fixture = temporaryProject();
+  try {
+    configureFixture(fixture.directory);
+    fillLockArtifacts(fixture.directory);
+    const delivery = join(
+      fixture.directory,
+      ".agent-stack",
+      "artifacts",
+      "DELIVERY.md",
+    );
+
+    const initial = commandLock(fixture.directory, []);
+    assert.equal(initial.ok, true);
+    const stateFile = join(fixture.directory, ".agent-stack", "state.json");
+    const stateBeforeRejections = readFileSync(stateFile, "utf8");
+
+    writeFileSync(
+      delivery,
+      [
+        "# Delivery",
+        "",
+        "A deliberately long preamble follows.",
+        "x".repeat(9 * 1024),
+        "",
+        "Status: DRAFT",
+        "",
+        "Complete content.",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    assert.throws(
+      () => commandLock(fixture.directory, []),
+      /artifact status is DRAFT/,
+    );
+    assert.equal(readFileSync(stateFile, "utf8"), stateBeforeRejections);
+
+    writeFileSync(
+      delivery,
+      [
+        "# Delivery",
+        "",
+        "Status: APPROVED",
+        "Material open conflicts: NO",
+        "",
+        `The unresolved value is [[${"x".repeat(300)}]].`,
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    assert.throws(
+      () => commandLock(fixture.directory, []),
+      /unresolved placeholders/,
+    );
+    assert.equal(readFileSync(stateFile, "utf8"), stateBeforeRejections);
+
+    writeFileSync(
+      delivery,
+      [
+        "# Delivery",
+        "",
+        "Status: APPROVED",
+        "Material open conflicts: YES",
+        "",
+        "Complete content.",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    assert.throws(
+      () => commandLock(fixture.directory, []),
+      /material open conflicts remain/,
+    );
+    assert.equal(readFileSync(stateFile, "utf8"), stateBeforeRejections);
+
+    writeFileSync(
+      delivery,
+      [
+        "# Delivery",
+        "",
+        "Status: approved",
+        "Material open conflicts: no",
+        "",
+        "The unresolved value is [[mixed_Case placeholder]].",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    assert.throws(
+      () => commandLock(fixture.directory, []),
+      /unresolved placeholders: \[\[mixed_Case placeholder\]\]/,
+    );
+    assert.equal(readFileSync(stateFile, "utf8"), stateBeforeRejections);
+
+    writeFileSync(
+      delivery,
+      [
+        "# Delivery",
+        "",
+        "  Status:   approved  ",
+        "Material open conflicts: no",
+        "",
+        "The approved delivery is complete.",
+        "",
+        "## Historical Example",
+        "",
+        "A prior draft used the marker below:",
+        "",
+        "```text",
+        "Status: DRAFT",
+        "```",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    assert.equal(commandLock(fixture.directory, []).ok, true);
+    const stateAfterApproval = readJson(stateFile);
+    assert.equal(stateAfterApproval.history.length, 1);
+    assert.equal(
+      stateAfterApproval.history[0].locked_at,
+      JSON.parse(stateBeforeRejections).active_lock.locked_at,
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("checkpoint writes a validated handoff and start resumes it", () => {
   const fixture = temporaryProject();
   try {
@@ -782,7 +938,7 @@ test("checkpoint writes a validated handoff and start resumes it", () => {
       /integrity check failed/,
     );
 
-    commandCheckpoint(fixture.directory, {
+    const completedCheckpoint = commandCheckpoint(fixture.directory, {
       objective: "Recover the continuity record",
       summary: "The invalid checkpoint was safely replaced",
       status: "complete",
@@ -793,6 +949,31 @@ test("checkpoint writes a validated handoff and start resumes it", () => {
       evidence: ["package.json"],
       token,
     });
+    const newRequestAfterCompletion = commandStart(
+      fixture.directory,
+      "Fix one bounded documentation typo",
+      token,
+    );
+    assert.equal(
+      newRequestAfterCompletion.checkpoint.checkpoint_id,
+      completedCheckpoint.checkpoint_id,
+    );
+    assert.doesNotMatch(
+      newRequestAfterCompletion.prompt,
+      /Resume checkpoint/,
+    );
+    assert.match(
+      newRequestAfterCompletion.prompt,
+      /historical context only/,
+    );
+    assert.match(
+      newRequestAfterCompletion.prompt,
+      /Do not resume it or let it hijack the current request/,
+    );
+    assert.match(
+      newRequestAfterCompletion.prompt,
+      /Fix one bounded documentation typo/,
+    );
     writeJson(join(fixture.directory, COORDINATOR_PATH), {
       schema_version: 1,
     });
