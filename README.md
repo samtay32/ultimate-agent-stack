@@ -500,8 +500,9 @@ npx --yes markdownlint-cli2@0.20.0 '**/*.md'
 Releases use protected GitHub Actions, npm trusted publishing, staged human 2FA
 approval, registry provenance, and a matching GitHub Release. `release:check`
 validates the behavioral scenario contracts. This milestone's broad
-front-half behavior claim also requires current evaluated runs on Codex and
-Claude Code; every other harness must be named as untested. See
+front-half behavior claim also requires current evaluated runs on at least two
+distinct primary supported harnesses; every other harness must be named as
+untested. No named harness is privileged by this release rule. See
 [Behavioral Evaluations](docs/BEHAVIORAL_EVALS.md).
 
 ## License

@@ -628,8 +628,9 @@ test("packed installs cover flexible intake and live evidence stays harness-scop
   assert.match(packedSmoke, /rejected packed DRAFT lock wrote active state/);
   assert.match(
     trustGuide,
-    /live runs from Codex and at least\s+one other primary supported harness/,
+    /live runs from at least two\s+distinct primary supported harnesses/,
   );
+  assert.match(trustGuide, /No named harness is privileged by this rule/);
   assert.match(trustGuide, /must not\s+be generalized to another harness/);
 });
 
