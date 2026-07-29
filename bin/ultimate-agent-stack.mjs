@@ -4334,6 +4334,15 @@ function linearOperationCredentialEnv(operation) {
     : LINEAR_COMMENT_CREDENTIAL_ENV;
 }
 
+function validTelemetryCredential(value) {
+  return (
+    typeof value === "string" &&
+    value.length >= 8 &&
+    value.length <= 8_192 &&
+    !/[\r\n\0]/.test(value)
+  );
+}
+
 function commandCapabilities(target) {
   const config = projectExists(target, CONFIG_PATH, "project config")
     ? loadConfig(target)
@@ -4402,8 +4411,7 @@ function commandCapabilities(target) {
               {
                 available:
                   telemetryHelperAvailable &&
-                  typeof process.env[credential] === "string" &&
-                  process.env[credential].length > 0,
+                  validTelemetryCredential(process.env[credential]),
                 external: true,
                 access: "read_only",
                 role: TELEMETRY_PROVIDER_ROLES[provider],
