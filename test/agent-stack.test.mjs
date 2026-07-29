@@ -818,6 +818,30 @@ test("artifact locks reject drafts, open conflicts, and mixed-case placeholders 
         [
           "# Delivery",
           "",
+          "```text",
+          "- ```",
+          "Status: APPROVED",
+          "Material open conflicts: NO",
+          "",
+        ].join("\n"),
+        /unclosed fenced code block/,
+      ],
+      [
+        [
+          "# Delivery",
+          "",
+          "```text",
+          "> ```",
+          "Status: APPROVED",
+          "Material open conflicts: NO",
+          "",
+        ].join("\n"),
+        /unclosed fenced code block/,
+      ],
+      [
+        [
+          "# Delivery",
+          "",
           "Status: APPROVED",
           "Material open conflicts: UNKNOWN",
           "",
@@ -851,7 +875,7 @@ test("artifact locks reject drafts, open conflicts, and mixed-case placeholders 
           "Complete content.",
           "",
         ].join("\n"),
-        /exactly one visible Status: APPROVED/,
+        /nested fenced code block/,
       ],
       [
         [
@@ -865,7 +889,7 @@ test("artifact locks reject drafts, open conflicts, and mixed-case placeholders 
           "Complete content.",
           "",
         ].join("\n"),
-        /exactly one visible Status: APPROVED/,
+        /nested fenced code block/,
       ],
     ]) {
       writeFileSync(delivery, content, "utf8");

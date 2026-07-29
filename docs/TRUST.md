@@ -141,8 +141,10 @@ a new lock. Before writing a lock, the CLI requires each selected artifact to
 contain exactly one visible `Status: APPROVED` declaration and exactly one
 visible `Material open conflicts: NO` declaration outside fenced examples.
 Missing, duplicate, unknown, DRAFT, and open-conflict declarations fail closed,
-as do unresolved double-bracket placeholders. These are mechanical byte-level
-declarations. The CLI does not understand whether the prose is complete,
+as do unresolved double-bracket placeholders. To avoid ambiguous declaration
+parsing, lockable artifacts also refuse fenced code blocks nested inside list or
+blockquote containers. These are mechanical byte-level declarations. The CLI
+does not understand whether the prose is complete,
 discover an omitted conflict, decide whether a source claim was normalized
 correctly, or prove that the person approving a brief has a particular legal
 identity.

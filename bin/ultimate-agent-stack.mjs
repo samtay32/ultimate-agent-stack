@@ -8537,9 +8537,8 @@ function markdownOutsideFencedCode(content, artifact) {
   const visible = [];
   let fence = null;
   for (const line of content.split(/\r?\n/)) {
-    const probeLine = markdownFenceProbeLine(line);
     if (fence) {
-      const closing = probeLine.match(/^ {0,3}(`+|~+)[ \t]*$/);
+      const closing = line.match(/^ {0,3}(`+|~+)[ \t]*$/);
       if (
         closing &&
         closing[1][0] === fence.character &&
@@ -8550,11 +8549,17 @@ function markdownOutsideFencedCode(content, artifact) {
       visible.push("");
       continue;
     }
+    const probeLine = markdownFenceProbeLine(line);
     const opening = probeLine.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
     if (opening) {
       if (opening[1][0] === "`" && opening[2].includes("`")) {
         throw new StackError(
           `Cannot lock ${artifact}; invalid backtick in fenced code info string prevents safe declaration checks`,
+        );
+      }
+      if (probeLine !== line) {
+        throw new StackError(
+          `Cannot lock ${artifact}; nested fenced code block prevents safe declaration checks`,
         );
       }
       fence = {
