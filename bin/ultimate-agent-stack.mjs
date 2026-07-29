@@ -4338,6 +4338,9 @@ function commandCapabilities(target) {
   const config = projectExists(target, CONFIG_PATH, "project config")
     ? loadConfig(target)
     : null;
+  const telemetryHelperAvailable =
+    projectExists(target, TELEMETRY_READONLY_PATH) &&
+    protectedProjectFileIssue(target, TELEMETRY_READONLY_PATH) === null;
   const codeRabbitFiles = {
     configuration: projectExists(target, ".coderabbit.yaml"),
     receipt_workflow: projectExists(target, REVIEW_WORKFLOW_PATH),
@@ -4398,7 +4401,7 @@ function commandCapabilities(target) {
               provider,
               {
                 available:
-                  projectExists(target, TELEMETRY_READONLY_PATH) &&
+                  telemetryHelperAvailable &&
                   typeof process.env[credential] === "string" &&
                   process.env[credential].length > 0,
                 external: true,
@@ -4526,6 +4529,41 @@ function parseProviderJson(result, label) {
       detail: result.stdout,
     };
   }
+}
+
+function parseTelemetryProviderJson(result, label) {
+  if (result.ok) {
+    return parseProviderJson(result, label);
+  }
+  try {
+    const value = JSON.parse(
+      (result.raw_stdout ?? result.stdout ?? "").trim(),
+    );
+    if (
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      value.ok === false &&
+      typeof value.error === "string" &&
+      value.error.length >= 1 &&
+      value.error.length <= 300 &&
+      !/[\r\n\0]/.test(value.error)
+    ) {
+      return {
+        ok: false,
+        error: redact(value.error, 300),
+        status: result.status,
+      };
+    }
+  } catch {
+    // Fall through to the generic bounded failure below.
+  }
+  return {
+    ok: false,
+    error: `${label} failed`,
+    status: result.status,
+    detail: result.stderr || result.stdout || result.reason,
+  };
 }
 
 function telemetryEnvironment(provider) {
@@ -5451,7 +5489,7 @@ function commandTelemetryHealth(target, suppliedConfig = undefined) {
         error: `${provider.credential_env} is not available to this process`,
       };
     }
-    const parsed = parseProviderJson(
+    const parsed = parseTelemetryProviderJson(
       runTelemetryReadonly(target, provider),
       `${provider.provider} read-only health check`,
     );

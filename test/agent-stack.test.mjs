@@ -1510,6 +1510,15 @@ test("configure registers reviewed telemetry adapters with fixed roles and scope
           /is not available/.test(provider.error),
       ),
     );
+    process.env.POSTHOG_PERSONAL_API_KEY = "short";
+    const invalidCredential = commandTelemetryHealth(fixture.directory);
+    assert.match(
+      invalidCredential.providers.find(
+        (provider) => provider.provider === "posthog",
+      ).error,
+      /POSTHOG_PERSONAL_API_KEY is missing or invalid/,
+    );
+    delete process.env.POSTHOG_PERSONAL_API_KEY;
     const doctor = commandDoctor(fixture.directory);
     const report = doctor.reports.find(
       (candidate) => candidate.name === "telemetry-providers",
@@ -1612,6 +1621,11 @@ test("telemetry health refuses a modified helper even when its manifest hash is 
     assert.equal(health.ok, false);
     assert.equal(health.providers[0].live_check, "not-run");
     assert.match(health.providers[0].error, /hash pinned in the protected CLI/);
+    assert.equal(
+      commandCapabilities(fixture.directory).available.telemetry.posthog
+        .available,
+      false,
+    );
     assert.equal(existsSync(outside), false);
   } finally {
     if (previousCredential === undefined) {
