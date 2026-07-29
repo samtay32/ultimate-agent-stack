@@ -6,8 +6,9 @@
 |---|---|---|---|
 | `setup-autonomous-project` | Explicit | New/existing repository needs autonomous setup or repair | Instructions, templates, detected checks, baseline evidence |
 | `run-autonomous-delivery` | Explicit | User wants an end-to-end product/change outcome | Verified PR or merge-ready result |
+| `develop-project-brief` | Routed by delivery or implicit | Vague intent or supplied outside material needs discovery, audit, or reconciliation | Approved working brief or a consequential unresolved decision |
 | `coordinate-parallel-delivery` | Routed by delivery | Two or more independent tracks may shorten the critical path | Serial or bounded parallel strategy with primary-agent integration |
-| `shape-project` | Implicit or explicit | Intent, acceptance, architecture, migration, or UX is unclear | Lockable delivery contract |
+| `shape-project` | Implicit or explicit | An approved brief or clear bounded request needs canonical shaping | Lockable delivery contract |
 | `use-project-knowledge` | Routed by setup/delivery | Prior knowledge may inform work or verified learning should be preserved | Scoped retrieval receipt or redacted learning proposal |
 | `use-project-telemetry` | Explicit or routed by delivery | Configured operational evidence may answer a bounded delivery question | Redacted observation receipt validated against repository evidence |
 | `manage-project-work` | Implicit or routed by delivery | Work must be planned, selected, updated, reconciled, or proven complete | Valid normalized work plus bounded evidence relationships |
@@ -29,7 +30,14 @@ flowchart LR
     RUN --> KNOW["use-project-knowledge"]
     RUN -->|"configured + bounded operational-evidence need"| TELEMETRY["use-project-telemetry"]
     RUN --> WORK["manage-project-work"]
-    WORK --> SHAPE["shape-project"]
+    WORK --> ROUTE{"Intake router"}
+    ROUTE -->|"1. RESUME: unfinished state"| RESUME["Continue first unmet done or evidence condition"]
+    ROUTE -->|"2. EXTERNAL: source defines intent"| BRIEF["develop-project-brief"]
+    ROUTE -->|"3. DISCOVER: intent needs development"| BRIEF
+    ROUTE -->|"4. DIRECT: bounded work"| SHAPE["shape-project"]
+    BRIEF -->|"approved BRIEF"| SHAPE
+    RESUME --> EXISTING["Existing shaped stage"]
+    EXISTING --> SECURE["secure-launch"]
     SHAPE --> SECURE["secure-launch"]
     SECURE --> COORD["coordinate-parallel-delivery"]
     COORD --> BUILD["build-vertical-slice"]
@@ -41,16 +49,36 @@ flowchart LR
     MAINTAIN["maintain-agent-stack"] --> PACKAGE["reviewed npm update"]
 ```
 
-## Why Twelve
+The router evaluates modes in the displayed order. `RESUME` preserves valid
+non-complete checkpoints, active locks with an unmet done/acceptance/evidence
+condition, and closed decisions; completed state and a fully satisfied lock do
+not hijack a new request. `EXTERNAL` reads and audits substantial material that
+defines proposed product or delivery intent without treating it as
+automatically correct. `DISCOVER` develops vague, contradictory, exploratory,
+or greenfield product/system intent whose outcome or constraints still need
+development. `DIRECT` preserves the compact path for clear bounded work. A
+supporting screenshot, log, or attachment does not make bounded work EXTERNAL,
+and clear bounded work remains DIRECT in a new or empty repository.
+
+Only `EXTERNAL` and `DISCOVER` create
+`.agent-stack/artifacts/BRIEF.md`. It is an optional unlocked working artifact,
+not a prerequisite for small work. Once approved, `shape-project` promotes it
+into canonical delivery, architecture, security, decision, and verification
+artifacts. Downstream shaping, implementation, verification, and review read
+closed product decisions before proposing alternatives.
+
+## Why Thirteen
 
 Fewer skills would load large irrelevant procedures into every task. Many more
 skills would make discovery unreliable and spread state across shallow modules.
-Twelve gives:
+Thirteen gives:
 
 - four stable user entry points;
-- one owner for each high-risk seam: intent, launch security, implementation,
-  knowledge, work evidence, telemetry, delegation, verification, and external
-  review;
+- one focused owner for flexible intake without splitting brainstorming,
+  external import, and reconciliation into separate skills;
+- one owner for canonical shaping and each remaining high-risk seam: launch
+  security, implementation, knowledge, work evidence, telemetry, delegation,
+  verification, and external review;
 - one-level references for progressive disclosure;
 - no persona catalog, mandatory swarm, or separate orchestration runtime.
 

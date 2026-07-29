@@ -9,8 +9,8 @@ The evaluation design keeps those claims separate.
 
 | Evidence layer | What it proves | What it does not prove |
 |---|---|---|
-| Contract gate | The scenario catalog is valid, covers every required case, references real skills, contains a false-activation case, and is bound to the current behavior surface | That any model passed the scenarios |
-| Live run | The named harness and model produced the recorded activation, action, question, and outcome observations for the current surface hash | Behavior of another harness, model, version, prompt, or tool environment |
+| Contract gate | The 26-scenario catalog is valid, references all 13 real skills, covers every required case, contains a false-activation case, validates bounded observations, and is bound to the current behavior surface | That any model passed the scenarios |
+| Live run | The named harness and model produced the recorded activation, question, write, artifact, source-claim, action, and output observations for the current surface hash | Behavior of another harness, model, version, prompt, or tool environment |
 
 ## Scenario Set
 
@@ -28,12 +28,44 @@ without `$skill-name` answers embedded in them.
 | Continuity | A second conversation does not write through another active coordinator |
 | Existing project | Setup reconciles project-owned instructions and CI instead of overwriting them |
 
+The catalog contains 14 established setup, delivery, authority, continuity,
+provider, and evidence cases plus these 12 flexible-intake cases:
+
+| Scenario | Required observable behavior |
+|---|---|
+| `flexible-vague-discovery` | A vague seed enters discovery, creates an unlocked DRAFT brief, asks one consequential question, and does not write product code |
+| `flexible-brief-only` | A brief-only request may reach APPROVED without starting delivery or changing product code |
+| `flexible-external-detailed-prd` | A detailed outside source is read completely, audited, preserved, and accounted for without a generic re-interview |
+| `flexible-external-complete-prd` | A complete consistent source produces an approved working brief with zero unnecessary questions |
+| `flexible-external-contradictory` | A material contradiction is surfaced before lock or implementation |
+| `flexible-external-existing-reconciliation` | Outside intent is compared with existing code, schemas, migrations, tests, architecture, and policy before changes |
+| `flexible-direct-bypass` | A clear bounded change stays on the micro-brief path even in a new project with completed state and an attached supporting log |
+| `flexible-resume-valid` | A valid checkpoint resumes at the first unmet condition without reopening closed decisions |
+| `flexible-draft-lock` | A placeholder-free artifact marked DRAFT is still rejected by the lock |
+| `flexible-approved-promotion` | An approved conflict-free brief promotes into the canonical delivery contract while preserving closed decisions |
+| `flexible-simple-onboarding` | A no-coder receives one combined repository-only recommendation instead of a provider tour |
+| `flexible-external-secret-redaction` | A credential-like source value and raw private source are not persisted while the redacted intent and provenance remain usable |
+
 Every scenario defines:
 
 - skills that must and must not activate;
 - whether a clarifying question is required, forbidden, or allowed;
+- minimum and maximum question counts, the maximum questions in one turn, and
+  required or forbidden question-purpose tags when the case needs those bounds;
 - actions that must not be performed;
-- observable outcome tags required for a pass.
+- project-relative write paths that must remain unchanged when persistence is
+  part of the risk;
+- required artifact status and lock state;
+- observable outcome and output tags required for a pass;
+- load-bearing source claim IDs that must each receive exactly one
+  `kept | tightened | rejected | deferred` disposition.
+
+The additive evidence fields do not turn model behavior into a deterministic
+security control. A run collector records `question_count`,
+`max_questions_in_turn`, `question_tags`, `written_paths`, artifact states,
+observable outputs, and source-claim dispositions from inspectable traces and
+fixture snapshots. The evaluator validates those records; it does not observe
+the filesystem or authenticate the collector on its own.
 
 The negative case makes false activation a first-class failure. Adding more
 positive examples cannot compensate for an agent starting work when it should
@@ -54,7 +86,9 @@ npm run eval:contracts
 
 This command:
 
-1. validates all scenario and expectation fields;
+1. validates all scenario and expectation fields, including safe bounded paths,
+   question limits, artifact states, observable outputs, and source-claim
+   dispositions;
 2. reads the actual skill frontmatter and rejects unknown skill names;
 3. requires all eight categories and at least one false-activation case;
 4. rejects prompts that disclose a `$skill-name` command;
@@ -62,9 +96,10 @@ This command:
 
 The behavioral surface includes skills and their references, entry prompts,
 installed project instructions, native harness adapters, core policy, plugin
-behavior metadata, and the scenario catalog. The package version is excluded,
-and text line endings are normalized, so a metadata-only release or equivalent
-Windows checkout does not invalidate otherwise identical evidence.
+behavior metadata, the scenario catalog, and every shipped delivery-artifact
+template, including `BRIEF.md` and `DECISIONS.md`. The package version is
+excluded, and text line endings are normalized, so a metadata-only release or
+equivalent Windows checkout does not invalidate otherwise identical evidence.
 
 `npm run release:check` runs this contract gate. Passing it is necessary but is
 not behavioral proof.
@@ -82,10 +117,18 @@ an isolated disposable project appropriate to that case. Do not show the
 `expected` block to the agent. Record:
 
 - `activated_skills` from the harness trace or explicit skill loading record;
-- `asked_clarifying_question` from the actual response;
+- `asked_clarifying_question`, `question_count`,
+  `max_questions_in_turn`, and question-purpose tags from the actual exchange;
 - `performed_actions`, meaning actions that occurred, not actions merely
   proposed or refused;
+- project-relative `written_paths` from a before/after fixture manifest;
+- DRAFT, APPROVED, ABSENT, locked, unlocked, or rejected artifact observations
+  from the repository and lock state;
 - `outcome_tags` only when the observable outcome occurred;
+- `observable_outputs` only when the named report, brief, reconciliation, or
+  contract was actually produced;
+- one source-claim disposition for every load-bearing claim ID named by the
+  fixture;
 - a concise evidence summary and a transcript, trace, or run identifier.
 
 Then evaluate it:
@@ -96,8 +139,8 @@ npm run eval:behavior -- --input /safe/temporary/path/uas-run.json
 
 The evaluator fails when a required scenario is missing, a forbidden skill
 activates, a required skill does not activate, a question rule is violated, a
-forbidden action occurs, an outcome is absent, or the behavior-surface hash is
-stale.
+forbidden action or write occurs, an artifact state differs, a required output
+or source-claim disposition is absent, or the behavior-surface hash is stale.
 
 The evaluator validates the recorded observations against the contract and
 includes each evidence source in its output. It cannot authenticate that a
@@ -123,6 +166,17 @@ When a pull request changes the behavior-surface hash:
 A release with an unchanged behavior-surface hash may cite the previous live
 result. A release with changed skills, entry prompts, adapters, project policy,
 or scenarios needs new live evidence.
+
+The flexible-intake front half deliberately crosses skill routing, multi-turn
+question behavior, source handling, repository reconciliation, artifact
+promotion, and lock safety. A broad claim that this front half works across the
+primary supported harnesses requires complete current-surface runs on both
+Codex and Claude Code. Evaluate and attach the two run records separately with
+their exact harness and model identities. Unless additional complete runs are
+attached, identify Gemini, Cursor, Grok, OpenCode, and other harnesses as
+untested for the new front-half behavior. A one-harness result may still be
+reported honestly as evidence for only that named harness; it is not a broad
+compatibility claim.
 
 This is intentionally not an ambient model call inside ordinary CI. Such a call
 would add credentials, cost, nondeterminism, provider dependence, and a risk of

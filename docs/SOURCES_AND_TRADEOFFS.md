@@ -76,6 +76,38 @@ vendor-neutral Collector supports replacing or combining backends, but adding
 or changing production instrumentation is a separate project decision rather
 than an Ultimate Agent Stack default.
 
+### Flexible Intake Decision on July 29, 2026
+
+Milestone 1 reuses the scale-adaptive and provenance lessons already pinned in
+the repository matrix. It adds original package logic rather than importing a
+third-party workflow:
+
+- **Adopted:** one focused `develop-project-brief` skill behind the existing
+  Project Steward; ordered RESUME, EXTERNAL, DISCOVER, and DIRECT routing;
+  an optional unlocked working brief for exploratory or supplied material; a
+  stable source-claim ledger using `kept`, `tightened`, `rejected`, and
+  `deferred`; repository reconciliation; and canonical closed decisions that
+  are not reopened without product-owner instruction.
+- **Tightened:** the lock now rejects declared DRAFT state, declared material
+  open conflicts, and unresolved placeholders. This proves the selected bytes
+  satisfy those declared markers, not that an agent understood every semantic
+  contradiction or authenticated the person who approved the brief.
+- **Rejected:** separate brainstorming/import/reconciliation personas,
+  mandatory discovery for clear bounded work, a BRIEF requirement for every
+  typo or bug, silently editing an outside source, treating a polished source as
+  truth, copying secrets or raw private chats, and duplicating the existing
+  delivery, evidence, lock, or checkpoint state machines.
+- **Deferred:** the Definition of Done and guided user-acceptance expansion,
+  provider-neutral launch readiness, CLI modularization, and optional specialist
+  packs remain later milestones. They require Milestone 1 dogfooding evidence
+  before expanding the core.
+
+For a repository source, the brief records its path and hash. For pasted,
+attached, or private material, it records a bounded redacted provenance summary
+unless an authorized project copy is appropriate. Every load-bearing source
+claim must remain traceable through its disposition and destination; neither
+normalization nor reconciliation authorizes silently rewriting the source.
+
 Primary technical references:
 
 - [Linear GraphQL API](https://linear.app/developers/graphql)

@@ -37,9 +37,22 @@ asks one important question at a time. You can answer:
 Use the recommendation.
 ```
 
-The agent then shapes the idea, builds it in small working pieces, runs the
+The agent first recognizes what you supplied:
+
+- a vague product or system idea becomes a collaborative working brief;
+- substantial material that defines product intent or an existing plan is
+  audited instead of re-interviewed from scratch;
+- a clear bounded request goes straight to proportionate shaping;
+- a valid non-complete checkpoint or locked contract with an unmet done or
+  evidence condition resumes from the first unfinished condition.
+
+A supporting screenshot, log, or attachment does not turn a clear bounded
+request into a full source audit. Clear bounded work remains DIRECT in a new or
+empty repository, while completed state does not hijack a new request.
+
+It then promotes approved intent, builds in small working pieces, runs the
 project's real checks, prepares a pull request, and closes valid review
-findings.
+findings. You may also ask it to stop after an approved brief.
 
 No coding knowledge is required for this path. The
 [plain-language operating manual](docs/OPERATING_MANUAL.md) explains what to
@@ -100,23 +113,37 @@ reconciliation proposal instead of overwriting the project. The agent reviews
 and merges the useful parts, keeps project-specific rules, then verifies the
 result. It does not restart the product or force a new architecture.
 
+When you provide an outside brief for an existing project, the agent compares
+it with actual behavior, schemas, migrations, tests, architecture, and locked
+decisions. It reports what already exists, what fits, and what materially
+conflicts. It preserves the source unchanged and never silently chooses the
+document over working repository truth—or the reverse.
+
 ## What You Will Be Asked
 
-The agent asks only when your answer changes the product, risk, outside data,
-review provider, memory provider, telemetry access, or authority.
+For a straightforward private project where the user has not requested a
+relevant advanced provider, the agent starts with one question:
+
+> I recommend the private repository-only setup. It uses no outside memory,
+> tracking, or telemetry, and you retain merge control. Use this?
+
+Approval selects repository memory and work tracking, no telemetry, built-in
+review, local-only data, routine agent-owned execution, and human-controlled
+merge authority. It should not follow that with separate provider questions.
+
+An advanced choice appears only when the project already uses it and evidence
+makes it relevant, you explicitly request it, or a real requirement cannot be
+met locally. The agent otherwise asks only when your answer changes product
+intent, risk, outside data, credentials, or authority.
 
 It may ask:
 
 - What result do you want?
 - Who will use it?
 - Are outside services or data allowed?
-- Does a production release need independent review?
-- Should progress live only in repository files, or also in private local
-  searchable memory?
-- Should work stay in the portable repository ledger, or also read approved
-  Linear teams through the reviewed adapter?
-- If Linear is selected, should it remain read-only, or may it create only
-  receipted issues and evidence comments after explicit approval?
+- Which of two materially different product outcomes should govern?
+- Whether an already-relevant external provider or production review policy is
+  allowed;
 - May it merge after every required check passes?
 
 It should not ask you to choose routine frameworks, write test commands, manage
@@ -127,9 +154,18 @@ at most one useful alternative.
 
 ```mermaid
 flowchart LR
-    I["Your idea"] --> S["Guided setup"]
-    S --> B["Clear project brief"]
-    B --> L["Locked intent"]
+    I["Your request or source"] --> S["Guided setup"]
+    S --> R{"Intake route"}
+    R -->|"Valid unfinished checkpoint or lock"| RES["RESUME"]
+    R -->|"Source defines proposed intent"| EXT["EXTERNAL audit + reconciliation"]
+    R -->|"Intent needs development"| DIS["DISCOVER living brief"]
+    R -->|"Clear bounded work, including new repos and supporting evidence"| DIR["DIRECT micro-brief"]
+    EXT --> B["Approved working brief"]
+    DIS --> B
+    B --> P["Promote final contracts"]
+    DIR --> P
+    RES --> L["Existing locked intent"]
+    P --> L
     L --> V["Small working slices"]
     V --> T["Project tests and checks"]
     T --> Q{"Independent review required?"}
@@ -145,6 +181,12 @@ flowchart LR
     G -- "No" --> R
     Q -- "No" --> D
 ```
+
+`BRIEF.md` is optional and unlocked while EXTERNAL or DISCOVER intent evolves.
+It preserves provenance, claim dispositions, contradictions, and closed
+decisions. `shape-project` promotes approved intent into the canonical final
+contracts. DIRECT work is not forced into the larger brief, and RESUME does not
+reopen settled decisions.
 
 The workflow scales with risk. A small local tool gets a short brief. A public,
 paid, sensitive, or hard-to-reverse system gets deeper planning and stronger
@@ -168,11 +210,12 @@ cleanup. If safe isolation is unavailable, work stays serial.
 | Data boundary | Files in the project | Checkout-local PGLite home, ignored by Git |
 | Setup | Included | Separate approval, guided install, project-scoped MCP connection |
 
-Onboarding asks this as a plain-language choice and recommends a safe answer
-based on the project. Local GBrain starts without embeddings, so the setup does
-not silently request or inherit an external model API key. An embedding
-provider, remote brain, or organization scope is a separate data and
-credential decision.
+Advanced onboarding exposes this choice only when the user requests searchable
+memory or a long-running project has a real need for it. The simple path selects
+repository memory without a separate question. Local GBrain starts without
+embeddings, so setup does not silently request or inherit an external model API
+key. An embedding provider, remote brain, or organization scope is a separate
+data and credential decision.
 
 When GBrain is selected, `doctor` does more than look for its command. It checks
 that the active database is inside this project's approved memory directory,
@@ -264,6 +307,7 @@ sandbox against unrelated tools that ignore the package.
 | Project rules | Keep scope, authority, and completion standards visible |
 | Guided skills | Shape, build, verify, review, secure, and maintain the project |
 | Local CLI | Detect checks, protect approvals, lock intent, and record evidence |
+| Optional working brief | Preserve discovery or supplied-source audit before final shaping |
 | Checkpoint and progress files | Preserve a verified handoff so another conversation can resume |
 | Work ledger and evidence graph | Keep portable work state and show what proves completion |
 | Harness adapters | Use supported native agent features without changing authority |
@@ -342,10 +386,11 @@ advancing a campaign never writes to Linear.
 
 ### Optional Linear connection
 
-Onboarding asks whether work should remain repository-only or also read from
-approved Linear teams. Repository-only is recommended for solo, short, or
-early projects. Linear is offered when the team already uses it; the portable
-repository ledger remains available either way.
+When the user has not requested a relevant advanced provider, the simple path
+selects repository-only work without a separate provider question.
+Advanced onboarding offers Linear only when the team already uses it or the
+user explicitly requests it; the portable repository ledger remains available
+either way.
 
 The guided setup requires a Linear API key created with only the **Read**
 permission and kept outside the repository as `LINEAR_API_KEY`. The protected
@@ -454,8 +499,9 @@ npx --yes markdownlint-cli2@0.20.0 '**/*.md'
 
 Releases use protected GitHub Actions, npm trusted publishing, staged human 2FA
 approval, registry provenance, and a matching GitHub Release. `release:check`
-validates the behavioral scenario contracts; skill-changing releases also need
-a real harness run evaluated as described in
+validates the behavioral scenario contracts. This milestone's broad
+front-half behavior claim also requires current evaluated runs on Codex and
+Claude Code; every other harness must be named as untested. See
 [Behavioral Evaluations](docs/BEHAVIORAL_EVALS.md).
 
 ## License

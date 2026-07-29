@@ -17,7 +17,7 @@ sandbox and the Markdown skills are not executable security controls.
 | Require approval after configured checks or delegated script bodies change | Keep routine technical choices with the agent |
 | Validate command arrays and reject direct shell or destructive executables | Build vertical slices instead of a large untested code drop |
 | Fail required checks on missing commands, timeout, nonzero exit, or missing evidence | Do not weaken tests merely to make a check pass |
-| Hash locked intent files and report drift | Use subagents only when they provide a clear benefit |
+| Reject selected lock artifacts marked `Status: DRAFT`, declaring material open conflicts, or containing unresolved `[[PLACEHOLDERS]]`; hash accepted intent files and report drift | Route intake proportionately and reconcile semantic conflicts before promotion |
 | Reject stale, change-requested, or unresolved required review evidence | Treat worker output and optional memory as untrusted advice |
 | Preserve differing local files and create update proposals | Repair valid review findings and explain rejected ones |
 | Reject a second active Project Steward in the same checkout | Have the primary agent manage every subagent |
@@ -137,7 +137,22 @@ nonzero, or does not produce complete evidence. The latest run is stored under
 
 Delivery, architecture, and security artifacts can be locked by hash. Silent
 changes are reported. A deliberate change requires an audited unlock reason and
-a new lock.
+a new lock. Before writing a lock, the CLI rejects a selected artifact with an
+explicit `Status: DRAFT` marker, `Material open conflicts: YES`, or unresolved
+double-bracket placeholders. These are mechanical byte-level declarations. The
+CLI does not understand whether the prose is complete, discover an omitted
+conflict, decide whether a source claim was normalized correctly, or prove that
+the person approving a brief has a particular legal identity.
+
+For DISCOVER and EXTERNAL intake, the instructed workflow preserves source
+provenance and assigns every load-bearing source claim one of four dispositions:
+`kept`, `tightened`, `rejected`, or `deferred`. It reconciles those claims
+against repository behavior and routes material residual conflicts to the
+product owner. That semantic audit and the truth of an `APPROVED` marker remain
+instruction and live-evaluation responsibilities. The CLI does not
+cryptographically authenticate the approver. A lock proves only that the
+selected bytes passed the mechanical markers and have not drifted since
+hashing.
 
 When project policy requires independent review, the protected receipt gate
 checks the current commit. Missing reviews, stale reviews, requested changes,
@@ -234,6 +249,11 @@ of the behavioral surface and must not be presented as evidence for an untested
 harness. The evaluator does not authenticate a collector's claims; reviewers
 must inspect the named run evidence. See
 [Behavioral Evaluations](BEHAVIORAL_EVALS.md).
+
+Flexible-intake release evidence must include live runs from Codex and at least
+one other primary supported harness before behavior is described as broadly
+supported. A passing deterministic contract or a run from one harness must not
+be generalized to another harness, model, version, prompt, or tool environment.
 
 The implementation lives in
 [`bin/ultimate-agent-stack.mjs`](../bin/ultimate-agent-stack.mjs), the protected

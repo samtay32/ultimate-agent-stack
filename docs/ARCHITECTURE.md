@@ -11,10 +11,22 @@ flowchart TD
     U["Human supplies intent and authority"] --> E["Explicit entry skill"]
     E --> S{"Stack configured?"}
     S -- "No" --> SET["Setup: inspect, detect capabilities, guided choices, baseline"]
-    SET --> R
-    S -- "Yes" --> R{"Route by risk and ambiguity"}
+    SET --> I
+    S -- "Yes" --> I{"Intake router"}
+    I -->|"1. RESUME"| RES["Validate unfinished checkpoint or lock; find first unmet condition"]
+    I -->|"2. EXTERNAL"| EXT["Audit source that defines proposed intent"]
+    I -->|"3. DISCOVER"| DIS["Develop intent that is still unclear"]
+    I -->|"4. DIRECT"| R{"Clear bounded work, including new repos or supporting evidence"}
+    EXT --> BR["Optional unlocked BRIEF.md"]
+    DIS --> BR
+    BR --> APP{"Brief approved?"}
+    APP -- "No" --> REV["Revise the working brief"]
+    REV --> BR
+    APP -- "Yes" --> PROM["shape-project promotes the brief"]
+    PROM --> C
+    RES --> CONT["Continue the existing delivery stage"]
     R -->|T0-T1| M["Micro-brief"]
-    R -->|T2| C["Compact PRD + architecture spine"]
+    R -->|T2| C["Compact delivery contract + architecture spine"]
     R -->|T3-T4| F["Research + full contract + approvals"]
     C --> P{"Runnable uncertainty?"}
     F --> P
@@ -43,6 +55,16 @@ flowchart TD
     AUTH -- "Not granted" --> READY["Merge-ready; one human action"]
 ```
 
+`RESUME` continues at the first unmet done, acceptance, or evidence condition,
+which may be shaping, implementation, verification, or review rather than the
+first downstream node shown in the simplified diagram. A completed checkpoint
+and fully satisfied active lock do not absorb an unrelated new request. An
+active lock takes precedence only while a locked condition remains unmet.
+Conflicting new intent is surfaced as an audited change rather than silently
+reopening a closed decision. A supporting screenshot, log, or attachment does
+not turn clear bounded work into EXTERNAL, and clear bounded work remains DIRECT
+in a new or empty repository.
+
 ## Component Architecture
 
 ```mermaid
@@ -50,6 +72,9 @@ flowchart LR
     subgraph Intent["Intent plane"]
         SP["Starter prompt"]
         ON["Guided onboarding"]
+        IR["RESUME / EXTERNAL / DISCOVER / DIRECT"]
+        DB["develop-project-brief"]
+        BR["Optional unlocked BRIEF"]
         SH["shape-project"]
         AR["DELIVERY / ARCHITECTURE / DECISIONS"]
     end
@@ -91,7 +116,11 @@ flowchart LR
     RD --> CP
     CP --> RM
     CP -. "verified mirror" .-> GB
-    RD --> SH --> AR
+    RD --> IR
+    IR -->|"EXTERNAL or DISCOVER"| DB --> BR --> SH
+    IR -->|"DIRECT"| SH
+    IR -->|"RESUME"| RS["First unmet shaped, build, verify, or review stage"]
+    SH --> AR
     AR --> LOCK
     LOCK --> PD
     PD -->|serial| BV
@@ -111,9 +140,12 @@ flowchart LR
 1. **Configuration plane** — detects project capabilities, asks only
    consequential setup questions, recommends safe choices, and fingerprints the
    approved profile, providers, external-data policy, and authority mode.
-2. **Intent plane** — separates user outcome, capabilities, constraints,
-   non-goals, assumptions, and acceptance. It scales from a micro-brief to a
-   full product or migration contract.
+2. **Intent plane** — routes recovery and new input before scaling ceremony.
+   `EXTERNAL` uses an unlocked working brief when supplied material defines
+   proposed intent; `DISCOVER` uses it when intent still needs development;
+   `DIRECT` keeps the existing micro-brief or compact-contract path; `RESUME`
+   continues only unfinished settled work. Canonical shaping separates user outcome, capabilities,
+   constraints, non-goals, assumptions, closed decisions, and acceptance.
 3. **Knowledge plane** — retrieves scoped advisory context and captures only
    verified, provenance-backed learning. Repository state is authoritative and
    remains the fallback for optional providers such as GBrain.
@@ -138,9 +170,10 @@ flowchart LR
 | `.agent-stack/config.json` | Repository | Actual command arrays and automation policy |
 | `.agent-stack/core-policy.json` | Package | Protected mechanical safety rules |
 | `.agent-stack/installation.json` | CLI | Managed hashes, customizations, and update proposals |
+| `BRIEF.md` | Brief development | Optional unlocked source audit and working brief for `EXTERNAL` or `DISCOVER` intake |
 | `DELIVERY.md` | Delivery | Outcome, capabilities, acceptance, non-goals |
 | `ARCHITECTURE.md` | Delivery | Binding architecture decisions only |
-| `DECISIONS.md` | Delivery | Audited changes to intent or architecture |
+| `DECISIONS.md` | Delivery | Closed product decisions and audited changes to previously locked intent |
 | `VERIFICATION.md` | Delivery | Requirement-to-evidence coverage |
 | `SECURITY.md` | Delivery | Classified exposure and applicable launch gates |
 | `.agent-stack/artifacts/DELEGATION.md` | Primary agent | Execution strategy, worker assignments, and dispositions |
@@ -157,6 +190,28 @@ The configuration stores guided-interaction invariants, selected providers, and
 an approval hash. Changing provider, profile, external-data, execution, merge,
 or parallel-delivery policy invalidates approval. `doctor` fails before
 delivery continues.
+
+`BRIEF.md` is not another delivery state machine and is not required for a
+clear bounded change. It remains unlocked while the Project Steward audits or
+develops intent. Approval changes its working status but does not
+cryptographically authenticate the approver. `shape-project` promotes an
+approved brief into the canonical delivery, architecture, security, decision,
+and verification artifacts; only those final contracts enter the normal lock
+and implementation flow.
+
+## Decision Semantics
+
+Closed product decisions record the decision, the alternatives it forecloses,
+its evidence or authority, and the rule that it must not be reopened without
+product-owner instruction. Shaping, implementation, verification, and review
+read these decisions before proposing alternatives.
+
+A material change to settled intent is a separate audited record containing the
+prior decision, new decision, reason, authority, consequence, and date. When
+that change affects a locked contract, the Project Steward must unlock with a
+reason, update the canonical artifacts, and lock them again. The brief may
+retain the provenance and reconciliation history, but `DECISIONS.md` and the
+locked delivery artifacts remain authoritative after promotion.
 
 ## Provider Boundaries
 
