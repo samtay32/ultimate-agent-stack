@@ -287,7 +287,9 @@ node .agent-stack/bin/agent-stack.mjs evidence report \
 The JSON report shows work status, node/edge/provider counts, evidence coverage,
 and bounded samples of missing or unconnected evidence. Mermaid uses generated
 node aliases and sanitized labels, includes only edges whose endpoints are
-shown, and states when the configured visualization bound omitted nodes.
+shown, caps rendered edges at four per selected node, and states when the
+configured visualization bound omitted nodes or edges. Report writes reject
+symlinked path components and remain physically under `.agent-stack/reports`.
 
 ### Bounded campaign loop
 

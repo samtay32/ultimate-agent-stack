@@ -47,6 +47,8 @@ const PACKAGE_VERSION = PACKAGE_JSON.version;
 const CONFIG_SCHEMA_VERSION = 7;
 const WORK_LEDGER_PATH = ".agent-stack/work-items.json";
 const EVIDENCE_GRAPH_PATH = ".agent-stack/evidence-graph.json";
+const EVIDENCE_REPORTS_PATH = ".agent-stack/reports";
+const EVIDENCE_MERMAID_EDGES_PER_NODE = 4;
 const PROVIDER_RECEIPTS_PATH = ".agent-stack/provider-receipts";
 const CAMPAIGN_PATH = ".agent-stack/campaign.json";
 const COMPLETION_EVIDENCE_RELATIONS = new Set([
@@ -553,6 +555,27 @@ function atomicText(file, value, mode = 0o600) {
 
 function projectFile(target, raw, label = "project path") {
   return pathInside(target, raw, label);
+}
+
+function projectFileWithoutSymlinkComponents(
+  target,
+  raw,
+  label = "project path",
+) {
+  const candidate = projectFile(target, raw, label);
+  const canonicalTarget = realpathSync(target);
+  const relation = relative(canonicalTarget, candidate);
+  let cursor = canonicalTarget;
+  for (const component of relation.split(sep).filter(Boolean)) {
+    cursor = join(cursor, component);
+    if (!existsSync(cursor)) {
+      break;
+    }
+    if (lstatSync(cursor).isSymbolicLink()) {
+      throw new StackError(`${label} crosses a symlinked path component: ${raw}`);
+    }
+  }
+  return candidate;
 }
 
 function atomicProjectJson(target, raw, value, label = raw) {
@@ -3591,6 +3614,19 @@ function evidenceMermaid(graph, maxNodes) {
   const aliases = new Map(
     selected.map((node, index) => [node.id, `n${index + 1}`]),
   );
+  const eligibleEdges = graph.edges
+    .filter(
+      (edge) =>
+        selectedIds.has(edge.from) && selectedIds.has(edge.to),
+    )
+    .sort(
+      (left, right) =>
+        left.from.localeCompare(right.from) ||
+        left.relation.localeCompare(right.relation) ||
+        left.to.localeCompare(right.to),
+    );
+  const edgeLimit = selected.length * EVIDENCE_MERMAID_EDGES_PER_NODE;
+  const selectedEdges = eligibleEdges.slice(0, edgeLimit);
   const lines = [
     "flowchart LR",
     ...selected.map((node) => {
@@ -3599,26 +3635,22 @@ function evidenceMermaid(graph, maxNodes) {
       );
       return `    ${aliases.get(node.id)}["${label}"]:::${node.state}`;
     }),
-    ...graph.edges
-      .filter(
-        (edge) =>
-          selectedIds.has(edge.from) && selectedIds.has(edge.to),
-      )
-      .sort(
-        (left, right) =>
-          left.from.localeCompare(right.from) ||
-          left.relation.localeCompare(right.relation) ||
-          left.to.localeCompare(right.to),
-      )
+    ...selectedEdges
       .map(
         (edge) =>
           `    ${aliases.get(edge.from)} -->|${edge.relation}| ${aliases.get(edge.to)}`,
       ),
   ];
-  const omitted = graph.nodes.length - selected.length;
-  if (omitted > 0) {
+  const omittedNodes = graph.nodes.length - selected.length;
+  if (omittedNodes > 0) {
     lines.push(
-      `    omitted["${omitted} nodes omitted by report bound"]:::omitted`,
+      `    omittedNodes["${omittedNodes} nodes omitted by report bound"]:::omitted`,
+    );
+  }
+  const omittedEdges = eligibleEdges.length - selectedEdges.length;
+  if (omittedEdges > 0) {
+    lines.push(
+      `    omittedEdges["${omittedEdges} edges omitted by report bound"]:::omitted`,
     );
   }
   lines.push(
@@ -3632,7 +3664,10 @@ function evidenceMermaid(graph, maxNodes) {
   return {
     mermaid: `${lines.join("\n")}\n`,
     selected_node_count: selected.length,
-    omitted_node_count: omitted,
+    omitted_node_count: omittedNodes,
+    selected_edge_count: selectedEdges.length,
+    omitted_edge_count: omittedEdges,
+    edge_limit: edgeLimit,
   };
 }
 
@@ -3675,13 +3710,17 @@ function commandEvidenceReport(
       : null;
   let normalizedOutput;
   if (output !== undefined) {
-    const outputFile = projectFile(target, output, "evidence report");
+    const outputFile = projectFileWithoutSymlinkComponents(
+      target,
+      output,
+      "evidence report",
+    );
     normalizedOutput = relative(realpathSync(target), outputFile)
       .split(sep)
       .join("/");
     if (
-      !normalizedOutput.startsWith(".agent-stack/reports/") ||
-      normalizedOutput === ".agent-stack/reports/" ||
+      !normalizedOutput.startsWith(`${EVIDENCE_REPORTS_PATH}/`) ||
+      normalizedOutput === `${EVIDENCE_REPORTS_PATH}/` ||
       (format === "json" && !normalizedOutput.endsWith(".json")) ||
       (format === "mermaid" && !normalizedOutput.endsWith(".mmd"))
     ) {
@@ -3689,9 +3728,8 @@ function commandEvidenceReport(
         "Evidence report output must be a .json or .mmd file under .agent-stack/reports for the selected format.",
       );
     }
-    if (existsSync(outputFile) && lstatSync(outputFile).isSymbolicLink()) {
-      throw new StackError("Refusing to overwrite a symlinked evidence report.");
-    }
+    mkdirSync(dirname(outputFile), { recursive: true });
+    projectFileWithoutSymlinkComponents(target, output, "evidence report");
     if (format === "json") {
       atomicJson(outputFile, report);
     } else {

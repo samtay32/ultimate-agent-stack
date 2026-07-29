@@ -219,9 +219,9 @@ blocked, or a consequential decision is required.
 
 Use `evidence report` when the user needs a compact state summary. Use
 `--format mermaid --output .agent-stack/reports/evidence.mmd` for a diagram.
-Keep `--max-nodes` proportionate to the review context. An omitted node is not
-lost evidence; it is outside the visualization bound and remains in the
-validated graph.
+Keep `--max-nodes` proportionate to the review context. The renderer also caps
+edges at four per selected node. An omitted node or edge is not lost evidence;
+it is outside the visualization bound and remains in the validated graph.
 
 ## What Happens With Subagents
 
