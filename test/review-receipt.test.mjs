@@ -47,7 +47,7 @@ function qodoCompletion(commit = HEAD, reviewUrl = QODO_REVIEW_URL) {
   };
 }
 
-function qodoUnifiedReview(commit = HEAD, marker = "results") {
+function qodoUnifiedReview(commit = HEAD, marker = "updated") {
   const exactHeadMarker =
     marker === "updated"
       ? `Review updated until commit https://github.com/owner/repository/commit/${commit}`
@@ -146,9 +146,15 @@ test("accepts Qodo's exact-head full commit marker after an updated review", () 
     provider: "qodo",
     comments: [qodoUnifiedReview(OLD_HEAD, "updated"), qodoCompletion()],
   });
+  const shortOnly = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "qodo",
+    comments: [qodoUnifiedReview(HEAD, "results"), qodoCompletion()],
+  });
 
   assert.equal(result.ok, true);
   assert.equal(stale.ok, false);
+  assert.equal(shortOnly.ok, false);
 });
 
 test("accepts Qodo exact-head review plus completed unified evidence", () => {

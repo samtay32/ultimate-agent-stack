@@ -49,17 +49,13 @@ function qodoUnifiedReviewMatches(comment, headOid) {
     return false;
   }
   const body = comment.body ?? "";
-  const shortCommit = escapedPattern(headOid.slice(0, 7));
   const fullCommit = escapedPattern(headOid);
   return (
     QODO_REVIEW_TITLE_PATTERN.test(body) &&
-    (new RegExp(`\\bResults up to commit\\s+${shortCommit}\\b`, "i").test(
-      body,
-    ) ||
-      new RegExp(
-        `\\bReview updated until commit\\b[\\s\\S]*\\/commit\\/${fullCommit}(?:\\b|$)`,
-        "i",
-      ).test(body))
+    new RegExp(
+      `\\bReview updated until commit\\b[\\s\\S]*\\/commit\\/${fullCommit}(?:\\b|$)`,
+      "i",
+    ).test(body)
   );
 }
 
