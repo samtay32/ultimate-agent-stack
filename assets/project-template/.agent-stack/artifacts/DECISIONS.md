@@ -1,5 +1,8 @@
 # Decision Log
 
+Status: DRAFT
+Material open conflicts: YES
+
 Record binding product decisions and changes to locked intent. This is not a
 progress journal. Promotion from a working brief makes this file the canonical
 decision record; do not maintain a second binding copy in the brief.

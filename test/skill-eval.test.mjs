@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
@@ -14,6 +15,7 @@ import {
   validateRunRecord,
   validateScenarioCatalog,
 } from "../scripts/skill-eval.mjs";
+import { projectStateSha256 } from "../scripts/skill-fixture.mjs";
 
 const PACKAGE_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const catalog = JSON.parse(
@@ -22,14 +24,61 @@ const catalog = JSON.parse(
 
 function passingRecord() {
   const record = buildScaffold(catalog);
+  const scaffoldCases = new Map(
+    record.cases.map((item) => [item.scenario_id, item]),
+  );
   record.harness = {
     name: "test-harness",
     version: "1.0.0",
     model: "test-model",
   };
-  record.cases = catalog.scenarios.map((scenario) => ({
-    scenario_id: scenario.id,
-    observed: {
+  record.cases = catalog.scenarios.map((scenario) => {
+    const scaffold = scaffoldCases.get(scenario.id);
+    const initialGitHead = createHash("sha256")
+      .update(`initial:${scenario.id}`)
+      .digest("hex")
+      .slice(0, 40);
+    const initialProjectTreeSha256 = `sha256:${createHash("sha256")
+      .update(`initial-tree:${scenario.id}`)
+      .digest("hex")}`;
+    const finalGitHead = createHash("sha256")
+      .update(`final:${scenario.id}`)
+      .digest("hex")
+      .slice(0, 40);
+    const finalProjectTreeSha256 = `sha256:${createHash("sha256")
+      .update(`final-tree:${scenario.id}`)
+      .digest("hex")}`;
+    return {
+      scenario_id: scenario.id,
+      fixture_receipt: scaffold.fixture_receipt,
+      materialization_receipt: scaffold.materialization_receipt,
+      materialization_spec_sha256:
+        scaffold.materialization_spec_sha256,
+      materialized_git_head: initialGitHead,
+      materialized_project_tree_sha256: initialProjectTreeSha256,
+      materialized_project_state_sha256: projectStateSha256({
+        materializationSpecSha256:
+          scaffold.materialization_spec_sha256,
+        gitHead: initialGitHead,
+        projectTreeSha256: initialProjectTreeSha256,
+      }),
+      final_git_head: finalGitHead,
+      final_project_tree_sha256: finalProjectTreeSha256,
+      final_project_state_sha256: projectStateSha256({
+        materializationSpecSha256:
+          scaffold.materialization_spec_sha256,
+        gitHead: finalGitHead,
+        projectTreeSha256: finalProjectTreeSha256,
+      }),
+      harness_session: {
+        id: `test-session:${scenario.id}`,
+        isolation: "fresh-session-per-scenario",
+      },
+      provider_authority:
+        structuredClone(scaffold.provider_authority),
+      external_inputs:
+        structuredClone(scaffold.external_inputs),
+      observed: {
       activated_skills: [...scenario.expected.must_activate],
       asked_clarifying_question:
         (scenario.expected.minimum_questions ??
@@ -45,8 +94,8 @@ function passingRecord() {
       question_tags: [
         ...(scenario.expected.required_question_tags ?? []),
       ],
-      performed_actions: [],
-      written_paths: [],
+      performed_actions: [...(scenario.expected.required_actions ?? [])],
+      written_paths: [...(scenario.expected.required_write_paths ?? [])],
       artifacts: structuredClone(
         scenario.expected.required_artifact_states ?? [],
       ),
@@ -57,12 +106,13 @@ function passingRecord() {
       source_claim_dispositions: (
         scenario.expected.required_source_claim_ids ?? []
       ).map((id) => ({ id, disposition: "kept" })),
-    },
-    evidence: {
-      summary: `Observed ${scenario.id} in the test harness.`,
-      source: `test-run:${scenario.id}`,
-    },
-  }));
+      },
+      evidence: {
+        summary: `Observed ${scenario.id} in the test harness.`,
+        source: `test-run:${scenario.id}`,
+      },
+    };
+  });
   return record;
 }
 
@@ -178,9 +228,17 @@ test("behavior surface paths fail with a clear missing-path error", () => {
 test("behavior surface includes installed handoff and runtime start prompts", () => {
   const entries = behaviorSurfaceEntries();
   const paths = new Set(entries.map(([path]) => path));
+  assert.ok(paths.has(".gitattributes"));
   assert.ok(
     paths.has("assets/project-template/.agent-stack/HANDOFF.md"),
   );
+  assert.ok(
+    paths.has(
+      "assets/project-template/.agent-stack/artifacts/DELEGATION.md",
+    ),
+  );
+  assert.ok(paths.has("evals/fixtures.json"));
+  assert.ok(paths.has("scripts/skill-fixture.mjs"));
   assert.ok(paths.has(".agent-stack/start-prompt-policy.json"));
   const promptEntry = entries.find(
     ([path]) => path === ".agent-stack/start-prompt-policy.json",
@@ -204,6 +262,16 @@ test("behavior surface includes installed handoff and runtime start prompts", ()
     hashBehaviorEntries(changedPrompt),
     hashBehaviorEntries(entries),
   );
+  const changedMaterializer = entries.map(([path, content]) => [
+    path,
+    path === "scripts/skill-fixture.mjs"
+      ? Buffer.from(`${content.toString("utf8")}\n// changed materializer\n`)
+      : content,
+  ]);
+  assert.notEqual(
+    hashBehaviorEntries(changedMaterializer),
+    hashBehaviorEntries(entries),
+  );
 });
 
 test("skill metadata and surface hashes are stable across line endings", () => {
@@ -217,6 +285,10 @@ test("skill metadata and surface hashes are stable across line endings", () => {
   assert.equal(
     hashBehaviorEntries([["skill.md", Buffer.from(crlf)]]),
     hashBehaviorEntries([["skill.md", Buffer.from(lf)]]),
+  );
+  assert.equal(
+    hashBehaviorEntries([["script.mjs", Buffer.from(crlf)]]),
+    hashBehaviorEntries([["script.mjs", Buffer.from(lf)]]),
   );
   assert.notEqual(
     hashBehaviorEntries([["asset.bin", Buffer.from([0x80])]]),
@@ -234,7 +306,9 @@ test("skill metadata and surface hashes are stable across line endings", () => {
 });
 
 test("a complete live run record passes against the current behavior surface", () => {
-  const result = validateRunRecord(passingRecord(), catalog);
+  const record = passingRecord();
+  assert.equal(record.schema_version, 2);
+  const result = validateRunRecord(record, catalog);
   assert.equal(result.ok, true, JSON.stringify(result, null, 2));
   assert.deepEqual(result.summary, {
     total: 26,
@@ -245,6 +319,99 @@ test("a complete live run record passes against the current behavior surface", (
   assert.equal(
     result.cases[0].evidence_source,
     "test-run:direct-setup",
+  );
+});
+
+test("run-record schema 2 requires claim dispositions and rejects stale schemas", () => {
+  const current = passingRecord();
+  delete current.cases[0].observed.source_claim_dispositions;
+  let result = validateRunRecord(current, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /source_claim_dispositions must be an array/,
+  );
+
+  for (const staleVersion of [1, 3]) {
+    const stale = passingRecord();
+    stale.schema_version = staleVersion;
+    result = validateRunRecord(stale, catalog);
+    assert.equal(result.ok, false);
+    assert.match(
+      result.errors.join("\n"),
+      /run record schema_version must equal 2/,
+    );
+  }
+});
+
+test("live run cases are bound to the exact canonical fixture", () => {
+  for (const fixtureValue of [undefined, "sha256:wrong-fixture"]) {
+    const record = passingRecord();
+    const direct = record.cases.find(
+      (item) => item.scenario_id === "direct-delivery",
+    );
+    direct.fixture_receipt = fixtureValue;
+    const result = validateRunRecord(record, catalog);
+    assert.equal(result.ok, false);
+    assert.match(
+      JSON.stringify(result),
+      /fixture_receipt must equal sha256:[a-f0-9]{64}/,
+    );
+  }
+});
+
+test("live run cases retain materialization, provider, and external-input receipts", () => {
+  const missingMaterialization = passingRecord();
+  delete missingMaterialization.cases[0].materialization_receipt;
+  let result = validateRunRecord(missingMaterialization, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /materialization_receipt must equal sha256:[a-f0-9]{64}/,
+  );
+
+  const invalidState = passingRecord();
+  invalidState.cases[0].materialized_project_tree_sha256 =
+    `sha256:${"0".repeat(64)}`;
+  result = validateRunRecord(invalidState, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /materialized_project_state_sha256 must bind/,
+  );
+
+  const reusedSession = passingRecord();
+  reusedSession.cases[1].harness_session.id =
+    reusedSession.cases[0].harness_session.id;
+  result = validateRunRecord(reusedSession, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    result.errors.join("\n"),
+    /run record reuses harness session/,
+  );
+
+  const missingProviderAuthority = passingRecord();
+  const linear = missingProviderAuthority.cases.find(
+    (item) => item.scenario_id === "direct-receipted-linear-write",
+  );
+  linear.provider_authority.mode = "live-write";
+  result = validateRunRecord(missingProviderAuthority, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /provider_authority must equal the canonical materialization authority receipt/,
+  );
+
+  const missingExternalInput = passingRecord();
+  const secret = missingExternalInput.cases.find(
+    (item) => item.scenario_id === "flexible-external-secret-redaction",
+  );
+  secret.external_inputs = [];
+  result = validateRunRecord(missingExternalInput, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /external_inputs must equal the canonical prompt-only input receipts/,
   );
 });
 
@@ -277,8 +444,9 @@ test("telemetry diagnosis requires explicit activation and rejects project write
     written_paths: [],
     artifacts: [],
     outcome_tags: [
-      "telemetry_scope_health",
-      "telemetry_observation_receipt",
+      "telemetry_health_checked",
+      "telemetry_unavailable_reported",
+      "repository_evidence_fallback",
     ],
     observable_outputs: [],
     source_claim_dispositions: [],
@@ -392,6 +560,39 @@ test("router boundary cases fail on brief false activation or completed-work res
   );
 });
 
+test("bounded DIRECT delivery requires implementation and verification evidence", () => {
+  const record = passingRecord();
+  const direct = record.cases.find(
+    (item) => item.scenario_id === "flexible-direct-bypass",
+  );
+  direct.observed.activated_skills =
+    direct.observed.activated_skills.filter(
+      (name) => name !== "build-vertical-slice",
+    );
+  direct.observed.performed_actions =
+    direct.observed.performed_actions.filter(
+      (action) => action !== "run_project_tests",
+    );
+  direct.observed.written_paths =
+    direct.observed.written_paths.filter(
+      (path) => path !== "src/status.mjs",
+    );
+  const result = validateRunRecord(record, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /required skill did not activate: build-vertical-slice/,
+  );
+  assert.match(
+    JSON.stringify(result),
+    /required action was not performed: run_project_tests/,
+  );
+  assert.match(
+    JSON.stringify(result),
+    /required write path was absent: src\/status\.mjs/,
+  );
+});
+
 test("explicit advanced-provider setup rejects the combined simple confirmation", () => {
   const record = passingRecord();
   const setup = record.cases.find(
@@ -492,6 +693,25 @@ test("flexible-intake scenario expectations reject unsafe paths and malformed bo
   assert.match(
     result.errors.join("\n"),
     /lock_state must be unlocked, locked, rejected, or absent/,
+  );
+});
+
+test("scenario contracts reject contradictory action and write requirements", () => {
+  const broken = structuredClone(catalog);
+  const direct = broken.scenarios.find(
+    (item) => item.id === "flexible-direct-bypass",
+  );
+  direct.expected.forbidden_actions.push("run_project_tests");
+  direct.expected.forbidden_write_paths = ["src/**"];
+  const result = validateScenarioCatalog(broken);
+  assert.equal(result.ok, false);
+  assert.match(
+    result.errors.join("\n"),
+    /both requires and forbids action run_project_tests/,
+  );
+  assert.match(
+    result.errors.join("\n"),
+    /requires write path src\/status\.mjs but forbids it with src\/\*\*/,
   );
 });
 

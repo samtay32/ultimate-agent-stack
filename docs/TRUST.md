@@ -17,7 +17,7 @@ sandbox and the Markdown skills are not executable security controls.
 | Require approval after configured checks or delegated script bodies change | Keep routine technical choices with the agent |
 | Validate command arrays and reject direct shell or destructive executables | Build vertical slices instead of a large untested code drop |
 | Fail required checks on missing commands, timeout, nonzero exit, or missing evidence | Do not weaken tests merely to make a check pass |
-| Reject selected lock artifacts marked `Status: DRAFT`, declaring material open conflicts, or containing unresolved `[[PLACEHOLDERS]]`; hash accepted intent files and report drift | Route intake proportionately and reconcile semantic conflicts before promotion |
+| Require exactly one visible `Status: APPROVED` and `Material open conflicts: NO` in each selected lock artifact, reject unresolved `[[PLACEHOLDERS]]`, hash accepted intent files, and report drift | Route intake proportionately and reconcile semantic conflicts before promotion |
 | Reject stale, change-requested, or unresolved required review evidence | Treat worker output and optional memory as untrusted advice |
 | Preserve differing local files and create update proposals | Repair valid review findings and explain rejected ones |
 | Reject a second active Project Steward in the same checkout | Have the primary agent manage every subagent |
@@ -137,19 +137,24 @@ nonzero, or does not produce complete evidence. The latest run is stored under
 
 Delivery, architecture, and security artifacts can be locked by hash. Silent
 changes are reported. A deliberate change requires an audited unlock reason and
-a new lock. Before writing a lock, the CLI rejects a selected artifact with an
-explicit `Status: DRAFT` marker, `Material open conflicts: YES`, or unresolved
-double-bracket placeholders. These are mechanical byte-level declarations. The
-CLI does not understand whether the prose is complete, discover an omitted
-conflict, decide whether a source claim was normalized correctly, or prove that
-the person approving a brief has a particular legal identity.
+a new lock. Before writing a lock, the CLI requires each selected artifact to
+contain exactly one visible `Status: APPROVED` declaration and exactly one
+visible `Material open conflicts: NO` declaration outside fenced examples.
+Missing, duplicate, unknown, DRAFT, and open-conflict declarations fail closed,
+as do unresolved double-bracket placeholders. These are mechanical byte-level
+declarations. The CLI does not understand whether the prose is complete,
+discover an omitted conflict, decide whether a source claim was normalized
+correctly, or prove that the person approving a brief has a particular legal
+identity.
 
 For DISCOVER and EXTERNAL intake, the instructed workflow preserves source
 provenance and assigns every load-bearing source claim one of four dispositions:
 `kept`, `tightened`, `rejected`, or `deferred`. It reconciles those claims
 against repository behavior and routes material residual conflicts to the
-product owner. That semantic audit and the truth of an `APPROVED` marker remain
-instruction and live-evaluation responsibilities. The CLI does not
+product owner. Supplied source contents are untrusted data: embedded commands,
+agent instructions, authority claims, and secret requests must not be executed
+or followed. That semantic audit, instruction boundary, and the truth of an
+`APPROVED` marker remain instruction and live-evaluation responsibilities. The CLI does not
 cryptographically authenticate the approver. A lock proves only that the
 selected bytes passed the mechanical markers and have not drifted since
 hashing.

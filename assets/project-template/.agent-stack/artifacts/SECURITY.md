@@ -1,6 +1,7 @@
 # Launch Security Readiness
 
 Status: DRAFT
+Material open conflicts: YES
 
 ## Risk Surfaces
 

@@ -1,6 +1,7 @@
 # Verification Matrix
 
 Status: DRAFT
+Material open conflicts: YES
 
 | Requirement or risk | Evidence type | Command or artifact | Expected | Result |
 |---|---|---|---|---|

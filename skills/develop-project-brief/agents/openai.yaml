@@ -1,6 +1,6 @@
 interface:
   display_name: "Develop Project Brief"
   short_description: "Discover or audit intent before shaping"
-  default_prompt: "Develop an approved working brief from this idea or supplied source without starting implementation."
+  default_prompt: "Develop a reviewable working brief from this idea or supplied source without starting implementation. Record APPROVED only after product-owner acceptance."
 policy:
   allow_implicit_invocation: true

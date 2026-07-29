@@ -74,16 +74,109 @@ function main() {
       (packed[0].files ?? []).map((entry) => entry.path),
     );
     for (const requiredPath of [
+      ".gitattributes",
       "assets/project-template/.agent-stack/artifacts/BRIEF.md",
       "skills/develop-project-brief/SKILL.md",
       "skills/develop-project-brief/references/brief-contract.md",
       "skills/develop-project-brief/references/intake-and-reconciliation.md",
+      "evals/fixtures.json",
+      "scripts/skill-fixture.mjs",
     ]) {
       if (!packedPaths.has(requiredPath)) {
         throw new Error(`npm pack omitted ${requiredPath}`);
       }
     }
     const tarball = join(sandbox, packed[0].filename);
+    const fixtureConsumer = join(sandbox, "fixture-consumer");
+    mkdirSync(fixtureConsumer);
+    writeFileSync(
+      join(fixtureConsumer, "package.json"),
+      `${JSON.stringify({
+        name: "packed-fixture-consumer",
+        private: true,
+      }, null, 2)}\n`,
+    );
+    runNpm(
+      ["install", "--ignore-scripts", "--no-save", tarball],
+      fixtureConsumer,
+    );
+    const fixtureScript = join(
+      fixtureConsumer,
+      "node_modules",
+      "ultimate-agent-stack",
+      "scripts",
+      "skill-fixture.mjs",
+    );
+    const evalScript = join(
+      fixtureConsumer,
+      "node_modules",
+      "ultimate-agent-stack",
+      "scripts",
+      "skill-eval.mjs",
+    );
+    const packedContracts = JSON.parse(
+      run(process.execPath, [evalScript, "contracts"], fixtureConsumer),
+    );
+    if (!packedContracts.ok || packedContracts.scenario_count !== 26) {
+      throw new Error("packed behavioral contracts did not validate");
+    }
+    const fixtureList = JSON.parse(
+      run(process.execPath, [fixtureScript, "list"], fixtureConsumer),
+    );
+    if (
+      !fixtureList.ok ||
+      fixtureList.scenarios.length !== 26 ||
+      fixtureList.scenarios.some(
+        (item) => !/^sha256:[a-f0-9]{64}$/.test(item.fixture_receipt),
+      )
+    ) {
+      throw new Error("packed canonical fixture catalog is invalid");
+    }
+    const materializedFixture = join(sandbox, "materialized-fixture");
+    const fixtureResult = JSON.parse(
+      run(
+        process.execPath,
+        [
+          fixtureScript,
+          "materialize",
+          "--scenario",
+          "negative-explanation-only",
+          "--target",
+          materializedFixture,
+        ],
+        fixtureConsumer,
+      ),
+    );
+    if (
+      !fixtureResult.ok ||
+      !existsSync(join(materializedFixture, "package.json")) ||
+      !/^sha256:[a-f0-9]{64}$/.test(fixtureResult.fixture_receipt)
+    ) {
+      throw new Error("packed canonical fixture did not materialize");
+    }
+    const inspectedFixture = JSON.parse(
+      run(
+        process.execPath,
+        [
+          fixtureScript,
+          "inspect",
+          "--scenario",
+          "negative-explanation-only",
+          "--target",
+          materializedFixture,
+        ],
+        fixtureConsumer,
+      ),
+    );
+    if (
+      inspectedFixture.git.head !== fixtureResult.git.head ||
+      inspectedFixture.receipt.project_tree_sha256 !==
+        fixtureResult.receipt.project_tree_sha256 ||
+      inspectedFixture.receipt.project_state_sha256 !==
+        fixtureResult.receipt.project_state_sha256
+    ) {
+      throw new Error("packed canonical fixture inspection did not match");
+    }
     const project = join(sandbox, "project");
     mkdirSync(project);
     run("git", ["init", project], PACKAGE_ROOT);
