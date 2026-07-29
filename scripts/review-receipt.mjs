@@ -10,8 +10,12 @@ const PASSING_REVIEW_STATES = new Set(["APPROVED", "COMMENTED"]);
 const RATE_LIMIT_PATTERN =
   /\b(rate limit|review limit|review quota|reviews? remaining|refill)\b/i;
 const QODO_REVIEW_TITLE_PATTERN = /\bCode Review by Qodo\b/i;
-const QODO_CLEAN_COMPLETION_PATTERN =
-  /<h3>\s*Great,\s*no issues found!\s*<\/h3>[\s\S]*\bQodo reviewed your code and found no material issues that require review\b/i;
+const QODO_PROCESSING_PATTERN =
+  /\b(?:agents?\s+(?:are|is)|Qodo\s+is)\s+(?:still\s+)?working\b|\bprocessing\b/i;
+const QODO_CLEAN_COMPLETION_PATTERNS = [
+  /(?:<h[1-6]\b[^>]*>|^\s*#{1,6}\s+)\s*(?:great[\s,:!.\u2013\u2014-]*)?no\s+(?:material\s+)?issues?\s+(?:were\s+)?found\b/im,
+  /\b(?:found\s+no|no)\s+material\s+issues?(?:\s+(?:that\s+)?(?:require|requiring)\s+review)?\b/i,
+];
 
 function normalizeLogin(login) {
   return String(login ?? "")
@@ -53,7 +57,8 @@ function qodoCompletionMatches(comment, headOid, unifiedReviewUrl = undefined) {
     (unifiedReviewUrl === undefined || body.includes(unifiedReviewUrl));
   const currentCleanCompletion =
     QODO_REVIEW_TITLE_PATTERN.test(body) &&
-    QODO_CLEAN_COMPLETION_PATTERN.test(body) &&
+    !QODO_PROCESSING_PATTERN.test(body) &&
+    QODO_CLEAN_COMPLETION_PATTERNS.some((pattern) => pattern.test(body)) &&
     qodoExactHeadMatches(body, headOid);
   return legacyCompletion || currentCleanCompletion;
 }

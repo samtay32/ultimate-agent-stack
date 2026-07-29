@@ -76,6 +76,17 @@ function qodoCurrentCleanReview(commit = HEAD) {
   };
 }
 
+function qodoCleanReviewVariant(body, commit = HEAD) {
+  return {
+    author: { login: "qodo-code-review[bot]", __typename: "Bot" },
+    url: QODO_REVIEW_URL,
+    body:
+      "<h3>Code Review by Qodo</h3>\n" +
+      body +
+      `\n<!-- https://github.com/owner/repository/commit/${commit} -->`,
+  };
+}
+
 function thread({
   login = "coderabbitai",
   resolved = false,
@@ -194,6 +205,40 @@ test("accepts Qodo's current exact-head terminal clean review", () => {
   assert.equal(stale.ok, false);
   assert.equal(summaryOnly.ok, false);
   assert.equal(nonTerminal.ok, false);
+});
+
+test("accepts bounded Qodo terminal-clean wording and heading variants", () => {
+  const markdownHeading = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "qodo",
+    comments: [
+      qodoCleanReviewVariant(
+        "### Great — no issues found.\nThe review is complete.",
+      ),
+    ],
+  });
+  const materialIssueWording = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "qodo",
+    comments: [
+      qodoCleanReviewVariant(
+        "Review complete: no material issues requiring review.",
+      ),
+    ],
+  });
+  const processingWithCleanWords = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "qodo",
+    comments: [
+      qodoCleanReviewVariant(
+        "### No issues found yet\nQodo is still working on the review.",
+      ),
+    ],
+  });
+
+  assert.equal(markdownHeading.ok, true);
+  assert.equal(materialIssueWording.ok, true);
+  assert.equal(processingWithCleanWords.ok, false);
 });
 
 test("accepts Qodo's exact-head full commit marker after an updated review", () => {
