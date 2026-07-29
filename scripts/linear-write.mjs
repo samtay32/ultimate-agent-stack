@@ -42,8 +42,35 @@ function boundedText(value, label, maximum) {
 }
 
 async function readBoundedStream(stream, maximumBytes) {
-  if (!stream || typeof stream.getReader !== "function") {
+  if (!stream) {
     return { ok: true, text: "", bytes: 0 };
+  }
+  if (typeof stream.getReader !== "function") {
+    if (typeof stream[Symbol.asyncIterator] !== "function") {
+      return { ok: false, text: "", bytes: 0 };
+    }
+    const chunks = [];
+    let bytes = 0;
+    for await (const chunk of stream) {
+      if (
+        !(chunk instanceof Uint8Array) &&
+        typeof chunk !== "string"
+      ) {
+        return { ok: false, text: "", bytes: 0 };
+      }
+      const value =
+        typeof chunk === "string" ? Buffer.from(chunk, "utf8") : chunk;
+      bytes += value.byteLength;
+      if (bytes > maximumBytes) {
+        return { ok: false, text: "", bytes };
+      }
+      chunks.push(value);
+    }
+    return {
+      ok: true,
+      text: Buffer.concat(chunks, bytes).toString("utf8"),
+      bytes,
+    };
   }
   const reader = stream.getReader();
   const chunks = [];
@@ -163,6 +190,7 @@ async function performLinearWrite({
   command,
   input,
   apiKey,
+  credentialSource,
   fetchImpl = fetch,
   signal = AbortSignal.timeout(15_000),
 } = {}) {
@@ -177,7 +205,15 @@ async function performLinearWrite({
       error: error.message,
     };
   }
-  if (typeof apiKey !== "string" || apiKey.length < 20) {
+  const resolvedApiKey =
+    apiKey ??
+    (credentialSource && typeof credentialSource === "object"
+      ? credentialSource[request.credential]
+      : undefined);
+  if (
+    typeof resolvedApiKey !== "string" ||
+    resolvedApiKey.length < 20
+  ) {
     return {
       ok: false,
       provider: "linear",
@@ -190,7 +226,7 @@ async function performLinearWrite({
       method: "POST",
       headers: {
         Accept: "application/json",
-        Authorization: apiKey,
+        Authorization: resolvedApiKey,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -282,11 +318,10 @@ async function main(argv = process.argv.slice(2)) {
   }
   const command = argv[0];
   const input = await readInput();
-  const request = operationRequest(command, input);
   return performLinearWrite({
     command,
     input,
-    apiKey: process.env[request.credential],
+    credentialSource: process.env,
   });
 }
 
@@ -300,7 +335,7 @@ if (isEntryPoint) {
   try {
     const result = await main();
     process.stdout.write(`${JSON.stringify(result)}\n`);
-    process.exitCode = 0;
+    process.exitCode = result.ok ? 0 : 1;
   } catch (error) {
     process.stderr.write(
       `${JSON.stringify({ ok: false, error: error.message })}\n`,

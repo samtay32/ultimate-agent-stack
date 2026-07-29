@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   LINEAR_GRAPHQL_ENDPOINT,
@@ -11,6 +13,9 @@ const TEST_KEY = "lin_api_test_value_never_logged";
 const ISSUE_ID = "123e4567-e89b-52d3-a456-426614174000";
 const TEAM_ID = "123e4567-e89b-52d3-a456-426614174001";
 const COMMENT_ID = "123e4567-e89b-52d3-a456-426614174002";
+const LINEAR_WRITE_HELPER = fileURLToPath(
+  new URL("../scripts/linear-write.mjs", import.meta.url),
+);
 
 test("Linear issue creation exposes only the fixed mutation shape", async () => {
   let captured;
@@ -158,4 +163,60 @@ test("Linear writes fail closed without surfacing provider errors", async () => 
   });
   assert.equal(oversized.ok, false);
   assert.match(oversized.error, /bounded capture limit/);
+});
+
+test("Linear write entrypoint preserves structured failures and exits nonzero", () => {
+  const invalid = spawnSync(
+    process.execPath,
+    [LINEAR_WRITE_HELPER, "issue-create"],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        LINEAR_CREATE_API_KEY: TEST_KEY,
+      },
+      input: JSON.stringify({
+        issue_id: ISSUE_ID,
+        team_id: TEAM_ID,
+        title: "Bounded project work",
+        description: "Safe description",
+        unsupported: true,
+      }),
+      shell: false,
+    },
+  );
+  assert.equal(invalid.status, 1, invalid.stderr);
+  assert.equal(invalid.stderr, "");
+  assert.deepEqual(JSON.parse(invalid.stdout), {
+    ok: false,
+    provider: "linear",
+    operation: "issue-create",
+    error: "issue-create input contains unsupported fields",
+  });
+
+  const missingCredential = spawnSync(
+    process.execPath,
+    [LINEAR_WRITE_HELPER, "evidence-comment"],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        LINEAR_COMMENT_API_KEY: "",
+      },
+      input: JSON.stringify({
+        comment_id: COMMENT_ID,
+        issue_id: ISSUE_ID,
+        body: "Verified evidence",
+      }),
+      shell: false,
+    },
+  );
+  assert.equal(missingCredential.status, 1, missingCredential.stderr);
+  assert.equal(missingCredential.stderr, "");
+  assert.deepEqual(JSON.parse(missingCredential.stdout), {
+    ok: false,
+    provider: "linear",
+    operation: "evidence-comment",
+    error: "LINEAR_COMMENT_API_KEY is missing or invalid",
+  });
 });

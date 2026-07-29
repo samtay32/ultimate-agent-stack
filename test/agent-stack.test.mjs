@@ -494,7 +494,7 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
       initializedConfig.parallel_delivery,
       safeParallelPolicy(),
     );
-    assert.equal(initializedConfig.schema_version, 6);
+    assert.equal(initializedConfig.schema_version, 7);
     assert.equal(initializedConfig.onboarding.status, "pending");
     assert.equal(initializedConfig.capabilities.knowledge.scope, "project");
     assert.deepEqual(initializedConfig.capabilities.telemetry.providers, []);
@@ -504,8 +504,14 @@ test("clean project lifecycle initializes, approves, verifies, and locks", () =>
       sync_mode: "repository_only",
       write_policy: "repository_only",
       repository_fallback: true,
+      linear_idempotency_namespace:
+        initializedConfig.capabilities.work.linear_idempotency_namespace,
       connection: null,
     });
+    assert.match(
+      initializedConfig.capabilities.work.linear_idempotency_namespace,
+      /^[a-f0-9]{64}$/,
+    );
     assert.deepEqual(initializedConfig.quality.environment, { allow: [] });
 
     const copiedCli = spawnSync(
@@ -1012,6 +1018,8 @@ test("simple preset expands to the safe local project configuration", () => {
       sync_mode: "repository_only",
       write_policy: "repository_only",
       repository_fallback: true,
+      linear_idempotency_namespace:
+        config.capabilities.work.linear_idempotency_namespace,
       connection: null,
     });
     assert.equal(config.autonomy.execution, "agent_owned");
@@ -1675,6 +1683,8 @@ test("Linear work setup is read-only, scoped, and falls back safely", () => {
       sync_mode: "read_only_mirror",
       write_policy: "read_only",
       repository_fallback: true,
+      linear_idempotency_namespace:
+        configured.capabilities.work.linear_idempotency_namespace,
       connection: {
         kind: "linear_api_key",
         credential_env: "LINEAR_API_KEY",
@@ -1805,6 +1815,55 @@ test("approved Linear issue creation is idempotent and writes bounded receipts",
     assert.equal(
       configured.capabilities.work.connection.writes.comment_credential_env,
       "LINEAR_COMMENT_API_KEY",
+    );
+    assert.equal(
+      configured.capabilities.work.connection.writes
+        .idempotency_namespace,
+      undefined,
+    );
+    const idempotencyNamespace =
+      configured.capabilities.work.linear_idempotency_namespace;
+    assert.match(idempotencyNamespace, /^[a-f0-9]{64}$/);
+    const readOnlyLinearConfig = commandConfigure(fixture.directory, {
+      profile: "standard",
+      review: "builtin",
+      knowledge: "repository",
+      work: "linear",
+      linearTeams: ["ENG"],
+      externalData: "approved_providers",
+      reason: "Temporarily disable approved Linear writes",
+    });
+    assert.equal(
+      readOnlyLinearConfig.capabilities.work
+        .linear_idempotency_namespace,
+      idempotencyNamespace,
+    );
+    assert.equal(
+      readOnlyLinearConfig.capabilities.work.connection.writes,
+      null,
+    );
+    const repositoryConfig = commandConfigure(fixture.directory, {
+      preset: "simple",
+      reason: "Temporarily use the repository work provider",
+    });
+    assert.equal(
+      repositoryConfig.capabilities.work.linear_idempotency_namespace,
+      idempotencyNamespace,
+    );
+    const restoredLinearConfig = commandConfigure(fixture.directory, {
+      profile: "standard",
+      review: "builtin",
+      knowledge: "repository",
+      work: "linear",
+      linearTeams: ["ENG"],
+      linearWrites: ["issue_create", "evidence_comment"],
+      externalData: "approved_providers",
+      reason: "Restore the approved Linear synchronization policy",
+    });
+    assert.equal(
+      restoredLinearConfig.capabilities.work
+        .linear_idempotency_namespace,
+      idempotencyNamespace,
     );
 
     const ledger = {
@@ -2019,9 +2078,68 @@ test("approved Linear issue creation is idempotent and writes bounded receipts",
     );
     assert.equal(secondComment.ok, true);
     assert.equal(secondComment.result, "not-needed");
+    const failedIssuePreflight = commandLinearEvidenceComment(
+      fixture.directory,
+      commentOptions,
+      {
+        lookup(_target, _args, operation) {
+          assert.equal(operation, "resolve-issue");
+          return {
+            ok: false,
+            provider: "linear",
+            operation,
+            error: "bounded lookup failure",
+          };
+        },
+        mutate() {
+          throw new Error("mutation must not run after failed preflight");
+        },
+      },
+    );
+    assert.equal(failedIssuePreflight.ok, false);
+    assert.equal(failedIssuePreflight.result, "failed");
+    assert.equal(
+      existsSync(join(fixture.directory, failedIssuePreflight.receipt)),
+      true,
+    );
+    const failedCommentPreflight = commandLinearEvidenceComment(
+      fixture.directory,
+      commentOptions,
+      {
+        lookup(_target, _args, operation) {
+          if (operation === "resolve-issue") {
+            return {
+              ok: true,
+              provider: "linear",
+              operation,
+              found: true,
+              provider_id: createdIssueId,
+              provider_identifier: "ENG-42",
+              team_key: "ENG",
+            };
+          }
+          assert.equal(operation, "resolve-comment");
+          return {
+            ok: false,
+            provider: "linear",
+            operation,
+            error: "bounded lookup failure",
+          };
+        },
+        mutate() {
+          throw new Error("mutation must not run after failed preflight");
+        },
+      },
+    );
+    assert.equal(failedCommentPreflight.ok, false);
+    assert.equal(failedCommentPreflight.result, "failed");
+    assert.equal(
+      existsSync(join(fixture.directory, failedCommentPreflight.receipt)),
+      true,
+    );
     assert.equal(
       readdirSync(join(fixture.directory, PROVIDER_RECEIPTS_PATH)).length,
-      5,
+      7,
     );
     for (const file of readdirSync(
       join(fixture.directory, PROVIDER_RECEIPTS_PATH),
@@ -2030,12 +2148,15 @@ test("approved Linear issue creation is idempotent and writes bounded receipts",
         join(fixture.directory, PROVIDER_RECEIPTS_PATH, file),
       );
       assert.deepEqual(validateProviderReceipt(receipt), []);
-      assert.doesNotMatch(JSON.stringify(receipt), /LINEAR_CREATE_API_KEY/);
+      assert.doesNotMatch(
+        JSON.stringify(receipt),
+        /LINEAR_CREATE_API_KEY|LINEAR_COMMENT_API_KEY/,
+      );
     }
     assert.deepEqual(commandReceiptsValidate(fixture.directory), {
       ok: true,
       path: PROVIDER_RECEIPTS_PATH,
-      receipt_count: 4,
+      receipt_count: 6,
       errors: [],
     });
     const receiptFiles = readdirSync(
@@ -2290,10 +2411,16 @@ test("Linear write configuration rejects broadened operations and credentials", 
     );
     broadened.capabilities.work.connection.writes.create_credential_env =
       "LINEAR_ADMIN_TOKEN";
+    broadened.capabilities.work.connection.writes.idempotency_namespace =
+      "a".repeat(64);
+    broadened.capabilities.work.linear_idempotency_namespace =
+      "not-a-valid-namespace";
     const errors = validateConfig(broadened, fixture.directory).join("\n");
     assert.match(errors, /unsupported or duplicate operations/);
     assert.match(errors, /LINEAR_CREATE_API_KEY/);
     assert.match(errors, /policy and approved operations must match exactly/);
+    assert.match(errors, /unsupported key: idempotency_namespace/);
+    assert.match(errors, /linear_idempotency_namespace/);
   } finally {
     fixture.cleanup();
   }
@@ -2544,7 +2671,7 @@ test("legacy serial policy migrates to safe adaptive coordination", () => {
       "coordinator_managed_isolated_only",
     );
     assert.deepEqual(migrated.parallel_delivery, safeParallelPolicy());
-    assert.equal(migrated.schema_version, 6);
+    assert.equal(migrated.schema_version, 7);
     assert.equal(migrated.onboarding.status, "needs_confirmation");
     assert.equal(migrated.onboarding.project_profile, "production");
     assert.equal(migrated.capabilities.review.provider, "coderabbit");
@@ -2567,8 +2694,14 @@ test("legacy serial policy migrates to safe adaptive coordination", () => {
       sync_mode: "repository_only",
       write_policy: "repository_only",
       repository_fallback: true,
+      linear_idempotency_namespace:
+        migrated.capabilities.work.linear_idempotency_namespace,
       connection: null,
     });
+    assert.match(
+      migrated.capabilities.work.linear_idempotency_namespace,
+      /^[a-f0-9]{64}$/,
+    );
   } finally {
     fixture.cleanup();
   }

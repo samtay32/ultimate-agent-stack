@@ -37,7 +37,8 @@
     "iterations_completed": {
       "type": "integer",
       "minimum": 0,
-      "maximum": 25
+      "maximum": 25,
+      "description": "Must not exceed max_iterations; the protected CLI enforces this cross-property bound."
     },
     "active_work_item": {
       "oneOf": [
@@ -77,6 +78,25 @@
     }
   },
   "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "active"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "else": {
+        "properties": {
+          "active_work_item": {
+            "type": "null"
+          }
+        }
+      }
+    },
     {
       "if": {
         "properties": {

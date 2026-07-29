@@ -211,7 +211,7 @@ function main() {
       readFileSync(join(project, ".agent-stack", "config.json"), "utf8"),
     );
     if (
-      config.schema_version !== 6 ||
+      config.schema_version !== 7 ||
       config.onboarding?.status !== "pending" ||
       config.capabilities?.review?.provider !== "builtin" ||
       config.capabilities?.knowledge?.provider !== "repository" ||
@@ -229,6 +229,9 @@ function main() {
       config.capabilities?.work?.sync_mode !== "repository_only" ||
       config.capabilities?.work?.write_policy !== "repository_only" ||
       config.capabilities?.work?.repository_fallback !== true ||
+      !/^[a-f0-9]{64}$/.test(
+        config.capabilities?.work?.linear_idempotency_namespace,
+      ) ||
       config.capabilities?.work?.connection !== null ||
       !Array.isArray(config.quality?.environment?.allow) ||
       config.quality.environment.allow.length !== 0
