@@ -9,8 +9,8 @@ Deliver correct, maintainable changes from intent through verified review closur
 Before editing, read this file, nested instruction files,
 `.agent-stack/core-policy.json`, `.agent-stack/config.json`, any valid
 `.agent-stack/CHECKPOINT.md`, locked artifacts under
-`.agent-stack/artifacts/`, the current diff, and relevant tests and
-documentation.
+`.agent-stack/artifacts/`, any active unlocked working brief, the current diff,
+and relevant tests and documentation.
 
 Project-specific instructions outrank generic stack guidance. Preserve established architecture, terminology, package managers, formatting, and deployment policy.
 
@@ -26,6 +26,27 @@ Before a meaningful code change, provide:
 
 Keep this proportionate. A small clear fix needs a micro-brief; a new system or migration needs traceable artifacts.
 
+## Intake Routing
+
+Use the first matching route:
+
+1. RESUME a valid non-complete checkpoint or an active locked contract with an
+   unmet done or evidence condition;
+2. EXTERNAL substantial supplied material that defines product intent or an
+   existing plan;
+3. DISCOVER vague, contradictory, exploratory, or greenfield product/system
+   intent that needs development;
+4. DIRECT clear bounded testable work.
+
+Apply `$develop-project-brief` only for EXTERNAL or DISCOVER. Preserve supplied
+sources unchanged, persist only bounded redacted provenance, and reconcile
+source claims against repository reality. A supporting screenshot, log, or
+attachment does not turn otherwise clear bounded work into EXTERNAL, and clear
+bounded work remains DIRECT in a new or empty repository. DIRECT work keeps the
+proportionate micro-brief path. RESUME continues the first unmet condition
+without reopening closed product decisions; completed state and a fully
+satisfied lock do not hijack a new request.
+
 ## Delivery Rules
 
 - Prefer the simplest production-grade solution.
@@ -37,6 +58,9 @@ Keep this proportionate. A small clear fix needs a micro-brief; a new system or 
 - Do not weaken tests, checks, security, permissions, or acceptance criteria to obtain green.
 - Update documentation with behavior, schema, architecture, configuration, and operational changes.
 - Preserve unrelated user changes.
+- Read canonical closed product decisions before proposing alternatives. A
+  binding change requires product-owner instruction and the audited
+  unlock/change/relock path.
 
 ## Autonomy
 

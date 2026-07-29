@@ -12,6 +12,21 @@ Every delivery artifact contains:
 6. **Acceptance** — evidence required to prove each capability.
 7. **Rollout** — migration, monitoring, rollback, or "not applicable" with reason.
 
+## Working-Brief Promotion
+
+An approved EXTERNAL or DISCOVER brief is input to shaping, not a second
+binding contract. Verify its source-claim ledger and closed decisions, then:
+
+1. copy stable requirements and acceptance evidence into `DELIVERY.md`;
+2. copy only binding implementation invariants into `ARCHITECTURE.md`;
+3. classify applicable launch surfaces in `SECURITY.md`;
+4. map requirements and risks to proof in `VERIFICATION.md`;
+5. move closed decisions into canonical `CD-n` entries in `DECISIONS.md`;
+6. reference brief provenance and decision IDs from the promoted contracts.
+
+The brief may remain as an unlocked audit record. Later binding changes use the
+audited unlock/change/relock path rather than editing the brief as hidden truth.
+
 ## Architecture Spine
 
 Record only choices that two capable implementers could make incompatibly. Use:
@@ -41,6 +56,10 @@ risk. Ask one decision at a time in plain language. Present one clearly labeled
 recommendation and at most one genuinely safe alternative, explain the
 practical consequence, and allow the user to answer "use the recommendation."
 If no safe alternative exists, say so rather than manufacturing one.
+
+When an excellent supplied source already resolves the material choices, ask
+zero generic questions. When a source conflicts with repository reality, ask
+only the smallest product or risk decision needed to resolve that conflict.
 
 ## Prototype Trigger
 

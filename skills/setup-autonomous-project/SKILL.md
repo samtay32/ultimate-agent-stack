@@ -43,42 +43,47 @@ Configure the repository without erasing its conventions. Setup is complete only
    at most one genuinely safe alternative, and explain the consequence. Record
    the approved choices.
 
-   Always ask the memory choice in plain language:
+   For a local, private, or straightforward project that does not require an
+   existing external provider or production-specific review policy, and when
+   the user has not requested a relevant advanced provider, make one combined
+   recommendation:
 
-   > Should this project remember progress only in its repository files, or
-   > also use a private local searchable memory for easier continuation across
-   > conversations?
+   > I recommend the private repository-only setup. It uses no outside memory,
+   > tracking, or telemetry, and you retain merge control. Use this?
 
-   Recommend repository memory for a short or simple project. Recommend
-   project-scoped local GBrain for a long-running build likely to span
-   conversations. Explain that GBrain is optional, the repository checkpoint
-   remains authoritative, and work still resumes when GBrain is unavailable.
+   This one confirmation selects repository memory, repository work tracking,
+   no telemetry, built-in review, local-only data, routine agent-owned
+   execution, and human-controlled merge authority. After approval, use:
 
-   Telemetry remains repository-only until a reviewed provider adapter is
-   installed. Do not ask the user to select or connect an unavailable provider,
-   and never add instrumentation merely because the neutral contract exists.
+   ```bash
+   node .agent-stack/bin/agent-stack.mjs configure \
+     --preset simple \
+     --reason "Approved the recommended simple project configuration"
+   ```
 
-   Ask the work-tracking choice in plain language:
+   Do not then ask separate questions about GBrain, Linear, telemetry, review
+   providers, data policy, or merge authority. The CLI records the
+   conversational approval reason; it does not cryptographically authenticate
+   who approved it.
 
-   > Should this project keep its task list only in the repository, or also
-   > read approved work from Linear while keeping a portable repository copy?
+   Reveal an advanced choice only when the repository already uses it and that
+   evidence makes it relevant, the user explicitly requests it, or a real
+   requirement cannot be met locally. Ask only the relevant consequential
+   question, not a provider tour.
 
-   Recommend repository work tracking for a solo, short, or early project.
-   Offer Linear only when the team already uses it and can create a
-   Read-permission key for explicitly approved team keys. Explain that Linear
-   is optional, read-only by default, and never proves completion or grants
-   delivery authority.
+   For optional memory, explain repository checkpoints remain authoritative.
+   Recommend project-scoped local GBrain only for a long-running build when the
+   user wants private searchable cross-conversation memory.
 
-   If Linear is selected, ask one follow-up:
+   For optional work tracking, offer Linear only when the team already uses it
+   and can create a Read-permission key for approved team keys. Recommend
+   read-only. Ask separately about receipted issue creation or evidence comments
+   only after Linear itself is selected; every write remains least-privilege,
+   explicitly confirmed, coordinator-bound, authority-recorded, and receipted.
 
-   > Should Linear stay read-only, or may the Project Steward create receipted
-   > issues and evidence comments after you approve each operation?
-
-   Recommend read-only. Enable `issue_create` only when the user wants a shared
-   work surface. Enable `evidence_comment` only when the user also wants bounded
-   verified evidence updates. Explain that each write uses a separate
-   least-privilege key, explicit confirmation, the active coordinator token,
-   an authority source, and a repository receipt.
+   For telemetry, offer only an existing configured PostHog, Sentry, or New
+   Relic project that is needed for a concrete operational question. Never
+   install instrumentation merely because an adapter exists.
 
    Always initialize and validate `.agent-stack/work-items.json` and
    `.agent-stack/evidence-graph.json`. If Linear is approved, configure
@@ -87,22 +92,6 @@ Configure the repository without erasing its conventions. Setup is complete only
    credential step, then verify with `linear-health` and `doctor`. Add repeated
    `--linear-write` values only for the operations the user approved. Never
    select or connect it implicitly.
-
-   For a local prototype or straightforward project that does not require
-   production release protection, external data, external memory, or delegated
-   merge authority, recommend the simple setup. After the user approves that
-   recommendation, use:
-
-   ```bash
-   node .agent-stack/bin/agent-stack.mjs configure \
-     --preset simple \
-     --reason "Approved the recommended simple project configuration"
-   ```
-
-   This preset retains the complete safety installation and selects standard,
-   built-in review, repository knowledge, local-only data, agent-owned routine
-   execution, and human-controlled merge authority. Do not use it when the
-   repository evidence requires production review or an external provider.
 
    For advanced configuration, use:
 
