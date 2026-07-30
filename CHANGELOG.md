@@ -4,6 +4,13 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ## Unreleased
 
+### Fixed
+
+- Complete source-audit and working-brief requests now stop with a gap-free
+  DRAFT ready for later approval without manufacturing an approval question.
+  Explicit approved-brief requests and end-to-end promotion retain their
+  separate product-owner acceptance boundaries.
+
 ## 0.9.0 - 2026-07-29
 
 ### Added

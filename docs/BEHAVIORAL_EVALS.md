@@ -36,7 +36,7 @@ provider, and evidence cases plus these 13 flexible-intake cases:
 | `flexible-vague-discovery` | A vague seed enters discovery, creates an unlocked DRAFT brief, asks one consequential question, and does not write product code |
 | `flexible-brief-only` | A brief-only request may reach APPROVED without starting delivery or changing product code |
 | `flexible-external-detailed-prd` | A detailed outside source is read completely, audited, preserved, and accounted for without a generic re-interview |
-| `flexible-external-complete-prd` | A complete consistent source produces a DRAFT brief ready for product-owner approval with zero unnecessary questions |
+| `flexible-external-complete-prd` | A complete consistent source stops DRAFT ready for later product-owner approval with zero questions, including no approval prompt |
 | `flexible-external-contradictory` | A material contradiction is surfaced before lock or implementation |
 | `flexible-external-existing-reconciliation` | Outside intent is compared with existing code, schemas, migrations, tests, architecture, and policy before changes |
 | `flexible-direct-bypass` | A clear bounded change stays DIRECT, writes and tests the requested slice, and prepares local PR-ready evidence even in a new project with completed state and a supporting attachment |

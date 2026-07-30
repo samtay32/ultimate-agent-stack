@@ -517,6 +517,34 @@ test("flexible intake stays ordered, proportionate, and source preserving", () =
     /RESUME and clear bounded DIRECT delivery do not create/,
   );
   assert.match(developBriefSkill, /preserve the source unchanged/);
+  assert.match(
+    developBriefSkill,
+    /explicitly requests an approved brief[\s\S]*counts as acceptance[\s\S]*produce the \*\*APPROVED-ONLY\*\* exit[\s\S]*do not ask for acceptance again/,
+  );
+  assert.match(
+    developBriefSkill,
+    /otherwise, for a request limited to source audit or producing a DRAFT or\s+working brief[\s\S]*do not ask for\s+acceptance/,
+  );
+  assert.match(
+    developBriefSkill,
+    /DRAFT ready for[\s\S]*later approval[\s\S]*pending optional approval is future work, not a blocker\s+or residual\s+question/i,
+  );
+  assert.match(
+    developBriefSkill,
+    /for end-to-end delivery[\s\S]*ask once for acceptance[\s\S]*end the turn/,
+  );
+  assert.match(
+    briefContract,
+    /explicit request from an authorized product owner for an approved brief[\s\S]*counts as acceptance[\s\S]*without asking for acceptance again/,
+  );
+  assert.match(
+    briefContract,
+    /Otherwise, a[\s\S]*gap-free request limited to source audit or producing a DRAFT or working brief[\s\S]*stop without an approval question/,
+  );
+  assert.match(
+    briefContract,
+    /Source\s+completeness alone never grants approval/,
+  );
   assert.match(intakeReconciliation, /already implemented/);
   assert.match(intakeReconciliation, /material conflict/);
   assert.match(

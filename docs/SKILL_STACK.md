@@ -6,7 +6,7 @@
 |---|---|---|---|
 | `setup-autonomous-project` | Explicit | New/existing repository needs autonomous setup or repair | Instructions, templates, detected checks, baseline evidence |
 | `run-autonomous-delivery` | End-to-end controller | User wants an end-to-end product/change outcome, including a vague idea or elaborate supplied plan | Verified PR or merge-ready result |
-| `develop-project-brief` | With delivery for end-to-end EXTERNAL/DISCOVER; direct for brief-only work | Vague intent or supplied outside material needs discovery, audit, or reconciliation | Approved working brief or a consequential unresolved decision |
+| `develop-project-brief` | With delivery for end-to-end EXTERNAL/DISCOVER; direct for brief-only work | Vague intent or supplied outside material needs discovery, audit, or reconciliation | Reviewable DRAFT ready for approval, approved working brief, or a consequential unresolved decision |
 | `coordinate-parallel-delivery` | Routed by delivery | Two or more independent tracks may shorten the critical path | Serial or bounded parallel strategy with primary-agent integration |
 | `shape-project` | Implicit or explicit | An approved brief or clear bounded request needs canonical shaping | Lockable delivery contract |
 | `use-project-knowledge` | Routed by setup/delivery | Prior knowledge may inform work or verified learning should be preserved | Scoped retrieval receipt or redacted learning proposal |

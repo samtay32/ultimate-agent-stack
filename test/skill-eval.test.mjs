@@ -694,6 +694,62 @@ test("simple onboarding separates recommendation from prior approval", () => {
   );
 });
 
+test("complete external brief audit stops DRAFT without an approval question", () => {
+  const complete = catalog.scenarios.find(
+    (scenario) => scenario.id === "flexible-external-complete-prd",
+  );
+  assert.equal(complete.expected.maximum_questions, 0);
+  assert.equal(complete.expected.maximum_questions_per_turn, 0);
+  assert.deepEqual(complete.expected.required_artifact_states, [
+    {
+      path: ".agent-stack/artifacts/BRIEF.md",
+      status: "DRAFT",
+      lock_state: "unlocked",
+    },
+  ]);
+  assert.ok(
+    complete.expected.required_outcomes.includes("no_residual_questions"),
+  );
+  assert.ok(
+    complete.expected.required_outputs.includes(
+      "complete_draft_brief_ready_for_approval",
+    ),
+  );
+
+  const record = passingRecord();
+  const observed = record.cases.find(
+    (item) => item.scenario_id === "flexible-external-complete-prd",
+  );
+  observed.observed.asked_clarifying_question = true;
+  observed.observed.question_count = 1;
+  observed.observed.max_questions_in_turn = 1;
+  const result = validateRunRecord(record, catalog);
+  assert.equal(result.ok, false);
+  assert.match(JSON.stringify(result), /a clarifying question was forbidden/);
+
+  const briefOnly = catalog.scenarios.find(
+    (scenario) => scenario.id === "flexible-brief-only",
+  );
+  assert.deepEqual(briefOnly.expected.required_artifact_states, [
+    {
+      path: ".agent-stack/artifacts/BRIEF.md",
+      status: "APPROVED",
+      lock_state: "unlocked",
+    },
+  ]);
+  assert.ok(
+    briefOnly.expected.required_outputs.includes("approved_working_brief"),
+  );
+
+  const promotion = catalog.scenarios.find(
+    (scenario) => scenario.id === "flexible-approved-promotion",
+  );
+  assert.ok(promotion.expected.must_activate.includes("shape-project"));
+  assert.ok(
+    promotion.expected.must_not_activate.includes("develop-project-brief"),
+  );
+});
+
 test("noncanonical artifact declarations are recorded as invalid", () => {
   const record = passingRecord();
   const promotion = record.cases.find(

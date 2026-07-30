@@ -59,8 +59,22 @@ the brief. For supplied material or an existing codebase, also read
 9. Present the substantial draft in reviewable sections. Approval means the
    user accepted the brief for promotion; it does not cryptographically
    authenticate the approver.
-   When asking for that acceptance, end the turn and wait. Do not treat the
-   agent's own recommendation or a complete source as product-owner approval.
+   Keep readiness, approval, and promotion separate:
+   - when the product owner explicitly requests an approved brief and has
+     authority to accept it, that instruction counts as acceptance once
+     consequential gaps are closed; produce the **APPROVED-ONLY** exit without
+     starting delivery and do not ask for acceptance again;
+   - otherwise, for a request limited to source audit or producing a DRAFT or
+     working brief, when no consequential residual gap remains, do not ask for
+     acceptance; leave `Status: DRAFT`, set `Material open conflicts: NO`,
+     complete every readiness item except product-owner approval, report
+     "DRAFT ready for later approval," and treat the requested audit or brief
+     task as complete; pending optional approval is future work, not a blocker
+     or residual question;
+   - for end-to-end delivery, when promotion is next and approval was not
+     already supplied, ask once for acceptance, end the turn, and wait.
+   Do not treat the agent's own recommendation or a complete source as
+   product-owner approval.
 10. Only after approval:
     - set `Status: APPROVED`;
     - set `Material open conflicts: NO`;
@@ -71,8 +85,10 @@ the brief. For supplied material or an existing codebase, also read
 
 The skill exits in exactly one of these states:
 
-- **DRAFT:** the living brief exists, product implementation has not started,
-  and the next consequential question or conflict is explicit;
+- **DRAFT:** the living brief exists and product implementation has not
+  started; either the next consequential question or conflict is explicit, or
+  a gap-free audit/working-brief request is complete and the DRAFT is ready for
+  optional later approval without another question;
 - **APPROVED-ONLY:** the brief is approved and the user asked to stop before
   delivery;
 - **READY-FOR-PROMOTION:** the approved brief is passed to `$shape-project`
