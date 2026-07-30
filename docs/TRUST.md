@@ -135,14 +135,19 @@ nonzero, or does not produce complete evidence. The latest run is stored under
 
 ### Intent and review
 
-Delivery, architecture, and security artifacts can be locked by hash. Silent
-changes are reported. A deliberate change requires an audited unlock reason and
-a new lock. Before writing a lock, the CLI requires each selected artifact to
-contain exactly one visible `Status: APPROVED` declaration and exactly one
-visible `Material open conflicts: NO` declaration outside fenced examples.
-Missing, duplicate, unknown, DRAFT, and open-conflict declarations fail closed,
-as do unresolved double-bracket placeholders. To avoid ambiguous declaration
-parsing, lockable artifacts also refuse fenced code blocks nested inside list or
+Delivery, architecture, security, verification, and decision artifacts can be
+locked by hash. EXTERNAL or DISCOVER promotion explicitly selects all five so
+the canonical decision and verification contracts cannot drift; proportionate
+DIRECT T0/T1 work retains the configured smaller default selection. Silent
+changes to any selected artifact are reported. A deliberate change requires an
+audited unlock reason and a new lock.
+
+Before writing a lock, the CLI requires each selected artifact to contain
+exactly one visible `Status: APPROVED` declaration and exactly one visible
+`Material open conflicts: NO` declaration outside fenced examples. Missing,
+duplicate, unknown, DRAFT, and open-conflict declarations fail closed, as do
+unresolved double-bracket placeholders. To avoid ambiguous declaration parsing,
+lockable artifacts also refuse fenced code blocks nested inside list or
 blockquote containers. These are mechanical byte-level declarations. The CLI
 does not understand whether the prose is complete,
 discover an omitted conflict, decide whether a source claim was normalized

@@ -198,7 +198,7 @@ adapter integration exercise, not evidence of skill routing.
 Create a blank record:
 
 ```bash
-npm run eval:scaffold > /safe/temporary/path/uas-run.json
+npm run --silent eval:scaffold > /safe/temporary/path/uas-run.json
 ```
 
 For each scenario, start a fresh harness task or process with no conversation
@@ -312,7 +312,9 @@ the preset without asking the same question again.
 When a pull request changes the behavior-surface hash:
 
 1. run the deterministic contract gate;
-2. run all scenarios through at least one real supported harness;
+2. run all scenarios through the minimum number of real supported harnesses
+   required by the claim scope: at least one for a named-harness claim and at
+   least two for the broad flexible-intake claim below;
 3. evaluate the record;
 4. attach the evaluator output and identify the exact harness, harness version,
    model, and model version or alias;
@@ -332,7 +334,7 @@ must not be credited to different installed bytes.
 Generate a review-only proposal in a temporary file:
 
 ```bash
-npm run eval:fixture -- propose-baselines \
+npm run --silent eval:fixture -- propose-baselines \
   > /safe/temporary/path/proposed-fixture-baselines.json
 diff -u \
   evals/fixture-baselines.json \
@@ -355,6 +357,12 @@ privileged by this rule. Identify every supported harness without a complete
 attached run as untested for the new front-half behavior. A one-harness result
 may still be reported honestly as evidence for only that named harness; it is
 not a broad compatibility claim.
+
+For this policy, a **primary supported harness** is a supported coding-agent
+surface running the user-facing Project Steward. It is not a subagent, provider
+adapter, or background evaluator. Any supported harness that can prove exact
+skill loading, fresh-session isolation, and the execution boundary above may
+count; no vendor is privileged.
 
 This is intentionally not an ambient model call inside ordinary CI. Such a call
 would add credentials, cost, nondeterminism, provider dependence, and a risk of

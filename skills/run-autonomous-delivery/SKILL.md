@@ -78,11 +78,20 @@ Do not say "done" until all applicable conditions hold:
    Apply `$secure-launch` to classify exposure and derive only applicable
    launch gates. Discover answers from the repository and authoritative
    sources before asking. Read closed product decisions before proposing an
-   alternative. Lock with:
+   alternative. After EXTERNAL or DISCOVER promotion, lock all five canonical
+   contracts explicitly:
 
    ```bash
-   node .agent-stack/bin/agent-stack.mjs lock
+   node .agent-stack/bin/agent-stack.mjs lock \
+     --artifact .agent-stack/artifacts/DELIVERY.md \
+     --artifact .agent-stack/artifacts/ARCHITECTURE.md \
+     --artifact .agent-stack/artifacts/SECURITY.md \
+     --artifact .agent-stack/artifacts/VERIFICATION.md \
+     --artifact .agent-stack/artifacts/DECISIONS.md
    ```
+
+   For proportionate DIRECT T0/T1 work, the bare `lock` command keeps the
+   configured smaller artifact selection.
 
 4. **Choose the execution strategy.** Apply
    `$coordinate-parallel-delivery`. The primary agent decides whether work stays

@@ -963,6 +963,26 @@
             "path": ".agent-stack/artifacts/DELIVERY.md",
             "status": "APPROVED",
             "lock_state": "locked"
+          },
+          {
+            "path": ".agent-stack/artifacts/ARCHITECTURE.md",
+            "status": "APPROVED",
+            "lock_state": "locked"
+          },
+          {
+            "path": ".agent-stack/artifacts/SECURITY.md",
+            "status": "APPROVED",
+            "lock_state": "locked"
+          },
+          {
+            "path": ".agent-stack/artifacts/VERIFICATION.md",
+            "status": "APPROVED",
+            "lock_state": "locked"
+          },
+          {
+            "path": ".agent-stack/artifacts/DECISIONS.md",
+            "status": "APPROVED",
+            "lock_state": "locked"
           }
         ],
         "required_outcomes": [

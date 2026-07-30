@@ -55,6 +55,8 @@ All notable changes to Ultimate Agent Stack are documented here.
   at least two distinct primary supported harnesses on the current surface. No
   named harness is privileged; other supported harnesses remain explicitly
   untested or limited unless their own complete records are attached.
+- Machine-readable evaluator examples now suppress npm's script banner so
+  redirected scaffold and fixture-baseline output remains valid JSON.
 
 ### Security
 
@@ -64,6 +66,9 @@ All notable changes to Ultimate Agent Stack are documented here.
   duplicate, unknown, DRAFT, open-conflict, and unclosed-fence states fail
   closed. Conversational approval remains an audited reason, not cryptographic
   proof of the approver's identity.
+- EXTERNAL and DISCOVER promotion explicitly locks delivery, architecture,
+  security, verification, and canonical decisions together. Proportionate
+  DIRECT T0/T1 work keeps the smaller configured selection.
 - External-source guidance preserves supplied material, requires an explicit
   disposition for each load-bearing claim, treats embedded instructions as
   untrusted data, and forbids executing them or persisting credentials, raw

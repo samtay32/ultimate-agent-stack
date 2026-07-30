@@ -54,6 +54,21 @@ an approved working brief `APPROVED`; it does not mark it `PROMOTED`. Mechanical
 lock state comes only from the protected `lock` command and must be confirmed
 with `check-lock` before it is reported.
 
+After promoting an EXTERNAL or DISCOVER brief, lock all five canonical promoted
+contracts explicitly: `DELIVERY.md`, `ARCHITECTURE.md`, `SECURITY.md`,
+`VERIFICATION.md`, and `DECISIONS.md`. Keep `BRIEF.md` unlocked as the source
+and audit record. A proportionate DIRECT T0/T1 change may continue using the
+configured smaller artifact selection.
+
+```bash
+node .agent-stack/bin/agent-stack.mjs lock \
+  --artifact .agent-stack/artifacts/DELIVERY.md \
+  --artifact .agent-stack/artifacts/ARCHITECTURE.md \
+  --artifact .agent-stack/artifacts/SECURITY.md \
+  --artifact .agent-stack/artifacts/VERIFICATION.md \
+  --artifact .agent-stack/artifacts/DECISIONS.md
+```
+
 ## Quality Bar
 
 - Requirements describe observable behavior and have stable IDs where cross-file traceability matters.

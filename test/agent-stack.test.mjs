@@ -241,6 +241,37 @@ function fillLockArtifacts(directory) {
   );
 }
 
+function fillPromotedLockArtifacts(directory) {
+  fillLockArtifacts(directory);
+  const artifacts = join(directory, ".agent-stack", "artifacts");
+  writeFileSync(
+    join(artifacts, "DECISIONS.md"),
+    [
+      "# Decisions",
+      "",
+      "Status: APPROVED",
+      "Material open conflicts: NO",
+      "",
+      "CD-1 keeps the repository-only runtime.",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  writeFileSync(
+    join(artifacts, "VERIFICATION.md"),
+    [
+      "# Verification",
+      "",
+      "Status: APPROVED",
+      "Material open conflicts: NO",
+      "",
+      "CAP-1 is covered by the project-native test.",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+}
+
 test("Windows executable extensions ignore empty PATHEXT entries", () => {
   assert.deepEqual(
     normalizeWindowsExtensions(".EXE;; .CMD ;.exe;"),
@@ -1110,6 +1141,47 @@ test("artifact locks reject drafts, open conflicts, and mixed-case placeholders 
       stateAfterApproval.history[0].locked_at,
       JSON.parse(stateBeforeRejections).active_lock.locked_at,
     );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("promoted contracts protect decisions and verification without expanding direct defaults", () => {
+  const fixture = temporaryProject();
+  try {
+    configureFixture(fixture.directory);
+    fillPromotedLockArtifacts(fixture.directory);
+    const config = readJson(join(fixture.directory, CONFIG_PATH));
+    assert.deepEqual(config.lock_artifacts, [
+      ".agent-stack/artifacts/DELIVERY.md",
+      ".agent-stack/artifacts/ARCHITECTURE.md",
+      ".agent-stack/artifacts/SECURITY.md",
+    ]);
+
+    const promotedArtifacts = [
+      ...config.lock_artifacts,
+      ".agent-stack/artifacts/VERIFICATION.md",
+      ".agent-stack/artifacts/DECISIONS.md",
+    ];
+    assert.equal(
+      commandLock(fixture.directory, promotedArtifacts).ok,
+      true,
+    );
+    assert.equal(commandCheckLock(fixture.directory).ok, true);
+
+    writeFileSync(
+      join(
+        fixture.directory,
+        ".agent-stack",
+        "artifacts",
+        "DECISIONS.md",
+      ),
+      "changed\n",
+      "utf8",
+    );
+    assert.deepEqual(commandCheckLock(fixture.directory).differences, [
+      "changed: .agent-stack/artifacts/DECISIONS.md",
+    ]);
   } finally {
     fixture.cleanup();
   }

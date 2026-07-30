@@ -716,6 +716,28 @@ test("noncanonical artifact declarations are recorded as invalid", () => {
   );
 });
 
+test("promoted contracts require locked decision and verification artifacts", () => {
+  for (const path of [
+    ".agent-stack/artifacts/DECISIONS.md",
+    ".agent-stack/artifacts/VERIFICATION.md",
+  ]) {
+    const record = passingRecord();
+    const promotion = record.cases.find(
+      (item) => item.scenario_id === "flexible-approved-promotion",
+    );
+    const artifact = promotion.observed.artifacts.find(
+      (candidate) => candidate.path === path,
+    );
+    artifact.lock_state = "unlocked";
+    const result = validateRunRecord(record, catalog);
+    assert.equal(result.ok, false);
+    assert.match(
+      JSON.stringify(result),
+      /expected APPROVED\/locked but observed APPROVED\/unlocked/,
+    );
+  }
+});
+
 test("any noncanonical artifact declaration fails without an expected state", () => {
   const record = passingRecord();
   const explanation = record.cases.find(

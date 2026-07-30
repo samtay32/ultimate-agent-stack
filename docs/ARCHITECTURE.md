@@ -196,11 +196,13 @@ clear bounded change. It remains unlocked while the Project Steward audits or
 develops intent. Approval changes its working status but does not
 cryptographically authenticate the approver. `shape-project` promotes an
 approved brief into the canonical delivery, architecture, security, decision,
-and verification artifacts; only those final contracts enter the normal lock
-and implementation flow. Artifact declarations use only `DRAFT` or `APPROVED`;
-the protected CLI records lock state separately in `.agent-stack/state.json`.
-A lock refusal does not grant authority to rewrite the artifact's approval or
-conflict declarations.
+and verification artifacts. EXTERNAL or DISCOVER promotion explicitly locks
+all five of those canonical contracts while leaving the brief unlocked. A
+proportionate DIRECT T0/T1 change may retain the configured smaller lock
+selection. Artifact declarations use only `DRAFT` or `APPROVED`; the protected
+CLI records lock state separately in `.agent-stack/state.json`. A lock refusal
+does not grant authority to rewrite the artifact's approval or conflict
+declarations.
 
 ## Decision Semantics
 

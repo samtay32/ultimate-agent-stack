@@ -570,7 +570,7 @@ test("working brief and lock guidance preserve honest promotion boundaries", () 
   }
   assert.match(
     trustGuide,
-    /requires each selected artifact to\s+contain exactly one visible `Status: APPROVED`/,
+    /requires each selected artifact to contain\s+exactly one visible `Status: APPROVED` declaration/,
   );
   assert.match(trustGuide, /`Material open conflicts: NO` declaration/);
   assert.match(trustGuide, /unresolved\s+double-bracket placeholders/);
@@ -693,6 +693,59 @@ test("closed decisions remain canonical and are consumed downstream", () => {
   }
   assert.match(verifyChangeSkill, /preserved each governing closed decision/);
   assert.match(closeReviewSkill, /closed decisions/);
+});
+
+test("promoted briefs lock every canonical contract while direct work stays proportionate", () => {
+  for (const artifact of [
+    "DELIVERY.md",
+    "ARCHITECTURE.md",
+    "SECURITY.md",
+    "VERIFICATION.md",
+    "DECISIONS.md",
+  ]) {
+    for (const source of [shapeProjectSkill, runDeliverySkill]) {
+      assert.match(
+        source,
+        new RegExp(
+          `--artifact \\.agent-stack/artifacts/${artifact.replace(".", "\\.")}`,
+        ),
+      );
+    }
+  }
+  assert.match(
+    shapeProjectSkill,
+    /lock\s+all five canonical promoted\s+contracts/i,
+  );
+  assert.match(shapeProjectSkill, /DIRECT T0\/T1/);
+});
+
+test("documented evaluator JSON commands suppress npm banners", () => {
+  assert.match(behavioralEvals, /npm run --silent eval:scaffold >/);
+  assert.match(
+    behavioralEvals,
+    /npm run --silent eval:fixture -- propose-baselines/,
+  );
+  assert.doesNotMatch(behavioralEvals, /npm run eval:scaffold >/);
+});
+
+test("later milestone roadmap remains detailed and explicitly deferred", () => {
+  const normalized = operatingManual.replace(/\s+/g, " ");
+  for (const marker of [
+    "DEFINITION_OF_DONE.md",
+    "simulated production behavior",
+    "guided no-coder acceptance walkthrough",
+    "post-merge launch-readiness path",
+    "filesystem and containment",
+    "hard token ceiling",
+    "community-skill static risk scanning",
+    "optional specialist packs",
+  ]) {
+    assert.match(normalized, new RegExp(marker));
+  }
+  assert.match(
+    normalized,
+    /Neither later milestone nor the deferred specialist scope is implemented/,
+  );
 });
 
 test("packed installs cover flexible intake and live evidence stays harness-scoped", () => {
@@ -898,7 +951,7 @@ test("release docs separate deterministic contracts from live model evidence", (
   assert.match(behavioralEvals, /`must_activate` is empty/);
   assert.match(behavioralEvals, /names every skill currently in the catalog/);
   assert.match(behavioralEvals, /surface.hash/i);
-  assert.match(releaseGuide, /real supported harness/);
+  assert.match(releaseGuide, /real\s+supported harness/);
   assert.equal(
     [
       ...releaseGuide.matchAll(

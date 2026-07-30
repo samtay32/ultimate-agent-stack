@@ -97,9 +97,9 @@ The agent:
    scenario contracts;
 3. compares `npm run eval:contracts` with the previous release evidence. If no
    accepted evaluated report exists or the behavior-surface hash changed, runs
-   the exact scenarios through at least one real supported harness and attaches
-   the output from `npm run eval:behavior -- --input RUN_RECORD.json` to the
-   pull request;
+   the exact scenarios through the claim-scoped minimum number of real
+   supported harnesses and attaches the output from
+   `npm run eval:behavior -- --input RUN_RECORD.json` to the pull request;
 4. commits and pushes the reviewed source to `main`;
 5. starts **Publish npm package** with the exact
    `ultimate-agent-stack@VERSION` input.
@@ -112,6 +112,11 @@ and project writes, artifact status and lock state, observable outputs, and
 load-bearing source-claim dispositions. The behavior-surface hash includes the
 shipped artifact templates, so a changed `BRIEF.md`, decision, delivery,
 architecture, security, or verification template invalidates older evidence.
+
+A primary supported harness is a supported coding-agent surface acting as the
+user-facing Project Steward, not a subagent or provider adapter. Any supported
+harness that proves exact skill loading, fresh-session isolation, and the
+documented execution boundary may count; no vendor is privileged.
 
 Deterministic unit tests prove the scenario schema, evaluator, package, and
 guardrails. They do not prove that a model selected the right skill or followed

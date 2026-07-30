@@ -518,13 +518,53 @@ lock or promotion failures, continuation success, user acceptance, harness,
 model, and behavior-surface hash. Revise this milestone if those journeys expose
 material friction.
 
-Milestone 2 remains a documented roadmap: inherited project definitions of
-done, risk overlays, real-versus-stub declarations, applicable UI evidence,
-guided no-coder acceptance testing, and provider-neutral launch readiness.
-Milestone 3 remains a documented roadmap: split the authoring CLI into deep
-internal modules while preserving one dependency-free portable bundle and add
-only cost/run receipts the active harness can actually report. Neither
-milestone is implemented by this change.
+### Milestone 2: Product Quality and User Acceptance
+
+Documented for later implementation after the dogfooding gate:
+
+- Add a project-level `DEFINITION_OF_DONE.md` inherited by slices, with a base
+  tier and risk overlays for money, contracts, privacy, migrations, and
+  irreversible data changes.
+- Add an applicable real-versus-stub declaration and a review rule against
+  simulated production behavior. Treat that rule as reviewer guidance rather
+  than pretending it is universally mechanically detectable.
+- For applicable UI work, require loading, empty, error, responsive, keyboard,
+  accessibility, and representative visual states.
+- Use an available browser or Playwright capability for observable UI evidence;
+  keep the mechanism optional and capability-based.
+- Add a guided no-coder acceptance walkthrough that captures failures,
+  diagnoses and repairs them, and links the final evidence to requirements.
+- Add a provider-neutral post-merge launch-readiness path covering hosting,
+  domains, secrets, first deployment, monitoring, rollback, and authority.
+  Never deploy silently.
+
+### Milestone 3: Maintainability and Operational Cost
+
+Documented for later implementation after Milestone 2:
+
+- Split the authoring CLI into deep internal modules for filesystem and
+  containment, project detection and quality commands, configuration,
+  work/evidence contracts, coordinator/checkpoint/lock state, provider
+  adapters, and release/maintenance.
+- Continue producing one portable bundled CLI with zero runtime dependencies.
+- Preserve protected hashes, packed-install smoke tests, and safe update
+  behavior.
+- Add cost/run receipts only for metrics the active harness can actually
+  report.
+- Preserve bounded iteration, repair, and elapsed-time controls.
+- Do not claim a hard token ceiling when the harness cannot expose or enforce
+  token usage.
+
+### Deferred Specialist Scope
+
+- Evaluate community-skill static risk scanning later only if external skill
+  installation becomes a supported product feature.
+- Keep marketing, SEO, visual-design systems, document generation, and
+  framework expertise in optional specialist packs rather than the core
+  workflow.
+
+Neither later milestone nor the deferred specialist scope is implemented by
+this change.
 
 ## Daily Safety Rules
 
