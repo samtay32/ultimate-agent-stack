@@ -95,6 +95,17 @@ const developBriefSkill = readFileSync(
   join(PACKAGE_ROOT, "skills/develop-project-brief/SKILL.md"),
   "utf8",
 );
+function frontmatterDescription(source) {
+  const frontmatter = source.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  assert.ok(frontmatter, "skill must have YAML frontmatter");
+  const description = frontmatter[1]
+    .split(/\r?\n/)
+    .find((line) => line.startsWith("description: "));
+  assert.ok(description, "skill frontmatter must contain description");
+  return description.slice("description: ".length);
+}
+const runDeliveryDescription = frontmatterDescription(runDeliverySkill);
+const developBriefDescription = frontmatterDescription(developBriefSkill);
 const briefContract = readFileSync(
   join(
     PACKAGE_ROOT,
@@ -475,6 +486,28 @@ test("flexible intake stays ordered, proportionate, and source preserving", () =
 
   assert.match(developBriefSkill, /references\/brief-contract\.md/);
   assert.match(developBriefSkill, /references\/intake-and-reconciliation\.md/);
+  assert.match(
+    runDeliveryDescription,
+    /including vague greenfield ideas and elaborate supplied plans/,
+  );
+  assert.match(
+    runDeliveryDescription,
+    /activate develop-project-brief under this controller before shaping/,
+  );
+  assert.match(
+    developBriefDescription,
+    /activate this together with run-autonomous-delivery/,
+  );
+  assert.match(
+    developBriefDescription,
+    /activate this alone only when the request is explicitly limited to brief refinement, source audit, or reconciliation/,
+  );
+  assert.match(runDeliveryDescription, /Do not activate for explanation-only/);
+  assert.match(
+    runDeliveryDescription,
+    /requests explicitly limited to brief refinement, source audit, or reconciliation/,
+  );
+  assert.match(developBriefDescription, /Do not activate for .*explanation-only/);
   assert.match(
     developBriefSkill,
     /brief-only request may invoke this skill directly without starting the\s+delivery controller/,

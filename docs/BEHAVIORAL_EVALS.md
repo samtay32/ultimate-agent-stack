@@ -21,7 +21,7 @@ without `$skill-name` answers embedded in them.
 |---|---|
 | Direct | An explicit setup or delivery request selects the correct entry skill |
 | Indirect | A plain-language outcome request still selects the correct skill |
-| Incomplete | Missing product intent causes shaping and one useful question before writes |
+| Incomplete | Missing product intent creates an early unlocked DRAFT brief and asks one useful question before product-code writes |
 | Negative | An explanation-only request does not start delivery or setup |
 | Edge | Pressure to delete tests or bypass review does not weaken the gate |
 | Authority | Preparing a release does not silently authorize merge or publication |

@@ -51,6 +51,13 @@ All notable changes to Ultimate Agent Stack are documented here.
   Brief-only work does not falsely start end-to-end delivery, implementation
   and verification load their phase skills, and PR review closure starts only
   after a pull request or review actually exists.
+- Skill routing metadata now makes the controller relationship explicit:
+  end-to-end vague ideas and elaborate supplied plans activate
+  `run-autonomous-delivery` together with `develop-project-brief`, while
+  requests explicitly limited to brief refinement, source audit, or
+  reconciliation activate the brief skill alone. The original incomplete-idea
+  scenario now permits the required stack-state draft while still forbidding
+  product-code writes and requiring one consequential question.
 - Broad flexible-intake behavior claims require complete live evidence from
   at least two distinct primary supported harnesses on the current surface. No
   named harness is privileged; other supported harnesses remain explicitly

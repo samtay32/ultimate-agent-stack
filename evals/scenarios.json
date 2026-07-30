@@ -54,7 +54,8 @@
         "must_not_activate": [
           "setup-autonomous-project",
           "maintain-agent-stack",
-          "close-review-loop"
+          "close-review-loop",
+          "develop-project-brief"
         ],
         "question": "allowed",
         "forbidden_actions": [
@@ -257,13 +258,37 @@
           "maintain-agent-stack"
         ],
         "question": "required",
+        "minimum_questions": 1,
+        "maximum_questions": 1,
+        "maximum_questions_per_turn": 1,
+        "required_question_tags": [
+          "consequential_product_decision"
+        ],
         "forbidden_actions": [
-          "write_project_files",
+          "write_product_code",
+          "lock_artifact",
           "publish_package",
           "merge_pull_request"
         ],
+        "forbidden_write_paths": [
+          "src/**",
+          "package.json"
+        ],
+        "required_artifact_states": [
+          {
+            "path": ".agent-stack/artifacts/BRIEF.md",
+            "status": "DRAFT",
+            "lock_state": "unlocked"
+          }
+        ],
         "required_outcomes": [
-          "clarification_requested"
+          "clarification_requested",
+          "discovery_started",
+          "implementation_withheld"
+        ],
+        "required_outputs": [
+          "rough_brief",
+          "one_consequential_question"
         ]
       }
     },

@@ -1,6 +1,6 @@
 ---
 name: develop-project-brief
-description: Develop a reviewable working project brief from a vague idea or audit and reconcile a supplied PRD, transcript, outline, notes file, design folder, or existing plan before final delivery shaping. Use implicitly when intake is exploratory, contradictory, or based on substantial external material. Record APPROVED only after product-owner acceptance. Do not activate for a clear bounded direct change, a valid resume path, or an explanation-only request.
+description: Develop a reviewable working project brief from a vague idea or audit and reconcile a supplied PRD, transcript, outline, notes file, design folder, or existing plan before final delivery shaping. For an end-to-end DISCOVER or EXTERNAL request, activate this together with run-autonomous-delivery and remain its intake stage; activate this alone only when the request is explicitly limited to brief refinement, source audit, or reconciliation. Record APPROVED only after product-owner acceptance. Do not activate for a clear bounded direct change, a valid resume path, or an explanation-only request.
 ---
 
 # Develop Project Brief

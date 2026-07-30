@@ -779,10 +779,30 @@ test("phase activation matches real workflow boundaries", () => {
     "develop-project-brief",
   ]);
   assert.ok(incomplete.expected.must_not_activate.includes("shape-project"));
+  assert.equal(
+    incomplete.expected.forbidden_actions.includes("write_project_files"),
+    false,
+  );
+  assert.ok(
+    incomplete.expected.forbidden_actions.includes("write_product_code"),
+  );
+  assert.deepEqual(incomplete.expected.required_artifact_states, [
+    {
+      path: ".agent-stack/artifacts/BRIEF.md",
+      status: "DRAFT",
+      lock_state: "unlocked",
+    },
+  ]);
+  assert.deepEqual(incomplete.expected.required_outputs, [
+    "rough_brief",
+    "one_consequential_question",
+  ]);
 
   const direct = catalog.scenarios.find(
     (scenario) => scenario.id === "direct-delivery",
   );
+  assert.ok(direct.expected.must_activate.includes("run-autonomous-delivery"));
+  assert.ok(direct.expected.must_not_activate.includes("develop-project-brief"));
   assert.ok(direct.expected.must_not_activate.includes("close-review-loop"));
   assert.equal(direct.expected.required_actions.includes("write_test"), false);
   assert.deepEqual(direct.expected.required_write_paths, ["src/session.mjs"]);
@@ -814,6 +834,18 @@ test("phase activation matches real workflow boundaries", () => {
     "develop-project-brief",
   ]);
 
+  const briefOnly = catalog.scenarios.find(
+    (scenario) => scenario.id === "flexible-brief-only",
+  );
+  assert.deepEqual(briefOnly.expected.must_activate, [
+    "develop-project-brief",
+  ]);
+  assert.ok(
+    briefOnly.expected.must_not_activate.includes(
+      "run-autonomous-delivery",
+    ),
+  );
+
   const secretAudit = catalog.scenarios.find(
     (scenario) => scenario.id === "flexible-external-secret-redaction",
   );
@@ -823,6 +855,21 @@ test("phase activation matches real workflow boundaries", () => {
   assert.ok(
     secretAudit.expected.must_not_activate.includes(
       "run-autonomous-delivery",
+    ),
+  );
+
+  const explanationOnly = catalog.scenarios.find(
+    (scenario) => scenario.id === "negative-explanation-only",
+  );
+  assert.deepEqual(explanationOnly.expected.must_activate, []);
+  assert.ok(
+    explanationOnly.expected.must_not_activate.includes(
+      "run-autonomous-delivery",
+    ),
+  );
+  assert.ok(
+    explanationOnly.expected.must_not_activate.includes(
+      "develop-project-brief",
     ),
   );
 
