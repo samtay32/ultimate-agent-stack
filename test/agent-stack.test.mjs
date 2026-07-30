@@ -4083,14 +4083,47 @@ test("local review validation ignores repository replacement refs", () => {
       "rev-parse",
       "HEAD^{tree}",
     ]).stdout.trim();
-    writeFileSync(
-      join(context.fixture.directory, "app.mjs"),
-      "export const answer = 999;\n// forged replacement state\n",
-      "utf8",
+    const replacementIndex = join(
+      context.fixture.directory,
+      ".git",
+      "replacement-index",
     );
-    assert.equal(context.git(["add", "app.mjs"]).status, 0);
-    const replacementTree =
-      context.git(["write-tree"]).stdout.trim();
+    const replacementEnvironment = {
+      ...process.env,
+      GIT_INDEX_FILE: replacementIndex,
+    };
+    assert.equal(
+      context.git(
+        ["read-tree", context.reviewedRevision],
+        { env: replacementEnvironment },
+      ).status,
+      0,
+    );
+    const replacementBlob = context.git(
+      ["hash-object", "-w", "--stdin"],
+      {
+        input: "export const answer = 999;\n// forged replacement state\n",
+      },
+    );
+    assert.equal(replacementBlob.status, 0, replacementBlob.stderr);
+    assert.equal(
+      context.git(
+        [
+          "update-index",
+          "--add",
+          "--cacheinfo",
+          "100644",
+          replacementBlob.stdout.trim(),
+          "app.mjs",
+        ],
+        { env: replacementEnvironment },
+      ).status,
+      0,
+    );
+    const replacementTree = context.git(
+      ["write-tree"],
+      { env: replacementEnvironment },
+    ).stdout.trim();
     const replacementCommit = context.git([
       "commit-tree",
       replacementTree,
@@ -4100,8 +4133,6 @@ test("local review validation ignores repository replacement refs", () => {
       "forged replacement review state",
     ]);
     assert.equal(replacementCommit.status, 0, replacementCommit.stderr);
-    assert.equal(context.git(["reset", "HEAD", "--", "app.mjs"]).status, 0);
-    assert.equal(context.git(["checkout", "--", "app.mjs"]).status, 0);
     assert.equal(
       context.git([
         "replace",

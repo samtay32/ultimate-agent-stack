@@ -33,6 +33,7 @@ import {
   parseCodexNativeReviewJsonl,
   reviewProvenanceSha256,
   reviewReceiptId,
+  sameNonzeroFilesystemIdentity,
   sha256Bytes,
   signReviewAttestation,
   validateReviewAttestationKeyring,
@@ -138,6 +139,68 @@ function makeCapabilityRepo(t) {
     base: git(repo, "rev-parse", "HEAD"),
   };
 }
+
+test(
+  "final project inspection accepts only the exact worktree directory",
+  (t) => {
+    const fixture = makeRepo(t);
+    const inspected = inspectFinalProjectState(fixture.repo);
+    assert.equal(inspected.head_revision, fixture.reviewed);
+
+    if (process.platform === "win32") {
+      const alternateDriveCase = fixture.repo.replace(
+        /^([a-zA-Z]):/,
+        (_, drive) =>
+          `${drive === drive.toLowerCase()
+            ? drive.toUpperCase()
+            : drive.toLowerCase()}:`,
+      );
+      const alternate = inspectFinalProjectState(alternateDriveCase);
+      assert.equal(alternate.head_revision, fixture.reviewed);
+    }
+
+    const nested = join(fixture.repo, "nested");
+    mkdirSync(nested);
+    assert.throws(
+      () => inspectFinalProjectState(nested),
+      (error) =>
+        error instanceof ReviewAttestationError &&
+        error.message ===
+          "Review attestation target must be the exact Git worktree root",
+    );
+  },
+);
+
+test("filesystem identity fails closed when either inode is unavailable", () => {
+  assert.equal(
+    sameNonzeroFilesystemIdentity(
+      { device: 0n, inode: 42n },
+      { device: 0n, inode: 42n },
+    ),
+    true,
+  );
+  assert.equal(
+    sameNonzeroFilesystemIdentity(
+      { device: 7n, inode: 0n },
+      { device: 7n, inode: 0n },
+    ),
+    false,
+  );
+  assert.equal(
+    sameNonzeroFilesystemIdentity(
+      { device: 7n, inode: 42n },
+      { device: 8n, inode: 42n },
+    ),
+    false,
+  );
+  assert.equal(
+    sameNonzeroFilesystemIdentity(
+      { device: 7n, inode: 42n },
+      { device: 7n, inode: 43n },
+    ),
+    false,
+  );
+});
 
 function expectedFor(fixture, overrides = {}) {
   return {
