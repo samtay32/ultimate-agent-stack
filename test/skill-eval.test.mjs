@@ -1,6 +1,18 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { generateKeyPairSync, sign as signBytes } from "node:crypto";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -11,9 +23,18 @@ import {
   hashBehaviorEntries,
   parseSkillMetadata,
   readBehaviorSurfacePath,
-  validateRunRecord,
+  validateRunRecord as validateRunRecordWithKeyring,
   validateScenarioCatalog,
 } from "../scripts/skill-eval.mjs";
+import { reviewReceiptId } from "../bin/ultimate-agent-stack.mjs";
+import {
+  capabilityPreflightAttestationSha256,
+  canonicalPayloadSerialization,
+  ed25519KeyId,
+  reviewProvenanceSha256,
+  sha256Bytes,
+  signReviewAttestation,
+} from "../lib/review-attestation.mjs";
 import {
   EVALUATION_SCRUBBED_CREDENTIAL_ENVIRONMENT,
   expectedFixtureBaseline,
@@ -24,6 +45,326 @@ const PACKAGE_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const catalog = JSON.parse(
   readFileSync(join(PACKAGE_ROOT, "evals", "scenarios.json"), "utf8"),
 );
+const { privateKey: reviewPrivateKey, publicKey: reviewPublicKey } =
+  generateKeyPairSync("ed25519");
+const reviewPrivateKeyPem = reviewPrivateKey.export({
+  type: "pkcs8",
+  format: "pem",
+});
+const reviewPublicKeySpki = reviewPublicKey.export({
+  type: "spki",
+  format: "der",
+});
+const reviewKeyId = ed25519KeyId({
+  key: reviewPublicKeySpki,
+  type: "spki",
+  format: "der",
+});
+const trustedReviewKeyring = {
+  schema_version: 1,
+  kind: "uas.review-attestation-keyring/v1",
+  keys: [
+    {
+      key_id: reviewKeyId,
+      algorithm: "Ed25519",
+      public_key_spki_base64: reviewPublicKeySpki.toString("base64"),
+      status: "active",
+      not_before: null,
+      not_after: null,
+    },
+  ],
+};
+
+function evaluationAuthorityForRecord(
+  record,
+  {
+    keyring = trustedReviewKeyring,
+    issuedAt = "2026-07-30T14:00:00Z",
+    expiresAt = "2026-07-30T16:00:00Z",
+    projectRoots = null,
+  } = {},
+) {
+  const reviewBearing = new Set(
+    catalog.scenarios
+      .filter((scenario) => scenario.expected.required_review_gate)
+      .map((scenario) => scenario.id),
+  );
+  return {
+    schema_version: 1,
+    kind: "uas.evaluation-authority/v1",
+    batch_id: record.batch_id,
+    surface_hash: record.surface_hash,
+    issued_at: issuedAt,
+    expires_at: expiresAt,
+    cases: (Array.isArray(record.cases) ? record.cases : [])
+      .filter((item) => reviewBearing.has(item.scenario_id))
+      .map((item, index) => ({
+        scenario_id: item.scenario_id,
+        project_instance_sha256: item.project_instance_sha256,
+        project_root:
+          projectRoots?.[item.scenario_id] ??
+          resolve(
+            PACKAGE_ROOT,
+            `.authority-project-${index}-${item.scenario_id}`,
+          ),
+        materialized_git_head: item.materialized_git_head,
+        primary_session_id: item.harness_session.id,
+        not_before: issuedAt,
+        deadline: expiresAt,
+      })),
+    trusted_review_keyring: structuredClone(keyring),
+  };
+}
+
+function validateRunRecord(record, catalogValue = catalog) {
+  return validateRunRecordWithKeyring(record, catalogValue, {
+    evaluationAuthority: evaluationAuthorityForRecord(record),
+  });
+}
+
+const hashValue = (value) => sha256Bytes(value);
+
+function signUncheckedPayload(payload) {
+  const signature = signBytes(
+    null,
+    Buffer.from(canonicalPayloadSerialization(payload), "utf8"),
+    reviewPrivateKey,
+  );
+  return {
+    schema_version: 1,
+    kind: "uas.review-attestation/v1",
+    payload,
+    signature: {
+      algorithm: "Ed25519",
+      key_id: reviewKeyId,
+      value_base64: signature.toString("base64"),
+    },
+  };
+}
+
+function signedFinalState(item, { reviewedPaths = [], postReviewPaths = [] } = {}) {
+  return {
+    head_revision: item.final_git_head,
+    git_tree_oid: item.final_git_tree_oid,
+    git_object_format: "sha1",
+    git_tree_manifest_sha256: item.final_git_tree_manifest_sha256,
+    project_state_sha256: item.final_review_attested_state_sha256,
+    clean: true,
+    reviewed_paths: reviewedPaths,
+    reviewed_paths_sha256: hashValue(
+      canonicalPayloadSerialization(reviewedPaths),
+    ),
+    post_review_paths: postReviewPaths,
+    post_review_paths_sha256: hashValue(
+      canonicalPayloadSerialization(postReviewPaths),
+    ),
+  };
+}
+
+function signedReviewCollection(record, item) {
+  const reviewerSessionId = "test-reviewer:direct-delivery";
+  const reviewerResultSha256 = hashValue("exact reviewer result bytes");
+  const events = {
+    spawn_event_sha256: hashValue("outer isolated launch"),
+    spawn_returned_worker_id: reviewerSessionId,
+    wait_event_sha256: hashValue("outer exact-session wait"),
+    wait_target_worker_id: reviewerSessionId,
+    final_result_event_sha256: hashValue("terminal structured result"),
+    reviewer_result_bytes_sha256: reviewerResultSha256,
+    trace_bundle_sha256: hashValue("exact adapter trace bundle"),
+    stderr_sha256: hashValue(""),
+  };
+  const provenanceSha256 = hashValue(
+    canonicalPayloadSerialization(events),
+  );
+  events.provenance_sha256 = provenanceSha256;
+  const receipt = {
+    schema_version: 1,
+    assignment_id: "review-pre-pr",
+    work_item_id: "delivery-change",
+    evidence_node_id: "review-pre-pr",
+    mechanism: "isolated-session",
+    harness: "codex-isolated-session-v1",
+    reviewer_id: reviewerSessionId,
+    base_revision: item.materialized_git_head,
+    reviewed_revision: item.reviewed_git_head,
+    delivery_baseline:
+      `.agent-stack/artifacts/DELIVERY.md@${item.materialized_git_head}`,
+    standards_verdict: "passed",
+    intent_verdict: "passed",
+    reviewer_result_sha256: reviewerResultSha256,
+    provenance_sha256: provenanceSha256,
+    read_only: true,
+    external_actions: false,
+    started_at: "2026-07-30T15:00:00Z",
+    completed_at: "2026-07-30T15:01:00Z",
+    result: "succeeded",
+  };
+  receipt.receipt_id = reviewReceiptId(receipt);
+  const path =
+    `.agent-stack/review-receipts/${receipt.receipt_id}.json`;
+  const bytes = Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`, "utf8");
+  const bytesSha256 = hashValue(bytes);
+  const postReviewPaths = [
+    ".agent-stack/artifacts/PRE_PR_REVIEW.md",
+    ".agent-stack/evidence-graph.json",
+    ".agent-stack/work-items.json",
+    path,
+  ].sort();
+  const payload = {
+    schema_version: 1,
+    kind: "uas.review-attestation-payload/v1",
+    outcome: "succeeded",
+    batch_id: record.batch_id,
+    project_instance_sha256: item.project_instance_sha256,
+    package_surface_sha256: record.surface_hash,
+    collector: {
+      id: "test-collector",
+      version: "1.0.0",
+      adapter: "codex-isolated-session-v1",
+      adapter_sha256: hashValue("isolated adapter"),
+    },
+    harness: {
+      name: record.harness.name,
+      version: record.harness.version,
+      primary_session_id: item.harness_session.id,
+      reviewer_session_id: reviewerSessionId,
+    },
+    assignment: {
+      id: receipt.assignment_id,
+      work_item_id: receipt.work_item_id,
+      evidence_node_id: receipt.evidence_node_id,
+      delivery_baseline_revision: item.materialized_git_head,
+      reviewed_revision: item.reviewed_git_head,
+    },
+    events,
+    candidate: {
+      path,
+      bytes_sha256: bytesSha256,
+      git_blob_oid: "e".repeat(40),
+    },
+    final_state: signedFinalState(item, {
+      reviewedPaths: ["src/session.mjs"],
+      postReviewPaths,
+    }),
+    verdicts: {
+      standards: "passed",
+      intent: "passed",
+    },
+    boundary: {
+      read_only: true,
+      external_actions: false,
+    },
+    unavailable: null,
+    started_at: receipt.started_at,
+    completed_at: receipt.completed_at,
+  };
+  return {
+    review_attestations: [
+      signReviewAttestation(payload, reviewPrivateKeyPem),
+    ],
+    review_candidates: [
+      {
+        path,
+        bytes_base64: bytes.toString("base64"),
+        sha256: bytesSha256,
+      },
+    ],
+    capability_preflight_attestations: [],
+    capability_attestations: [],
+  };
+}
+
+function signedDisabledCapabilityCollection(record, item) {
+  const capabilities = Object.fromEntries(
+    [
+      "external-provider",
+      "human",
+      "isolated-session",
+      "native-subagent",
+    ].map((mechanism) => [
+      mechanism,
+      {
+        state: "disabled",
+        proof_kind: "session-policy",
+        applied_before_session: true,
+        reason_code: "fixture-disabled",
+        proof_sha256: hashValue(`disabled:${mechanism}`),
+      },
+    ]),
+  );
+  const requiredProductPaths = ["src/status.mjs"];
+  const assignment = {
+    delivery_baseline_revision: item.materialized_git_head,
+    intended_final_revision: null,
+    required_product_paths: requiredProductPaths,
+    required_product_paths_sha256: hashValue(
+      canonicalPayloadSerialization(requiredProductPaths),
+    ),
+  };
+  const harness = {
+    primary_session_id: item.harness_session.id,
+  };
+  const common = {
+    schema_version: 1,
+    outcome: "unavailable",
+    capability: "independent-review",
+    batch_id: record.batch_id,
+    project_instance_sha256: item.project_instance_sha256,
+    package_surface_sha256: record.surface_hash,
+    collector: {
+      id: "test-collector",
+      version: "1.0.0",
+      adapter: "capability-preflight-v1",
+      adapter_sha256: hashValue("capability adapter"),
+    },
+    harness,
+    assignment,
+  };
+  const preflightPayload = {
+    ...common,
+    kind: "uas.capability-preflight-payload/v1",
+    capabilities,
+    checked_at: "2026-07-30T14:59:00Z",
+    baseline_state: {
+      head_revision: item.materialized_git_head,
+      git_tree_oid: "a".repeat(40),
+      git_object_format: "sha1",
+      git_tree_manifest_sha256: hashValue("baseline tree manifest"),
+      project_state_sha256: hashValue("baseline attested state"),
+      clean: true,
+    },
+  };
+  const preflightAttestation = signReviewAttestation(
+    preflightPayload,
+    reviewPrivateKeyPem,
+  );
+  const changedPaths = ["src/status.mjs"];
+  const payload = {
+    ...common,
+    kind: "uas.capability-attestation-payload/v1",
+    preflight_sha256:
+      capabilityPreflightAttestationSha256(preflightAttestation),
+    preflight_key_id: preflightAttestation.signature.key_id,
+    checked_at: preflightPayload.checked_at,
+    session_started_at: "2026-07-30T15:00:00Z",
+    baseline_ancestor: true,
+    changed_paths: changedPaths,
+    changed_paths_sha256: hashValue(
+      canonicalPayloadSerialization(changedPaths),
+    ),
+    final_state: signedFinalState(item),
+    completed_at: "2026-07-30T15:02:00Z",
+  };
+  return {
+    review_attestations: [],
+    review_candidates: [],
+    capability_preflight_attestations: [preflightAttestation],
+    capability_attestations: [
+      signReviewAttestation(payload, reviewPrivateKeyPem),
+    ],
+  };
+}
 
 function passingRecord() {
   const record = buildScaffold(catalog);
@@ -35,15 +376,25 @@ function passingRecord() {
     version: "1.0.0",
     model: "test-model",
   };
+  record.batch_id = "test-batch";
   record.cases = catalog.scenarios.map((scenario) => {
     const scaffold = scaffoldCases.get(scenario.id);
     const baseline = expectedFixtureBaseline(scenario.id);
     const initialGitHead = baseline.git_head;
     const initialProjectTreeSha256 = baseline.project_tree_sha256;
-    const finalGitHead = baseline.git_head;
+    const hasSignedReview =
+      scenario.expected.required_review_gate === "signed-review-required";
+    const hasSignedCapability =
+      scenario.expected.required_review_gate === "signed-all-disabled";
+    const reviewedGitHead = hasSignedReview ? "b".repeat(40) : null;
+    const finalGitHead =
+      hasSignedReview || hasSignedCapability
+        ? "c".repeat(40)
+        : baseline.git_head;
     const finalProjectTreeSha256 = baseline.project_tree_sha256;
-    return {
+    const item = {
       scenario_id: scenario.id,
+      project_instance_sha256: hashValue(`project:${scenario.id}`),
       fixture_receipt: scaffold.fixture_receipt,
       materialization_receipt: scaffold.materialization_receipt,
       materialization_spec_sha256:
@@ -57,6 +408,19 @@ function passingRecord() {
         projectTreeSha256: initialProjectTreeSha256,
       }),
       final_git_head: finalGitHead,
+      reviewed_git_head: reviewedGitHead,
+      final_git_tree_oid:
+        hasSignedReview || hasSignedCapability
+          ? "d".repeat(40)
+          : null,
+      final_git_tree_manifest_sha256:
+        hasSignedReview || hasSignedCapability
+          ? hashValue(`tree:${scenario.id}`)
+          : null,
+      final_review_attested_state_sha256:
+        hasSignedReview || hasSignedCapability
+          ? hashValue(`attested-state:${scenario.id}`)
+          : null,
       final_project_tree_sha256: finalProjectTreeSha256,
       final_project_state_sha256: projectStateSha256({
         materializationSpecSha256:
@@ -82,40 +446,55 @@ function passingRecord() {
         structuredClone(scaffold.provider_authority),
       external_inputs:
         structuredClone(scaffold.external_inputs),
+      collection: {
+        review_attestations: [],
+        review_candidates: [],
+        capability_preflight_attestations: [],
+        capability_attestations: [],
+      },
       observed: {
-      activated_skills: [...scenario.expected.must_activate],
-      asked_clarifying_question:
-        (scenario.expected.minimum_questions ??
-          (scenario.expected.question === "required" ? 1 : 0)) > 0,
-      question_count:
-        scenario.expected.minimum_questions ??
-        (scenario.expected.question === "required" ? 1 : 0),
-      max_questions_in_turn:
-        (scenario.expected.minimum_questions ??
-          (scenario.expected.question === "required" ? 1 : 0)) > 0
-          ? 1
-          : 0,
-      question_tags: [
-        ...(scenario.expected.required_question_tags ?? []),
-      ],
-      performed_actions: [...(scenario.expected.required_actions ?? [])],
-      written_paths: [...(scenario.expected.required_write_paths ?? [])],
-      artifacts: structuredClone(
-        scenario.expected.required_artifact_states ?? [],
-      ),
-      outcome_tags: [...scenario.expected.required_outcomes],
-      observable_outputs: [
-        ...(scenario.expected.required_outputs ?? []),
-      ],
-      source_claim_dispositions: (
-        scenario.expected.required_source_claim_ids ?? []
-      ).map((id) => ({ id, disposition: "kept" })),
+        activated_skills: [...scenario.expected.must_activate],
+        asked_clarifying_question:
+          (scenario.expected.minimum_questions ??
+            (scenario.expected.question === "required" ? 1 : 0)) > 0,
+        question_count:
+          scenario.expected.minimum_questions ??
+          (scenario.expected.question === "required" ? 1 : 0),
+        max_questions_in_turn:
+          (scenario.expected.minimum_questions ??
+            (scenario.expected.question === "required" ? 1 : 0)) > 0
+            ? 1
+            : 0,
+        question_tags: [
+          ...(scenario.expected.required_question_tags ?? []),
+        ],
+        performed_actions: [...(scenario.expected.required_actions ?? [])],
+        written_paths: [...(scenario.expected.required_write_paths ?? [])],
+        artifacts: structuredClone(
+          scenario.expected.required_artifact_states ?? [],
+        ),
+        outcome_tags: [...scenario.expected.required_outcomes],
+        observable_outputs: [
+          ...(scenario.expected.required_outputs ?? []),
+        ],
+        source_claim_dispositions: (
+          scenario.expected.required_source_claim_ids ?? []
+        ).map((id) => ({ id, disposition: "kept" })),
       },
       evidence: {
         summary: `Observed ${scenario.id} in the test harness.`,
         source: `test-run:${scenario.id}`,
       },
     };
+    if (hasSignedReview) {
+      item.collection = signedReviewCollection(record, item);
+      item.observed.written_paths.push(
+        item.collection.review_candidates[0].path,
+      );
+    } else if (hasSignedCapability) {
+      item.collection = signedDisabledCapabilityCollection(record, item);
+    }
+    return item;
   });
   return record;
 }
@@ -123,7 +502,7 @@ function passingRecord() {
 test("behavioral scenario contracts cover activation and false activation", () => {
   const result = validateScenarioCatalog(catalog);
   assert.equal(result.ok, true, result.errors.join("\n"));
-  assert.equal(result.scenario_count, 27);
+  assert.equal(result.scenario_count, 28);
   assert.equal(result.skill_count, 13);
   assert.deepEqual(result.categories, [
     "authority",
@@ -242,6 +621,7 @@ test("behavior surface includes installed handoff and runtime start prompts", ()
     ),
   );
   assert.ok(paths.has("evals/fixtures.json"));
+  assert.ok(paths.has("lib/review-attestation.mjs"));
   assert.ok(paths.has("scripts/skill-fixture.mjs"));
   assert.ok(paths.has(".agent-stack/start-prompt-policy.json"));
   const promptEntry = entries.find(
@@ -311,22 +691,31 @@ test("skill metadata and surface hashes are stable across line endings", () => {
 
 test("a complete live run record passes against the current behavior surface", () => {
   const record = passingRecord();
-  assert.equal(record.schema_version, 2);
-  const result = validateRunRecord(record, catalog);
+  const authority = evaluationAuthorityForRecord(record);
+  assert.equal(record.schema_version, 4);
+  const result = validateRunRecordWithKeyring(record, catalog, {
+    evaluationAuthority: authority,
+  });
   assert.equal(result.ok, true, JSON.stringify(result, null, 2));
   assert.deepEqual(result.summary, {
-    total: 27,
-    passed: 27,
+    total: 28,
+    passed: 28,
     failed: 0,
   });
   assert.equal(result.surface_hash, behaviorSurfaceHash());
+  assert.equal(result.batch_id, record.batch_id);
+  assert.equal(
+    result.evaluation_authority_sha256,
+    hashValue(canonicalPayloadSerialization(authority)),
+  );
+  assert.deepEqual(result.trusted_review_key_ids, [reviewKeyId]);
   assert.equal(
     result.cases[0].evidence_source,
     "test-run:direct-setup",
   );
 });
 
-test("run-record schema 2 requires claim dispositions and rejects stale schemas", () => {
+test("run-record schema 4 requires collector fields and rejects stale schemas", () => {
   const current = passingRecord();
   delete current.cases[0].observed.source_claim_dispositions;
   let result = validateRunRecord(current, catalog);
@@ -336,17 +725,589 @@ test("run-record schema 2 requires claim dispositions and rejects stale schemas"
     /source_claim_dispositions must be an array/,
   );
 
-  for (const staleVersion of [1, 3]) {
+  for (const staleVersion of [1, 2, 3, 5]) {
     const stale = passingRecord();
     stale.schema_version = staleVersion;
     result = validateRunRecord(stale, catalog);
     assert.equal(result.ok, false);
     assert.match(
       result.errors.join("\n"),
-      /run record schema_version must equal 2/,
+      /run record schema_version must equal 4/,
     );
   }
 });
+
+test("independent review actions require collector-signed exact evidence", () => {
+  const missing = passingRecord();
+  const direct = missing.cases.find(
+    (item) => item.scenario_id === "direct-delivery",
+  );
+  direct.collection.review_attestations = [];
+  direct.collection.review_candidates = [];
+  let result = validateRunRecord(missing, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /has no verified collector review attestation/,
+  );
+
+  const selfReviewed = passingRecord();
+  const selfReviewedDirect = selfReviewed.cases.find(
+    (item) => item.scenario_id === "direct-delivery",
+  );
+  const selfPayload =
+    selfReviewedDirect.collection.review_attestations[0].payload;
+  selfPayload.harness.reviewer_session_id =
+    selfReviewedDirect.harness_session.id;
+  selfPayload.events.spawn_returned_worker_id =
+    selfReviewedDirect.harness_session.id;
+  selfPayload.events.wait_target_worker_id =
+    selfReviewedDirect.harness_session.id;
+  selfPayload.events.provenance_sha256 =
+    reviewProvenanceSha256(selfPayload.events);
+  result = validateRunRecord(selfReviewed, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /reviewer_session_id must differ from primary_session_id/,
+  );
+});
+
+test("unavailable reviewer scenario preserves work without review approval", () => {
+  const record = passingRecord();
+  const unavailable = record.cases.find(
+    (item) => item.scenario_id === "edge-reviewer-unavailable",
+  );
+  assert.deepEqual(unavailable.collection.review_attestations, []);
+  assert.deepEqual(unavailable.collection.review_candidates, []);
+  assert.equal(
+    unavailable.collection.capability_preflight_attestations.length,
+    1,
+  );
+  assert.equal(unavailable.collection.capability_attestations.length, 1);
+  assert.ok(
+    unavailable.observed.outcome_tags.includes(
+      "independent_review_blocked",
+    ),
+  );
+  assert.equal(validateRunRecord(record, catalog).ok, true);
+
+  const direct = record.cases.find(
+    (item) => item.scenario_id === "direct-delivery",
+  );
+  unavailable.observed.performed_actions.push(
+    "perform_independent_review",
+  );
+  unavailable.collection.review_attestations =
+    structuredClone(direct.collection.review_attestations);
+  unavailable.collection.review_candidates =
+    structuredClone(direct.collection.review_candidates);
+  const result = validateRunRecord(record, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /signed-all-disabled forbids review attestations and review candidates/,
+  );
+});
+
+test("signed review evidence rejects binding, byte, and post-review mutations", () => {
+  const checks = [
+    {
+      message: /review attestation binding mismatch: delivery_baseline_revision/,
+      mutate(record) {
+        const direct = record.cases.find(
+          (item) => item.scenario_id === "direct-delivery",
+        );
+        const payload = structuredClone(
+          direct.collection.review_attestations[0].payload,
+        );
+        payload.assignment.delivery_baseline_revision = "a".repeat(40);
+        direct.collection.review_attestations[0] =
+          signReviewAttestation(payload, reviewPrivateKeyPem);
+      },
+    },
+    {
+      message: /candidate_bytes_sha256/,
+      mutate(record) {
+        const direct = record.cases.find(
+          (item) => item.scenario_id === "direct-delivery",
+        );
+        const candidate = direct.collection.review_candidates[0];
+        const bytes = Buffer.concat([
+          Buffer.from(candidate.bytes_base64, "base64"),
+          Buffer.from(" "),
+        ]);
+        candidate.bytes_base64 = bytes.toString("base64");
+        candidate.sha256 = hashValue(bytes);
+      },
+    },
+    {
+      message: /final Git tree does not match the run record/,
+      mutate(record) {
+        record.cases.find(
+          (item) => item.scenario_id === "direct-delivery",
+        ).final_git_tree_oid = "f".repeat(40);
+      },
+    },
+    {
+      message: /forbidden post-review path: test\/session\.test\.mjs/,
+      mutate(record) {
+        const direct = record.cases.find(
+          (item) => item.scenario_id === "direct-delivery",
+        );
+        const payload = structuredClone(
+          direct.collection.review_attestations[0].payload,
+        );
+        payload.final_state.post_review_paths.push(
+          "test/session.test.mjs",
+        );
+        payload.final_state.post_review_paths.sort();
+        payload.final_state.post_review_paths_sha256 = hashValue(
+          canonicalPayloadSerialization(
+            payload.final_state.post_review_paths,
+          ),
+        );
+        direct.collection.review_attestations[0] =
+          signReviewAttestation(payload, reviewPrivateKeyPem);
+      },
+    },
+    {
+      message:
+        /signed reviewed paths are missing required product path: src\/session\.mjs/,
+      mutate(record) {
+        const direct = record.cases.find(
+          (item) => item.scenario_id === "direct-delivery",
+        );
+        const payload = structuredClone(
+          direct.collection.review_attestations[0].payload,
+        );
+        payload.final_state.reviewed_paths = ["src/unrelated.mjs"];
+        payload.final_state.reviewed_paths_sha256 = hashValue(
+          canonicalPayloadSerialization(
+            payload.final_state.reviewed_paths,
+          ),
+        );
+        direct.collection.review_attestations[0] =
+          signReviewAttestation(payload, reviewPrivateKeyPem);
+      },
+    },
+    {
+      message: /signature verification failed/,
+      mutate(record) {
+        const direct = record.cases.find(
+          (item) => item.scenario_id === "direct-delivery",
+        );
+        direct.collection.review_attestations[0].payload.events
+          .spawn_event_sha256 = hashValue("fabricated spawn");
+      },
+    },
+    {
+      message: /observed\.independent_reviews is forbidden/,
+      mutate(record) {
+        record.cases.find(
+          (item) => item.scenario_id === "direct-delivery",
+        ).observed.independent_reviews = [];
+      },
+    },
+  ];
+  for (const { mutate, message } of checks) {
+    const record = passingRecord();
+    mutate(record);
+    const result = validateRunRecord(record, catalog);
+    assert.equal(result.ok, false);
+    assert.match(JSON.stringify(result), message);
+  }
+
+  const noAuthority = validateRunRecordWithKeyring(
+    passingRecord(),
+    catalog,
+  );
+  assert.equal(noAuthority.ok, false);
+  assert.match(
+    JSON.stringify(noAuthority),
+    /require(?:s)? an outer evaluation authority manifest/,
+  );
+});
+
+test("outer authority rejects batch, project, and primary-session replay", () => {
+  for (const { message, mutate } of [
+    {
+      message: /batch_id must equal the outer evaluation authority/,
+      mutate(record) {
+        record.batch_id = "replayed-batch";
+      },
+    },
+    {
+      message: /project_instance_sha256 must equal the outer evaluation authority/,
+      mutate(record) {
+        record.cases.find(
+          (item) => item.scenario_id === "direct-delivery",
+        ).project_instance_sha256 = hashValue("replayed-project");
+      },
+    },
+    {
+      message: /harness_session\.id must equal the outer evaluation authority/,
+      mutate(record) {
+        record.cases.find(
+          (item) => item.scenario_id === "direct-delivery",
+        ).harness_session.id = "replayed-primary-session";
+      },
+    },
+  ]) {
+    const record = passingRecord();
+    const authority = evaluationAuthorityForRecord(record);
+    mutate(record);
+    const result = validateRunRecordWithKeyring(record, catalog, {
+      evaluationAuthority: authority,
+    });
+    assert.equal(result.ok, false);
+    assert.match(JSON.stringify(result), message);
+  }
+});
+
+test("outer authority rejects overlapping project roots", () => {
+  const record = passingRecord();
+  const parentRoot = resolve(PACKAGE_ROOT, ".authority-overlap-parent");
+  const authority = evaluationAuthorityForRecord(record, {
+    projectRoots: {
+      "direct-delivery": parentRoot,
+      "edge-reviewer-unavailable": join(parentRoot, "nested-case"),
+    },
+  });
+  const result = validateRunRecordWithKeyring(record, catalog, {
+    evaluationAuthority: authority,
+  });
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /project_root must not equal, contain, or be contained by another case project_root/,
+  );
+});
+
+test("signed evidence time ignores backdated records and enforces key status", () => {
+  const historical = passingRecord();
+  historical.recorded_at = "2000-01-01T00:00:00Z";
+  let authority = evaluationAuthorityForRecord(historical);
+  let result = validateRunRecordWithKeyring(historical, catalog, {
+    evaluationAuthority: authority,
+  });
+  assert.equal(result.ok, true, JSON.stringify(result, null, 2));
+
+  for (const { message, mutateKey } of [
+    {
+      message: /signing key is expired/,
+      mutateKey(key) {
+        key.not_after = "2026-07-30T14:30:00Z";
+      },
+    },
+    {
+      message: /signing key is revoked/,
+      mutateKey(key) {
+        key.status = "revoked";
+      },
+    },
+  ]) {
+    const record = passingRecord();
+    record.recorded_at = "2000-01-01T00:00:00Z";
+    authority = evaluationAuthorityForRecord(record);
+    mutateKey(authority.trusted_review_keyring.keys[0]);
+    result = validateRunRecordWithKeyring(record, catalog, {
+      evaluationAuthority: authority,
+    });
+    assert.equal(result.ok, false);
+    assert.match(JSON.stringify(result), message);
+  }
+});
+
+test("signed unavailable capability proof fails closed on every weakened state", () => {
+  const missing = passingRecord();
+  missing.cases.find(
+    (item) => item.scenario_id === "edge-reviewer-unavailable",
+  ).collection.capability_attestations = [];
+  let result = validateRunRecord(missing, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /requires exactly one collector capability attestation/,
+  );
+
+  const unavailableMechanism = passingRecord();
+  const unavailableCase = unavailableMechanism.cases.find(
+    (item) => item.scenario_id === "edge-reviewer-unavailable",
+  );
+  const unavailablePayload = structuredClone(
+    unavailableCase.collection.capability_preflight_attestations[0].payload,
+  );
+  unavailablePayload.capabilities.human.state = "unavailable";
+  unavailableCase.collection.capability_preflight_attestations[0].payload =
+    unavailablePayload;
+  result = validateRunRecord(unavailableMechanism, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /human\.state must equal disabled/,
+  );
+
+  const afterSession = passingRecord();
+  const afterSessionCase = afterSession.cases.find(
+    (item) => item.scenario_id === "edge-reviewer-unavailable",
+  );
+  afterSessionCase.collection.capability_preflight_attestations[0].payload
+    .capabilities["native-subagent"].applied_before_session = false;
+  result = validateRunRecord(afterSession, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /applied_before_session must equal true/,
+  );
+
+  const unchanged = passingRecord();
+  const unchangedCase = unchanged.cases.find(
+    (item) => item.scenario_id === "edge-reviewer-unavailable",
+  );
+  const unchangedPayload = structuredClone(
+    unchangedCase.collection.capability_attestations[0].payload,
+  );
+  unchangedPayload.final_state.head_revision =
+    unchangedCase.materialized_git_head;
+  unchangedCase.collection.capability_attestations[0] =
+    signUncheckedPayload(unchangedPayload);
+  result = validateRunRecord(unchanged, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /final revision must differ from the delivery baseline/,
+  );
+
+  const unrelated = passingRecord();
+  const unrelatedCase = unrelated.cases.find(
+    (item) => item.scenario_id === "edge-reviewer-unavailable",
+  );
+  const unrelatedPayload = structuredClone(
+    unrelatedCase.collection.capability_attestations[0].payload,
+  );
+  unrelatedPayload.baseline_ancestor = false;
+  unrelatedCase.collection.capability_attestations[0] =
+    signUncheckedPayload(unrelatedPayload);
+  result = validateRunRecord(unrelated, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /baseline_ancestor must equal true/,
+  );
+
+  const unrelatedPaths = passingRecord();
+  const unrelatedPathsCase = unrelatedPaths.cases.find(
+    (item) => item.scenario_id === "edge-reviewer-unavailable",
+  );
+  const unrelatedPathsPayload = structuredClone(
+    unrelatedPathsCase.collection.capability_attestations[0].payload,
+  );
+  unrelatedPathsPayload.changed_paths = ["src/unrelated.mjs"];
+  unrelatedPathsPayload.changed_paths_sha256 = hashValue(
+    canonicalPayloadSerialization(unrelatedPathsPayload.changed_paths),
+  );
+  unrelatedPathsCase.collection.capability_attestations[0] =
+    signUncheckedPayload(unrelatedPathsPayload);
+  result = validateRunRecord(unrelatedPaths, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /changed_paths is missing required product path: src\/status\.mjs/,
+  );
+
+  const forgedTiming = passingRecord();
+  const forgedTimingCase = forgedTiming.cases.find(
+    (item) => item.scenario_id === "edge-reviewer-unavailable",
+  );
+  const forgedTimingPayload = structuredClone(
+    forgedTimingCase.collection.capability_attestations[0].payload,
+  );
+  forgedTimingPayload.checked_at = "2026-07-30T15:01:00Z";
+  forgedTimingCase.collection.capability_attestations[0] =
+    signUncheckedPayload(forgedTimingPayload);
+  result = validateRunRecord(forgedTiming, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /checked_at must precede session_started_at/,
+  );
+
+  const expiredWindow = passingRecord();
+  const expiredAuthority = evaluationAuthorityForRecord(expiredWindow, {
+    expiresAt: "2026-07-30T14:30:00Z",
+  });
+  result = validateRunRecordWithKeyring(expiredWindow, catalog, {
+    evaluationAuthority: expiredAuthority,
+  });
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /timestamps must be ordered within the outer authority window|timestamps must remain within the outer authority window/,
+  );
+});
+
+test("evaluate CLI requires the outer evaluation authority", () => {
+  const directory = realpathSync(
+    mkdtempSync(join(tmpdir(), "uas-eval-authority-")),
+  );
+  try {
+    const inputRoot = join(directory, "input");
+    const authorityRoot = join(directory, "authority");
+    const projectRoot = join(directory, "projects");
+    mkdirSync(inputRoot, { mode: 0o700 });
+    mkdirSync(authorityRoot, { mode: 0o700 });
+    mkdirSync(projectRoot, { mode: 0o700 });
+    const input = join(inputRoot, "run.json");
+    const authorityFile = join(authorityRoot, "authority.json");
+    const record = passingRecord();
+    const projectRoots = Object.fromEntries(
+      ["direct-delivery", "edge-reviewer-unavailable"].map(
+        (scenarioId) => {
+          const root = join(projectRoot, scenarioId);
+          mkdirSync(root, { mode: 0o700 });
+          return [scenarioId, root];
+        },
+      ),
+    );
+    const authority = evaluationAuthorityForRecord(record, {
+      projectRoots,
+    });
+    writeFileSync(input, `${JSON.stringify(record)}\n`, { mode: 0o600 });
+    writeFileSync(authorityFile, `${JSON.stringify(authority)}\n`, {
+      mode: 0o600,
+    });
+    const script = join(PACKAGE_ROOT, "scripts", "skill-eval.mjs");
+    const missing = spawnSync(
+      process.execPath,
+      [script, "evaluate", "--input", input],
+      { encoding: "utf8", shell: false },
+    );
+    assert.equal(missing.status, 1);
+    assert.match(missing.stderr, /requires --evaluation-authority/);
+
+    const verified = spawnSync(
+      process.execPath,
+      [
+        script,
+        "evaluate",
+        "--input",
+        input,
+        "--evaluation-authority",
+        authorityFile,
+      ],
+      { encoding: "utf8", shell: false },
+    );
+    assert.equal(verified.status, 0, verified.stdout + verified.stderr);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test(
+  "evaluate CLI rejects relative, project, symlink, self-authority, and weak-permission manifests",
+  { skip: process.platform === "win32" },
+  () => {
+    const directory = realpathSync(
+      mkdtempSync(join(tmpdir(), "uas-eval-authority-paths-")),
+    );
+    try {
+      const inputRoot = join(directory, "input");
+      const authorityRoot = join(directory, "authority");
+      const projectParent = join(directory, "projects");
+      mkdirSync(inputRoot, { mode: 0o700 });
+      mkdirSync(authorityRoot, { mode: 0o700 });
+      mkdirSync(projectParent, { mode: 0o700 });
+      const projectRoots = Object.fromEntries(
+        ["direct-delivery", "edge-reviewer-unavailable"].map(
+          (scenarioId) => {
+            const root = join(projectParent, scenarioId);
+            mkdirSync(root, { mode: 0o700 });
+            return [scenarioId, root];
+          },
+        ),
+      );
+      const record = passingRecord();
+      const authority = evaluationAuthorityForRecord(record, {
+        projectRoots,
+      });
+      const input = join(inputRoot, "run.json");
+      const safeAuthority = join(authorityRoot, "authority.json");
+      writeFileSync(input, `${JSON.stringify(record)}\n`, { mode: 0o600 });
+      writeFileSync(safeAuthority, `${JSON.stringify(authority)}\n`, {
+        mode: 0o600,
+      });
+      const script = join(PACKAGE_ROOT, "scripts", "skill-eval.mjs");
+      const evaluate = (authorityPath, inputPath = input) =>
+        spawnSync(
+          process.execPath,
+          [
+            script,
+            "evaluate",
+            "--input",
+            inputPath,
+            "--evaluation-authority",
+            authorityPath,
+          ],
+          { cwd: directory, encoding: "utf8", shell: false },
+        );
+
+      let result = evaluate("authority/authority.json");
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /absolute outer-controlled path/);
+
+      const inputAuthority = join(inputRoot, "authority.json");
+      writeFileSync(inputAuthority, `${JSON.stringify(authority)}\n`, {
+        mode: 0o600,
+      });
+      result = evaluate(inputAuthority);
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /outside the input root/);
+
+      const projectAuthority = join(
+        projectRoots["direct-delivery"],
+        "authority.json",
+      );
+      writeFileSync(projectAuthority, `${JSON.stringify(authority)}\n`, {
+        mode: 0o600,
+      });
+      result = evaluate(projectAuthority);
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /outside every project root/);
+
+      const fileSymlink = join(authorityRoot, "authority-link.json");
+      symlinkSync(safeAuthority, fileSymlink);
+      result = evaluate(fileSymlink);
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /regular file|symlink/);
+
+      const parentSymlink = join(directory, "authority-parent-link");
+      symlinkSync(authorityRoot, parentSymlink);
+      result = evaluate(join(parentSymlink, "authority.json"));
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /symlink path components/);
+
+      result = evaluate(safeAuthority, safeAuthority);
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /outside the input root/);
+
+      const weakFile = join(authorityRoot, "weak-file.json");
+      writeFileSync(weakFile, `${JSON.stringify(authority)}\n`, {
+        mode: 0o644,
+      });
+      result = evaluate(weakFile);
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /owner-only readable and writable/);
+
+      chmodSync(authorityRoot, 0o755);
+      result = evaluate(safeAuthority);
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /parent must be an owner-only directory/);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  },
+);
 
 test("live run cases are bound to the exact canonical fixture", () => {
   for (const fixtureValue of [undefined, "sha256:wrong-fixture"]) {

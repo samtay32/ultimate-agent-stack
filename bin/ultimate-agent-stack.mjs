@@ -50,6 +50,9 @@ const EVIDENCE_GRAPH_PATH = ".agent-stack/evidence-graph.json";
 const EVIDENCE_REPORTS_PATH = ".agent-stack/reports";
 const EVIDENCE_MERMAID_EDGES_PER_NODE = 4;
 const PROVIDER_RECEIPTS_PATH = ".agent-stack/provider-receipts";
+const REVIEW_RECEIPTS_PATH = ".agent-stack/review-receipts";
+const PRE_PR_REVIEW_PATH = ".agent-stack/artifacts/PRE_PR_REVIEW.md";
+const DELIVERY_ARTIFACT_PATH = ".agent-stack/artifacts/DELIVERY.md";
 const CAMPAIGN_PATH = ".agent-stack/campaign.json";
 const COMPLETION_EVIDENCE_RELATIONS = new Set([
   "implements",
@@ -102,7 +105,7 @@ const CORE_POLICY_PATH = ".agent-stack/core-policy.json";
 const REVIEW_RECEIPT_PATH = ".agent-stack/bin/review-receipt.mjs";
 const REVIEW_WORKFLOW_PATH = ".github/workflows/review-receipt.yml";
 const DEFAULT_ARTIFACTS = [
-  ".agent-stack/artifacts/DELIVERY.md",
+  DELIVERY_ARTIFACT_PATH,
   ".agent-stack/artifacts/ARCHITECTURE.md",
   ".agent-stack/artifacts/SECURITY.md",
 ];
@@ -438,6 +441,14 @@ const PROVIDER_RECEIPT_RESULTS = new Set([
   "failed",
   "decision-needed",
 ]);
+const REVIEW_RECEIPT_MECHANISMS = new Set([
+  "native-subagent",
+  "isolated-session",
+  "external-provider",
+  "human",
+]);
+const REVIEW_RECEIPT_VERDICTS = new Set(["passed", "failed"]);
+const REVIEW_RECEIPT_RESULTS = new Set(["succeeded", "failed"]);
 const WORK_ITEM_STATUSES = new Set([
   "backlog",
   "ready",
@@ -3068,6 +3079,784 @@ function validateProviderReceipt(receipt) {
   return errors;
 }
 
+function reviewReceiptId(receipt) {
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
+    return null;
+  }
+  const canonical = structuredClone(receipt);
+  delete canonical.receipt_id;
+  return sha256(stableJson(canonical));
+}
+
+function validateReviewReceipt(receipt) {
+  const errors = [];
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
+    return ["review receipt must be an object"];
+  }
+  rejectUnknownKeys(
+    errors,
+    receipt,
+    new Set([
+      "schema_version",
+      "receipt_id",
+      "assignment_id",
+      "work_item_id",
+      "evidence_node_id",
+      "mechanism",
+      "harness",
+      "reviewer_id",
+      "base_revision",
+      "reviewed_revision",
+      "delivery_baseline",
+      "standards_verdict",
+      "intent_verdict",
+      "reviewer_result_sha256",
+      "provenance_sha256",
+      "read_only",
+      "external_actions",
+      "started_at",
+      "completed_at",
+      "result",
+    ]),
+    "review receipt",
+  );
+  if (receipt.schema_version !== 1) {
+    errors.push("review receipt schema_version must equal 1");
+  }
+  if (
+    typeof receipt.receipt_id !== "string" ||
+    !/^[a-f0-9]{64}$/.test(receipt.receipt_id)
+  ) {
+    errors.push("review receipt receipt_id must be a sha256 hex digest");
+  } else if (receipt.receipt_id !== reviewReceiptId(receipt)) {
+    errors.push(
+      "review receipt receipt_id must equal the canonical receipt content hash",
+    );
+  }
+  for (const key of [
+    "assignment_id",
+    "work_item_id",
+    "evidence_node_id",
+  ]) {
+    if (!contractIdentifier(receipt[key])) {
+      errors.push(`review receipt ${key} must be a bounded identifier`);
+    }
+  }
+  if (!REVIEW_RECEIPT_MECHANISMS.has(receipt.mechanism)) {
+    errors.push("review receipt mechanism is not canonical");
+  }
+  contractString(errors, receipt.harness, "review receipt harness", 100);
+  contractString(
+    errors,
+    receipt.reviewer_id,
+    "review receipt reviewer_id",
+    256,
+  );
+  for (const key of ["base_revision", "reviewed_revision"]) {
+    if (
+      typeof receipt[key] !== "string" ||
+      !/^[a-f0-9]{40}$/.test(receipt[key])
+    ) {
+      errors.push(
+        `review receipt ${key} must be a full Git commit`,
+      );
+    }
+  }
+  if (
+    typeof receipt.delivery_baseline !== "string" ||
+    receipt.delivery_baseline !==
+      `${DELIVERY_ARTIFACT_PATH}@${receipt.base_revision}`
+  ) {
+    errors.push(
+      `review candidate delivery_baseline must equal ${DELIVERY_ARTIFACT_PATH}@<base_revision>`,
+    );
+  }
+  if (
+    /^[a-f0-9]{40}$/.test(receipt.base_revision ?? "") &&
+    receipt.base_revision === receipt.reviewed_revision
+  ) {
+    errors.push(
+      "review receipt base_revision and reviewed_revision must differ",
+    );
+  }
+  for (const key of ["standards_verdict", "intent_verdict"]) {
+    if (!REVIEW_RECEIPT_VERDICTS.has(receipt[key])) {
+      errors.push(`review receipt ${key} is not canonical`);
+    }
+  }
+  for (const key of ["reviewer_result_sha256", "provenance_sha256"]) {
+    if (
+      typeof receipt[key] !== "string" ||
+      !/^sha256:[a-f0-9]{64}$/.test(receipt[key])
+    ) {
+      errors.push(
+        `review receipt ${key} must be a prefixed sha256 digest`,
+      );
+    }
+  }
+  if (receipt.read_only !== true) {
+    errors.push("review receipt read_only must remain true");
+  }
+  if (receipt.external_actions !== false) {
+    errors.push("review receipt external_actions must remain false");
+  }
+  for (const key of ["started_at", "completed_at"]) {
+    if (
+      typeof receipt[key] !== "string" ||
+      !Number.isFinite(Date.parse(receipt[key])) ||
+      !receipt[key].endsWith("Z")
+    ) {
+      errors.push(`review receipt ${key} must be a UTC timestamp`);
+    }
+  }
+  if (
+    typeof receipt.started_at === "string" &&
+    typeof receipt.completed_at === "string" &&
+    Number.isFinite(Date.parse(receipt.started_at)) &&
+    Number.isFinite(Date.parse(receipt.completed_at)) &&
+    Date.parse(receipt.completed_at) < Date.parse(receipt.started_at)
+  ) {
+    errors.push(
+      "review receipt completed_at must not precede started_at",
+    );
+  }
+  if (!REVIEW_RECEIPT_RESULTS.has(receipt.result)) {
+    errors.push("review receipt result is not canonical");
+  }
+  if (
+    receipt.result === "succeeded" &&
+    (receipt.standards_verdict !== "passed" ||
+      receipt.intent_verdict !== "passed")
+  ) {
+    errors.push(
+      "successful review receipt requires passed standards and intent verdicts",
+    );
+  }
+  return errors;
+}
+
+function reviewGitEnvironment() {
+  const environment = {
+    GIT_ATTR_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: platform() === "win32" ? "NUL" : "/dev/null",
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_LITERAL_PATHSPECS: "1",
+    GIT_NO_REPLACE_OBJECTS: "1",
+    GIT_OPTIONAL_LOCKS: "0",
+    GIT_PAGER: "",
+    GIT_TERMINAL_PROMPT: "0",
+    LANG: "C",
+    LC_ALL: "C",
+    NO_COLOR: "1",
+    PAGER: "",
+  };
+  for (const name of ["PATH", "PATHEXT", "SystemRoot", "WINDIR"]) {
+    if (typeof process.env[name] === "string") {
+      environment[name] = process.env[name];
+    }
+  }
+  return environment;
+}
+
+const REVIEW_GIT_CONFIG = [
+  "--no-replace-objects",
+  "-c",
+  "core.fsmonitor=false",
+  "-c",
+  "core.untrackedCache=false",
+  "-c",
+  "core.hooksPath=",
+  "-c",
+  "diff.external=",
+  "-c",
+  "interactive.diffFilter=",
+  "-c",
+  "core.pager=",
+  "-c",
+  "pager.diff=false",
+  "-c",
+  "pager.show=false",
+  "-c",
+  "pager.status=false",
+];
+
+function runReviewGit(target, args) {
+  return spawnSync(
+    "git",
+    [...REVIEW_GIT_CONFIG, "-C", target, ...args],
+    {
+      encoding: "utf8",
+      env: reviewGitEnvironment(),
+      maxBuffer: CHECK_OUTPUT_LIMIT_BYTES,
+      shell: false,
+      timeout: 10_000,
+    },
+  );
+}
+
+function reviewReceiptCommitErrors(target, receipt) {
+  const errors = [];
+  if (validateReviewReceipt(receipt).length > 0) {
+    return errors;
+  }
+  const repository = runReviewGit(target, [
+    "rev-parse",
+    "--is-inside-work-tree",
+  ]);
+  if (
+    repository.status !== 0 ||
+    String(repository.stdout ?? "").trim() !== "true"
+  ) {
+    return [
+      "review receipt requires a Git repository with exact reviewed revisions",
+    ];
+  }
+  for (const key of ["base_revision", "reviewed_revision"]) {
+    const result = runReviewGit(target, [
+      "cat-file",
+      "-e",
+      `${receipt[key]}^{commit}`,
+    ]);
+    if (result.status !== 0) {
+      errors.push(`review receipt ${key} is not a local Git commit`);
+    }
+  }
+  if (errors.length > 0) {
+    return errors;
+  }
+  if (
+    runReviewGit(target, [
+      "merge-base",
+      "--is-ancestor",
+      receipt.base_revision,
+      receipt.reviewed_revision,
+    ]).status !== 0
+  ) {
+    errors.push(
+      "review receipt base_revision must be an ancestor of reviewed_revision",
+    );
+  }
+  const baselineEntry = runReviewGit(target, [
+    "ls-tree",
+    receipt.base_revision,
+    "--",
+    DELIVERY_ARTIFACT_PATH,
+  ]);
+  if (
+    baselineEntry.status !== 0 ||
+    !/^100(?:644|755) blob [a-f0-9]{40}\t\.agent-stack\/artifacts\/DELIVERY\.md\r?\n?$/.test(
+      baselineEntry.stdout,
+    )
+  ) {
+    errors.push(
+      "review candidate delivery baseline must reference a regular committed DELIVERY.md",
+    );
+    return errors;
+  }
+  const baselineArtifact = runReviewGit(target, [
+    "show",
+    `${receipt.base_revision}:${DELIVERY_ARTIFACT_PATH}`,
+  ]);
+  if (baselineArtifact.status !== 0) {
+    errors.push("review candidate delivery baseline could not be read");
+    return errors;
+  }
+  try {
+    const visible = markdownOutsideFencedCode(
+      baselineArtifact.stdout,
+      receipt.delivery_baseline,
+    );
+    const statuses = artifactDeclarationValues(
+      visible,
+      ARTIFACT_STATUS_DECLARATION,
+    );
+    const conflicts = artifactDeclarationValues(
+      visible,
+      MATERIAL_CONFLICTS_DECLARATION,
+    );
+    if (
+      statuses.length !== 1 ||
+      statuses[0] !== "APPROVED" ||
+      conflicts.length !== 1 ||
+      conflicts[0] !== "NO"
+    ) {
+      errors.push(
+        "review candidate delivery baseline must be an approved conflict-free DELIVERY.md",
+      );
+    }
+  } catch (error) {
+    errors.push(`review candidate delivery baseline: ${error.message}`);
+  }
+  return errors;
+}
+
+function reviewReceiptCurrentGitErrors(target, receipt, receiptPath) {
+  const errors = [];
+  if (validateReviewReceipt(receipt).length > 0) {
+    return errors;
+  }
+  const commitErrors = reviewReceiptCommitErrors(target, receipt);
+  if (commitErrors.length > 0) {
+    return commitErrors;
+  }
+  if (
+    runReviewGit(target, [
+      "merge-base",
+      "--is-ancestor",
+      receipt.reviewed_revision,
+      "HEAD",
+    ]).status !== 0
+  ) {
+    errors.push(
+      "review receipt reviewed_revision must be an ancestor of current HEAD",
+    );
+    return errors;
+  }
+  const changed = runReviewGit(target, [
+    "diff",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--no-renames",
+    "--name-only",
+    "-z",
+    receipt.reviewed_revision,
+    "HEAD",
+    "--",
+  ]);
+  if (changed.status !== 0) {
+    errors.push(
+      "review receipt post-review changed paths could not be inspected",
+    );
+    return errors;
+  }
+  const status = runReviewGit(target, [
+    "status",
+    "--porcelain=v1",
+    "-z",
+    "--no-renames",
+    "--untracked-files=all",
+  ]);
+  if (status.status !== 0) {
+    errors.push(
+      "review receipt post-review working tree could not be inspected",
+    );
+    return errors;
+  }
+  const changedPaths = new Set(
+    String(changed.stdout ?? "").split("\0").filter(Boolean),
+  );
+  const statusEntries = String(status.stdout ?? "").split("\0").filter(Boolean);
+  for (let index = 0; index < statusEntries.length; index += 1) {
+    const line = statusEntries[index];
+    let path = line.slice(3);
+    if (path) {
+      changedPaths.add(path);
+    }
+  }
+  const unreviewedProductPaths = [...changedPaths]
+    .filter((path) => !reviewEvidencePackagingPath(path, receiptPath))
+    .sort();
+  if (unreviewedProductPaths.length > 0) {
+    errors.push(
+      `review receipt is stale because product paths changed after review: ${unreviewedProductPaths.join(", ")}`,
+    );
+  }
+  return errors;
+}
+
+function reviewEvidencePackagingPath(path, receiptPath) {
+  return (
+    path === PRE_PR_REVIEW_PATH ||
+    path === EVIDENCE_GRAPH_PATH ||
+    path === WORK_LEDGER_PATH ||
+    path === receiptPath
+  );
+}
+
+function loadReviewReceiptCollection(target) {
+  const errors = [];
+  const receipts = new Map();
+  let directory;
+  try {
+    directory = projectFileWithoutSymlinkComponents(
+      target,
+      REVIEW_RECEIPTS_PATH,
+      "review receipts directory",
+    );
+  } catch (error) {
+    return {
+      ok: false,
+      receipt_count: 0,
+      receipts,
+      errors: [error.message],
+    };
+  }
+  if (!existsSync(directory)) {
+    return {
+      ok: true,
+      receipt_count: 0,
+      receipts,
+      errors: [],
+    };
+  }
+  if (
+    lstatSync(directory).isSymbolicLink() ||
+    !statSync(directory).isDirectory()
+  ) {
+    return {
+      ok: false,
+      receipt_count: 0,
+      receipts,
+      errors: [`${REVIEW_RECEIPTS_PATH} must be a real project directory`],
+    };
+  }
+  const entries = readdirSync(directory).sort();
+  const receiptEntries = entries.filter((name) => name !== ".gitkeep");
+  if (receiptEntries.length > 1_000) {
+    errors.push("review receipt directory exceeds the 1,000 receipt limit");
+  }
+  let receiptCount = 0;
+  for (const name of receiptEntries.slice(0, 1_001)) {
+    if (!/^[a-f0-9]{64}\.json$/.test(name)) {
+      errors.push(`review receipt has an invalid file name: ${name}`);
+      continue;
+    }
+    receiptCount += 1;
+    const relativePath = `${REVIEW_RECEIPTS_PATH}/${name}`;
+    try {
+      const file = projectFileWithoutSymlinkComponents(
+        target,
+        relativePath,
+        "review receipt",
+      );
+      if (lstatSync(file).isSymbolicLink() || !statSync(file).isFile()) {
+        errors.push(`${relativePath} must be a real project file`);
+        continue;
+      }
+      const receipt = readJson(file, "review receipt");
+      const receiptErrors = validateReviewReceipt(receipt);
+      if (receipt.receipt_id !== name.slice(0, -5)) {
+        receiptErrors.push(
+          "review receipt file name must match receipt_id",
+        );
+      }
+      for (const error of receiptErrors) {
+        errors.push(`${relativePath}: ${error}`);
+      }
+      if (receiptErrors.length === 0) {
+        receipts.set(relativePath, receipt);
+      }
+    } catch (error) {
+      errors.push(`${relativePath}: ${error.message}`);
+    }
+  }
+  return {
+    ok: errors.length === 0,
+    receipt_count: receiptCount,
+    receipts,
+    errors,
+  };
+}
+
+function reviewArtifactFieldValues(markdown, label) {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const declaration = new RegExp(
+    `^ {0,3}-[ \\t]+${escaped}:[ \\t]*(.*?)[ \\t]*$`,
+    "gim",
+  );
+  return [...markdown.matchAll(declaration)].map((match) => match[1].trim());
+}
+
+function parsePrePrReviewArtifact(target) {
+  let artifact;
+  try {
+    artifact = projectFileWithoutSymlinkComponents(
+      target,
+      PRE_PR_REVIEW_PATH,
+      "pre-PR review artifact",
+    );
+  } catch (error) {
+    return {
+      exists: true,
+      status: null,
+      fields: null,
+      errors: [error.message],
+    };
+  }
+  if (!existsSync(artifact)) {
+    return { exists: false, status: null, fields: null, errors: [] };
+  }
+  if (lstatSync(artifact).isSymbolicLink() || !statSync(artifact).isFile()) {
+    return {
+      exists: true,
+      status: null,
+      fields: null,
+      errors: [`${PRE_PR_REVIEW_PATH} must be a real project file`],
+    };
+  }
+  const errors = [];
+  let visible;
+  try {
+    visible = markdownOutsideFencedCode(
+      readFileSync(artifact, "utf8"),
+      PRE_PR_REVIEW_PATH,
+    );
+  } catch (error) {
+    return {
+      exists: true,
+      status: null,
+      fields: null,
+      errors: [`${PRE_PR_REVIEW_PATH}: ${error.message}`],
+    };
+  }
+  const statuses = artifactDeclarationValues(
+    visible,
+    ARTIFACT_STATUS_DECLARATION,
+  );
+  const conflicts = artifactDeclarationValues(
+    visible,
+    MATERIAL_CONFLICTS_DECLARATION,
+  );
+  if (statuses.length !== 1) {
+    errors.push(
+      `${PRE_PR_REVIEW_PATH} must contain exactly one Status declaration`,
+    );
+  } else if (!["DRAFT", "APPROVED"].includes(statuses[0])) {
+    errors.push(`${PRE_PR_REVIEW_PATH} Status must be DRAFT or APPROVED`);
+  }
+  if (conflicts.length !== 1) {
+    errors.push(
+      `${PRE_PR_REVIEW_PATH} must contain exactly one Material open conflicts declaration`,
+    );
+  } else if (!["YES", "NO"].includes(conflicts[0])) {
+    errors.push(
+      `${PRE_PR_REVIEW_PATH} Material open conflicts must be YES or NO`,
+    );
+  }
+  const status = statuses.length === 1 ? statuses[0] : null;
+  if (
+    status === "APPROVED" &&
+    conflicts.length === 1 &&
+    conflicts[0] !== "NO"
+  ) {
+    errors.push(
+      `${PRE_PR_REVIEW_PATH} cannot be APPROVED while material conflicts remain`,
+    );
+  }
+  const fields = {};
+  if (status === "APPROVED") {
+    for (const [key, label] of Object.entries({
+      assignment_id: "Assignment ID",
+      work_item_id: "Work item ID",
+      delivery_baseline: "Delivery baseline",
+      base_revision: "Base revision",
+      reviewed_revision: "Reviewed revision",
+      receipt_path: "Review receipt",
+    })) {
+      const values = reviewArtifactFieldValues(visible, label);
+      if (values.length !== 1 || values[0].length === 0) {
+        errors.push(
+          `${PRE_PR_REVIEW_PATH} APPROVED requires exactly one non-empty ${label} field`,
+        );
+      } else {
+        fields[key] = values[0];
+      }
+    }
+    for (const key of ["assignment_id", "work_item_id"]) {
+      if (fields[key] && !contractIdentifier(fields[key])) {
+        errors.push(
+          `${PRE_PR_REVIEW_PATH} ${key} must be a bounded identifier`,
+        );
+      }
+    }
+    for (const key of ["base_revision", "reviewed_revision"]) {
+      if (fields[key] && !/^[a-f0-9]{40}$/.test(fields[key])) {
+        errors.push(
+          `${PRE_PR_REVIEW_PATH} ${key} must be a full Git commit`,
+        );
+      }
+    }
+    if (
+      fields.delivery_baseline &&
+      fields.base_revision &&
+      fields.delivery_baseline !==
+        `${DELIVERY_ARTIFACT_PATH}@${fields.base_revision}`
+    ) {
+      errors.push(
+        `${PRE_PR_REVIEW_PATH} Delivery baseline must equal ${DELIVERY_ARTIFACT_PATH}@<Base revision>`,
+      );
+    }
+    if (
+      fields.receipt_path &&
+      !new RegExp(
+        `^${REVIEW_RECEIPTS_PATH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/[a-f0-9]{64}\\.json$`,
+      ).test(fields.receipt_path)
+    ) {
+      errors.push(
+        `${PRE_PR_REVIEW_PATH} Review receipt must name a canonical candidate path`,
+      );
+    }
+  }
+  return { exists: true, status, fields, errors };
+}
+
+function trustedReviewCandidate(
+  validator,
+  receipt,
+  context,
+  errors,
+) {
+  if (typeof validator !== "function") {
+    errors.push(
+      `current local review candidate ${receipt.receipt_id} is unsigned and requires trusted outer attestation`,
+    );
+    return;
+  }
+  try {
+    const trusted = validator(
+      structuredClone(receipt),
+      Object.freeze({ ...context }),
+    );
+    if (trusted !== true) {
+      errors.push(
+        `current local review candidate ${receipt.receipt_id} was not accepted by trusted outer attestation`,
+      );
+    }
+  } catch {
+    errors.push("trusted outer review attestation failed closed");
+  }
+}
+
+function validateLocalReviewEvidence(
+  target,
+  ledger,
+  graph,
+  { validateTrustedAttestation = null } = {},
+) {
+  const collection = loadReviewReceiptCollection(target);
+  const errors = [...collection.errors];
+  const artifact = parsePrePrReviewArtifact(target);
+  errors.push(...artifact.errors);
+  const currentLocalNodes = [];
+  if (
+    ledger &&
+    graph &&
+    validateWorkLedger(ledger).length === 0 &&
+    validateEvidenceGraph(graph).length === 0
+  ) {
+    const workItems = new Map(ledger.items.map((item) => [item.id, item]));
+    for (const node of graph.nodes.filter(
+      (candidate) =>
+        candidate.kind === "review" &&
+        candidate.state === "verified" &&
+        candidate.source.provider === "review-receipt",
+    )) {
+      currentLocalNodes.push(node);
+      const receipt = collection.receipts.get(node.source.reference);
+      if (!receipt) {
+        errors.push(
+          `verified review node ${node.id} references a missing valid review receipt`,
+        );
+        continue;
+      }
+      if (receipt.evidence_node_id !== node.id) {
+        errors.push(
+          `verified review node ${node.id} does not match its review receipt evidence_node_id`,
+        );
+      }
+      const workItem = workItems.get(receipt.work_item_id);
+      if (!workItem) {
+        errors.push(
+          `review receipt ${receipt.receipt_id} references a missing work item`,
+        );
+      }
+      if (
+        !graph.edges.some(
+          (edge) =>
+            edge.from === node.id &&
+            edge.relation === "reviews" &&
+            edge.to === receipt.work_item_id,
+        )
+      ) {
+        errors.push(
+          `verified review node ${node.id} requires an exact reviews edge to work item ${receipt.work_item_id}`,
+        );
+      }
+      if (workItem && !workItem.evidence_refs.includes(node.id)) {
+        errors.push(
+          `work item ${receipt.work_item_id} must link current review node ${node.id} through evidence_refs`,
+        );
+      }
+      if (
+        receipt.result !== "succeeded" ||
+        receipt.standards_verdict !== "passed" ||
+        receipt.intent_verdict !== "passed"
+      ) {
+        errors.push(
+          `verified review node ${node.id} requires a successful two-axis review receipt`,
+        );
+      }
+      for (const error of reviewReceiptCurrentGitErrors(
+        target,
+        receipt,
+        node.source.reference,
+      )) {
+        errors.push(`${node.source.reference}: ${error}`);
+      }
+      trustedReviewCandidate(
+        validateTrustedAttestation,
+        receipt,
+        {
+          node_id: node.id,
+          receipt_path: node.source.reference,
+        },
+        errors,
+      );
+    }
+  }
+  if (currentLocalNodes.length > 1) {
+    errors.push(
+      "evidence graph must contain at most one current verified local pre-PR review node",
+    );
+  }
+  if (currentLocalNodes.length > 0 && artifact.status !== "APPROVED") {
+    errors.push(
+      "a current verified local pre-PR review node requires an APPROVED pre-PR review artifact",
+    );
+  }
+  if (artifact.status === "APPROVED") {
+    if (currentLocalNodes.length !== 1) {
+      errors.push(
+        `${PRE_PR_REVIEW_PATH} APPROVED requires exactly one current verified local pre-PR review node`,
+      );
+    } else {
+      const node = currentLocalNodes[0];
+      const receipt = collection.receipts.get(node.source.reference);
+      if (receipt && artifact.fields) {
+        for (const [field, expected] of Object.entries({
+          assignment_id: receipt.assignment_id,
+          work_item_id: receipt.work_item_id,
+          delivery_baseline: receipt.delivery_baseline,
+          base_revision: receipt.base_revision,
+          reviewed_revision: receipt.reviewed_revision,
+          receipt_path: node.source.reference,
+        })) {
+          if (artifact.fields[field] !== expected) {
+            errors.push(
+              `${PRE_PR_REVIEW_PATH} ${field} does not match the current review candidate`,
+            );
+          }
+        }
+      }
+    }
+  }
+  return {
+    ok: errors.length === 0,
+    receipt_count: collection.receipt_count,
+    errors,
+  };
+}
+
 function validateCampaignState(campaign) {
   const errors = [];
   if (!campaign || typeof campaign !== "object" || Array.isArray(campaign)) {
@@ -3168,7 +3957,7 @@ function writeProviderReceipt(target, receipt) {
   return path;
 }
 
-function commandReceiptsValidate(target) {
+function commandReceiptsValidate(target, reviewOptions = {}) {
   const directory = projectFile(
     target,
     PROVIDER_RECEIPTS_PATH,
@@ -3224,10 +4013,18 @@ function commandReceiptsValidate(target) {
       errors.push(`${relativePath}: ${error.message}`);
     }
   }
+  const workEvidence = loadValidatedWorkEvidence(target);
+  const reviewValidation = validateLocalReviewEvidence(
+    target,
+    workEvidence.ledger.value,
+    workEvidence.graph.value,
+    reviewOptions,
+  );
+  errors.push(...reviewValidation.errors);
   return {
     ok: errors.length === 0,
     path: PROVIDER_RECEIPTS_PATH,
-    receipt_count: receiptCount,
+    receipt_count: receiptCount + reviewValidation.receipt_count,
     errors,
   };
 }
@@ -3559,7 +4356,10 @@ function commandCampaignStop(target, options) {
 
 function validateRepositoryContract(target, path, validator, label) {
   try {
-    const value = readJson(projectFile(target, path, label), label);
+    const value = readJson(
+      projectFileWithoutSymlinkComponents(target, path, label),
+      label,
+    );
     const errors = validator(value);
     return {
       ok: errors.length === 0,
@@ -3624,11 +4424,21 @@ function loadValidatedWorkEvidence(target) {
   };
 }
 
-function commandEvidenceValidate(target) {
+function commandEvidenceValidate(target, reviewOptions = {}) {
   const snapshot = loadValidatedWorkEvidence(target);
-  const errors = [...snapshot.graph.errors, ...snapshot.linkageErrors];
+  const reviewValidation = validateLocalReviewEvidence(
+    target,
+    snapshot.ledger.value,
+    snapshot.graph.value,
+    reviewOptions,
+  );
+  const errors = [
+    ...snapshot.graph.errors,
+    ...snapshot.linkageErrors,
+    ...reviewValidation.errors,
+  ];
   return {
-    ok: snapshot.ok,
+    ok: snapshot.ok && reviewValidation.ok,
     path: snapshot.graph.path,
     work_ledger: {
       ok: snapshot.ledger.ok,
@@ -7888,6 +8698,13 @@ function runCheck(target, check, config) {
 function commandVerify(target, failFast = false) {
   const config = loadConfig(target);
   const errors = validateConfig(config, target);
+  const workEvidence = loadValidatedWorkEvidence(target);
+  const reviewValidation = validateLocalReviewEvidence(
+    target,
+    workEvidence.ledger.value,
+    workEvidence.graph.value,
+  );
+  errors.push(...reviewValidation.errors);
   const evidence = {
     schema_version: 1,
     started_at: utcTimestamp(),
@@ -9598,8 +10415,10 @@ export {
   PACKAGE_NAME,
   PACKAGE_ROOT,
   PACKAGE_VERSION,
+  PRE_PR_REVIEW_PATH,
   PROJECT_CLI_PATH,
   PROVIDER_RECEIPTS_PATH,
+  REVIEW_RECEIPTS_PATH,
   REVIEW_RECEIPT_PATH,
   REVIEW_WORKFLOW_PATH,
   SAFE_ENVIRONMENT_NAMES,
@@ -9650,13 +10469,16 @@ export {
   normalizeWindowsExtensions,
   pathInside,
   portableTextSha256,
+  reviewReceiptId,
   resolveConfigureOptions,
   resolveTarget,
   startPromptPolicySurface,
   validateConfig,
   validateCampaignState,
   validateEvidenceGraph,
+  validateLocalReviewEvidence,
   validateProviderReceipt,
+  validateReviewReceipt,
   validateWorkEvidenceLinkage,
   validateWorkLedger,
 };

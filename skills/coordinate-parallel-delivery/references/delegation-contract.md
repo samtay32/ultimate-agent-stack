@@ -14,6 +14,32 @@ documentation. Do not guess that every product exposes the same primitives.
 `parallel_delivery.mode: serial` always selects C0 behavior. Adaptive mode may
 select any lower level. It must never pretend a capability exists.
 
+## Adapter Success and Review Provenance
+
+A native dispatch is successful only when the adapter returns a non-empty
+worker or thread ID. A wait must target that exact ID and return an inspectable
+worker result. These are explicit failure evidence, never success evidence:
+
+- spawn failure or missing worker ID;
+- an empty receiver list or empty worker-state map;
+- a wait that targeted no worker;
+- a primary-agent summary with no worker result;
+- a review artifact written only by the primary agent.
+
+On any of those conditions, record the assignment as failed, cancelled, or
+serially recovered. Continue safe serial work when useful, but keep any
+independent-review acceptance criterion, verified review node, and PR-ready
+claim incomplete.
+
+For a completed local independent review, write one schema-valid receipt under
+`.agent-stack/review-receipts/`. It binds the stable assignment and work-item
+IDs, exact base and reviewed commits, harness and reviewer ID, standards and
+intent verdicts, returned-result hash, adapter-provenance hash, read-only
+boundary, timestamps, and result. The verified review evidence node must use
+`review-receipt` as its source provider and reference that exact receipt path.
+The protected CLI rejects an approved pre-PR review or verified review node
+without this linkage.
+
 ## Assignment Envelope
 
 Every assignment must state:

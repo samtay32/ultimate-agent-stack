@@ -104,6 +104,11 @@ Do not say "done" until all applicable conditions hold:
    - standards: correctness, security, reliability, performance, maintainability, operations;
    - intent: acceptance criteria, non-goals, UX, migrations, documentation, compatibility.
    This independent pre-PR review does not activate `$close-review-loop`.
+   It is complete only after a real separate reviewer returns a result for the
+   exact commit and the linked review receipt passes protected validation. If
+   reviewer dispatch or provenance fails, preserve the tested work, keep the
+   review and PR-ready gates incomplete, and report the blocker without
+   manufacturing approval evidence.
 9. **Open or update the PR.** Use a draft while material work remains. Include intent, decisions, test evidence, migration/rollback notes, screenshots or recordings when visual behavior changed, and known risks.
 10. **Close feedback.** Apply `$close-review-loop` with the configured review
     provider only for an existing pull request or an external provider or human

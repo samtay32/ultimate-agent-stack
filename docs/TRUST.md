@@ -82,6 +82,27 @@ credential-like content. It cannot prove that a referenced artifact is true,
 that an external provider is current, or that every relevant relationship was
 recorded; those remain verification and review responsibilities.
 
+Local independent-review completion has an additional fail-closed boundary.
+Files under `.agent-stack/review-receipts/` are unsigned project-authored
+candidates. Their content hashes detect accidental mismatch; they do not
+authenticate a worker, provider, human, spawn, wait, or returned result. The
+ordinary project CLI therefore rejects an approved `PRE_PR_REVIEW.md` or a
+current verified local review node even when its candidate is schema-valid.
+Only a trusted outer collector may validate the actual dispatch/wait/result
+events and supply an in-process attestation for that exact candidate. Trust
+cannot be added by a project file, environment variable, or CLI argument.
+
+For an attested current candidate, the CLI binds the approved artifact fields,
+approved delivery-baseline pointer, exact base and reviewed commits, verified
+review node, exact `reviews` edge, and ledger `evidence_refs`. It rejects
+non-evidence changes after review. Superseded and failed candidates remain
+structurally validated history but are not reinterpreted as current approval,
+so an ordinary review-fix-review cycle can retain its audit trail. Deterministic
+`verify` evidence belongs in the reviewed revision. Attestation consumption is
+read-only through `evidence validate` and `receipts validate`; calling the
+writing `verify` command after a current review claim remains fail-closed and
+does not create a trusted final state.
+
 Linear uses separate protected helpers for bounded reads and the two optional
 write operations. Writes are disabled by default. An approved write requires
 the active coordinator token, explicit external-write confirmation, a bounded
@@ -253,7 +274,7 @@ Run:
 
 ```bash
 npm run release:check
-npx --yes markdownlint-cli2@0.20.0 '**/*.md'
+npx --yes markdownlint-cli2@0.20.0 '**/*.md' '#node_modules/**'
 ```
 
 The test suite includes containment, symlink, tamper, approval-drift,

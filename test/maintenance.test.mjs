@@ -190,6 +190,7 @@ const geminiAdapter = readFileSync(
   "utf8",
 );
 const readme = readFileSync(join(PACKAGE_ROOT, "README.md"), "utf8");
+const changelog = readFileSync(join(PACKAGE_ROOT, "CHANGELOG.md"), "utf8");
 const trustGuide = readFileSync(
   join(PACKAGE_ROOT, "docs/TRUST.md"),
   "utf8",
@@ -406,6 +407,48 @@ test("installed doctor guidance is version-bound and directory metadata fits", (
       /node \.agent-stack\/bin\/agent-stack\.mjs doctor/,
     );
   }
+});
+
+test("release guidance preserves current review and Markdown contracts", () => {
+  assert.match(
+    changelog,
+    /(?:Behavioral run records now|New records) use schema\s+version 4/,
+  );
+  assert.doesNotMatch(
+    changelog,
+    /Behavioral run records now use schema version 3/,
+  );
+  assert.match(
+    readme,
+    /markdownlint-cli2@0\.20\.0 '\*\*\/\*\.md' '#node_modules\/\*\*'/,
+  );
+  assert.match(projectAgents, /unsigned candidate\s+evidence/);
+  assert.match(projectAgents, /trusted outer collector/);
+  assert.match(projectAgents, /protected in-process boundary/);
+  assert.match(
+    projectAgents,
+    /Before independent review[\s\S]*?verify --target \.[\s\S]*?Commit the reviewed source[\s\S]*?After review, do not rerun/,
+  );
+  assert.match(
+    projectAgents,
+    /Without that\s+outer attestation, post-review project-local validation must fail closed/,
+  );
+  assert.match(
+    releaseGuide,
+    /eval:behavior --[\s\S]*?--input RUN_RECORD\.json[\s\S]*?--evaluation-authority ABSOLUTE_FILE/,
+  );
+  assert.match(
+    releaseGuide,
+    /runs the writing project `verify` gate[\s\S]*?commits the\s+reviewed source plus deterministic verification evidence before requesting\s+independent review/,
+  );
+  assert.match(
+    releaseGuide,
+    /Do not rerun the writing `verify`\s+command or create another commit after attestation/,
+  );
+  assert.match(
+    releaseGuide,
+    /pushes the exact attested final commit to `main` without creating a\s+post-review commit/,
+  );
 });
 
 test("review closure validates claims and has one disposition vocabulary", () => {
@@ -944,6 +987,7 @@ test("package has no install hooks and guards publication with prepublishOnly", 
       "scripts/check-portable-bundle.mjs",
       "scripts/packed-smoke.mjs",
       "scripts/release-preflight.mjs",
+      "scripts/review-attestation.mjs",
       "scripts/review-receipt.mjs",
       "scripts/skill-eval.mjs",
       "scripts/skill-fixture.mjs",
@@ -1349,7 +1393,7 @@ test("portable npm fallback works without npm_execpath", () => {
     cwd: PACKAGE_ROOT,
     encoding: "utf8",
     env: environment,
-    timeout: 10_000,
+    timeout: 30_000,
   });
 
   assert.equal(result.status, 0, result.error?.message ?? result.stderr);

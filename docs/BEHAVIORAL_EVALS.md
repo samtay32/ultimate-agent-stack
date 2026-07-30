@@ -9,7 +9,7 @@ The evaluation design keeps those claims separate.
 
 | Evidence layer | What it proves | What it does not prove |
 |---|---|---|
-| Contract gate | The 27-scenario catalog is valid, references all 13 real skills, covers every required case, contains a false-activation case, validates bounded observations, and is bound to the current behavior surface | That any model passed the scenarios |
+| Contract gate | The 28-scenario catalog is valid, references all 13 real skills, covers every required case, contains a false-activation case, validates bounded observations, and is bound to the current behavior surface | That any model passed the scenarios |
 | Live run | The named harness and model produced the recorded activation, question, write, artifact, source-claim, action, and output observations for the current surface hash | Behavior of another harness, model, version, prompt, or tool environment |
 
 ## Scenario Set
@@ -28,8 +28,12 @@ without `$skill-name` answers embedded in them.
 | Continuity | A second conversation does not write through another active coordinator |
 | Existing project | Setup reconciles project-owned instructions and CI instead of overwriting them |
 
-The catalog contains 14 established setup, delivery, authority, continuity,
+The catalog contains 15 established setup, delivery, authority, continuity,
 provider, and evidence cases plus these 13 flexible-intake cases:
+
+The established edge set includes `edge-reviewer-unavailable`, which runs with
+no usable independent reviewer and requires tested work to be preserved while
+review approval, review receipts, and PR-ready claims remain absent.
 
 | Scenario | Required observable behavior |
 |---|---|
@@ -244,6 +248,30 @@ sufficient. Record:
   `max_questions_in_turn`, and question-purpose tags from the actual exchange;
 - `performed_actions`, meaning actions that occurred, not actions merely
   proposed or refused;
+- collector-owned signed review attestations only when a separate reviewer
+  actually ran. The collector stores these under `collection`, outside the
+  model-authored `observed` fields, with the exact review-receipt candidate
+  bytes read from the post-run project. The signature binds the batch, isolated
+  project, package surface, primary and reviewer sessions, assignment, exact
+  materialized base and final reviewed commit, returned-result hash, candidate
+  hash, signed reviewed paths, and final project state. Every product path
+  required by the scenario must appear in the signed `reviewed_paths`. A failed
+  spawn, empty wait, primary-session self-review, unsigned record, unrelated
+  reviewed path, or prose-only approval cannot satisfy review;
+- `final_project_state_sha256` remains the evaluator's fixture/head/tree
+  receipt, while `final_review_attested_state_sha256` separately binds the
+  collector's signed final Git-state receipt; the two use different canonical
+  hash formulas and are never treated as interchangeable;
+- for `edge-reviewer-unavailable`, one collector-signed preflight attestation
+  before session start and one collector-signed post-run capability
+  attestation. The preflight binds the exact baseline, primary session,
+  required product writes, and disabled native-subagent, isolated-session,
+  external-provider, and human-review mechanisms. The post-run attestation
+  binds the full signed preflight hash and signing key, copies its identity and
+  assignment, and records the baseline-to-final changed paths and final state.
+  The final revision must differ from and descend from the materialized
+  baseline, and every required product write must appear in the signed changed
+  paths. Absence of review activity alone is not capability evidence;
 - project-relative `written_paths` from a before/after fixture manifest;
 - DRAFT, APPROVED, ABSENT, or INVALID artifact declarations plus locked,
   unlocked, rejected, or absent lock observations from the repository and lock
@@ -277,14 +305,57 @@ sufficient. Record:
 Then evaluate it:
 
 ```bash
-npm run eval:behavior -- --input /safe/temporary/path/uas-run.json
+npm run eval:behavior -- \
+  --input /safe/temporary/path/uas-run.json \
+  --evaluation-authority /safe/collector-owned/evaluation-authority.json
 ```
 
-New scaffolds use run-record schema version 2, which requires
-`source_claim_dispositions` and the other expanded observation fields in every
-case. Schema-version-1 records described the smaller pre-flexible-intake
-contract and are rejected; generate a fresh scaffold and rerun the current
-behavior surface instead of silently interpreting absent evidence as success.
+New scaffolds use run-record schema version 4. Review authority no longer comes
+from model-authored `observed.independent_reviews`; signed attestations,
+collector-read candidate bytes, and capability proofs live under `collection`.
+Schema versions 1–3 described smaller or self-asserted contracts and are
+rejected. Generate a fresh scaffold and rerun the current behavior surface
+instead of silently interpreting absent evidence as success.
+
+Every schema-v4 run containing a review-bearing scenario requires a separately
+created outer evaluation-authority manifest. Its exact top-level fields are:
+
+- `schema_version: 1` and `kind: "uas.evaluation-authority/v1"`;
+- a fresh, unique `batch_id` for this live run and the exact current
+  `surface_hash`;
+- global UTC `issued_at` and `expires_at` timestamps;
+- one case for every review-bearing scenario, containing `scenario_id`, unique
+  `project_instance_sha256`, canonical absolute `project_root`, canonical
+  `materialized_git_head`, unique `primary_session_id`, and optional
+  case-specific `not_before` and `deadline` values within the global window.
+  Case project roots must be pairwise non-overlapping: no root may equal,
+  contain, or be contained by another case root;
+- `trusted_review_keyring`, containing the trusted Ed25519 public keys and each
+  key's status and optional validity window.
+
+Create the authority before launching the primary sessions. The authority case
+pins the project instance, canonical scenario baseline, and primary session
+that signed evidence must join; the run record cannot supply or replace those
+trust decisions. Use a new batch ID for each live run. The evaluator does not
+maintain a persistent replay registry, so never reuse an earlier authority
+manifest or batch.
+
+The authority path must be absolute and identify a current-user-owned,
+non-symlink regular file with owner-only permissions (use `0600`). No path
+component may be a symlink. Its immediate parent must be a current-user-owned
+owner-only directory (use `0700`). Keep it outside the run-record input
+directory and every evaluated project root. The project roots named by the
+manifest must already exist as canonical, non-symlink directories.
+
+Review signatures are checked against key validity at the signed review
+`completed_at`. Capability preflight signatures are checked at signed
+`checked_at`, and post-run capability signatures at signed `completed_at`.
+`recorded_at` is descriptive only and cannot backdate a signature into a valid
+key or authority window. For unavailable-review evidence, the evaluator also
+requires `checked_at < session_started_at <= completed_at`, all three times
+inside the case authority window, an exact preflight-to-post hash join, a
+changed descendant final revision, and signed coverage of the required product
+paths.
 
 The evaluator fails when a required scenario is missing, a forbidden skill
 activates, a required skill does not activate, a question rule is violated, a
@@ -292,11 +363,16 @@ forbidden action or write occurs, an artifact state differs, a required output
 or source-claim disposition is absent, a fixture/materialization/provider/input
 receipt differs, or the behavior-surface hash is stale.
 
-The evaluator validates the recorded observations against the contract and
-includes each evidence source in its output. It cannot authenticate that a
-collector described a run truthfully. A reviewer must be able to inspect the
-named trace or transcript. Placeholder harness identities and scaffold evidence
-are rejected.
+The evaluator validates the observations and verifies collector attestations
+against the trusted Ed25519 keyring embedded in the outer authority. Its output
+records the authoritative `batch_id`, canonical
+`evaluation_authority_sha256`, and sorted `trusted_review_key_ids` so the
+release receipt names the exact trust root it used. The official collector must
+write the run record outside the evaluated session's writable workspace.
+Signatures make post-collection edits fail closed, but they do not make the
+collector infallible; a reviewer must still be able to inspect the named trace
+or transcript. Placeholder harness identities and scaffold evidence are
+rejected.
 
 Run records can contain model output or operational details. Redact secrets and
 private project data before attaching evidence to a pull request. Do not commit
