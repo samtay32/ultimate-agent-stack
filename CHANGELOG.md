@@ -4,6 +4,8 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ## Unreleased
 
+## 0.9.0 - 2026-07-29
+
 ### Added
 
 - A focused `develop-project-brief` skill now develops vague seed ideas and
