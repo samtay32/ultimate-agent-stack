@@ -14,6 +14,18 @@ documentation. Do not guess that every product exposes the same primitives.
 `parallel_delivery.mode: serial` always selects C0 behavior. Adaptive mode may
 select any lower level. It must never pretend a capability exists.
 
+## Adapter Success and Review Provenance
+
+A native dispatch is successful only when the adapter returns a non-empty
+worker or thread ID. A wait must target that exact ID and return an inspectable
+worker result. Spawn failure, a missing worker ID, an empty wait, a
+primary-agent summary with no worker result, and primary-agent self-review are
+failure evidence, never independent-review success.
+
+On any of those conditions, record the assignment as failed, cancelled, or
+serially recovered. Continue safe serial work when useful, but keep the
+independent-review and PR-ready gates incomplete.
+
 ## Assignment Envelope
 
 Every assignment must state:

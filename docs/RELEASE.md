@@ -35,20 +35,17 @@ Before the owner step, the agent must:
 3. confirm the bootstrap machine has Node.js 22+ and npm 10.8+;
 4. run every release, skill, plugin, Markdown, packed-install, archive, secret,
    adversarial safety, and behavioral-scenario contract check;
-5. when no accepted evaluated report exists or the behavior-surface hash
-   changed, run the behavioral scenarios through at least one real supported
-   harness and attach the evaluated report with the exact harness and model
-   identity;
+5. when the behavior-surface hash changed, run the documented representative
+   smoke matrix through at least one real supported harness and attach its
+   evidence with the exact harness and model identity;
 6. inspect the exact `0.1.0` tarball and confirm the MIT license and repository
    metadata;
 7. stop and report the exact hash and remaining owner step.
 
-For a release that makes broad claims about the flexible-intake front half,
-step 5 requires complete current-surface records from at least two distinct
-primary supported harnesses. Evaluate them separately and list every supported
-harness not exercised by a complete run as untested. No named harness is
-privileged by this release rule. The release must not turn a deterministic
-contract pass or one harness result into a broader compatibility claim.
+For a cross-harness flexible-intake compatibility claim, step 5 requires the
+current minimum smoke matrix on at least two distinct primary supported
+harnesses. Record them separately and list every untested scenario and harness.
+No named harness is privileged by this release rule.
 
 The owner then:
 
@@ -95,28 +92,27 @@ The agent:
    documentation versions;
 2. runs the complete release and adversarial gate, including behavioral
    scenario contracts;
-3. compares `npm run eval:contracts` with the previous release evidence. If no
-   accepted evaluated report exists or the behavior-surface hash changed, runs
-   the exact scenarios through the claim-scoped minimum number of real
-   supported harnesses and attaches the output from
-   `npm run eval:behavior -- --input RUN_RECORD.json` to the pull request;
+3. runs `npm run eval:contracts`. If the behavior-surface hash changed, runs
+   the documented representative smoke matrix through the claim-scoped
+   minimum number of real supported harnesses and attaches the smoke evidence
+   to the pull request;
 4. commits and pushes the reviewed source to `main`;
 5. starts **Publish npm package** with the exact
    `ultimate-agent-stack@VERSION` input.
 
-The flexible-intake Milestone 1 release contains 27 scenarios and 13 skills.
-Its broad front-half behavior claim requires complete current-surface evidence
-from at least two distinct primary supported harnesses. Each record must include
-activation and false activation, bounded question behavior, prohibited actions
-and project writes, artifact status and lock state, observable outputs, and
-load-bearing source-claim dispositions. The behavior-surface hash includes the
-shipped artifact templates, so a changed `BRIEF.md`, decision, delivery,
-architecture, security, or verification template invalidates older evidence.
+The flexible-intake Milestone 1 release contains 28 deterministic scenarios and
+13 skills. Its cross-harness compatibility claim requires the four-case smoke
+matrix from `BEHAVIORAL_EVALS.md` on at least two distinct primary supported
+harnesses. This does not claim that the other scenarios ran live. The behavior
+surface still includes shipped artifact templates, so changed behavior needs
+fresh smoke evidence.
 
 A primary supported harness is a supported coding-agent surface acting as the
 user-facing Project Steward, not a subagent or provider adapter. Any supported
-harness that proves exact skill loading, fresh-session isolation, and the
-documented execution boundary may count; no vendor is privileged.
+harness may count when a fresh ordinary CLI session in a temporary project
+retains its exact version, model, request, output, file diff, and test result;
+no vendor is privileged. The representative smoke does not require a custom
+runner, network sandbox, signing key, or full-catalog evaluator record.
 
 Deterministic unit tests prove the scenario schema, evaluator, package, and
 guardrails. They do not prove that a model selected the right skill or followed

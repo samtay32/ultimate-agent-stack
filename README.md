@@ -509,10 +509,10 @@ npx --yes markdownlint-cli2@0.20.0 '**/*.md'
 
 Releases use protected GitHub Actions, npm trusted publishing, staged human 2FA
 approval, registry provenance, and a matching GitHub Release. `release:check`
-validates the behavioral scenario contracts. This milestone's broad
-front-half behavior claim also requires current evaluated runs on at least two
-distinct primary supported harnesses; every other supported harness must be
-named as untested. No named harness is privileged by this release rule. See
+validates every deterministic scenario contract. Cross-harness compatibility
+also requires the documented current smoke matrix on at least two distinct
+primary supported harnesses; every untested scenario and harness must be named.
+No named harness is privileged by this release rule. See
 [Behavioral Evaluations](docs/BEHAVIORAL_EVALS.md).
 
 ## License

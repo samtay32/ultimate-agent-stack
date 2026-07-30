@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   symlinkSync,
   utimesSync,
@@ -2471,6 +2472,50 @@ test("work ledger and evidence graph reject unsafe or broken repository state", 
 
   assert.equal(EVIDENCE_GRAPH_PATH, ".agent-stack/evidence-graph.json");
 });
+
+test(
+  "work and evidence validation reject symlinked contract inputs",
+  { skip: platform() === "win32" },
+  () => {
+    const fileFixture = temporaryProject();
+    try {
+      configureFixture(fileFixture.directory);
+      const ledger = join(fileFixture.directory, WORK_LEDGER_PATH);
+      const actualLedger = join(
+        fileFixture.directory,
+        ".agent-stack",
+        "actual-work-items.json",
+      );
+      renameSync(ledger, actualLedger);
+      symlinkSync(actualLedger, ledger, "file");
+      assert.match(
+        commandWorkValidate(fileFixture.directory).errors.join("\n"),
+        /work ledger crosses a symlinked path component/,
+      );
+    } finally {
+      fileFixture.cleanup();
+    }
+
+    const parentFixture = temporaryProject();
+    try {
+      configureFixture(parentFixture.directory);
+      const directory = join(parentFixture.directory, ".agent-stack");
+      const actual = join(parentFixture.directory, ".actual-agent-stack");
+      renameSync(directory, actual);
+      symlinkSync(actual, directory, "dir");
+      assert.match(
+        commandWorkValidate(parentFixture.directory).errors.join("\n"),
+        /work ledger crosses a symlinked path component/,
+      );
+      assert.match(
+        commandEvidenceValidate(parentFixture.directory).errors.join("\n"),
+        /evidence graph crosses a symlinked path component/,
+      );
+    } finally {
+      parentFixture.cleanup();
+    }
+  },
+);
 
 test("work ledger validates schema-maximum dependency depth without recursion", () => {
   const itemCount = 10_000;

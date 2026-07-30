@@ -3363,19 +3363,19 @@ function commandCampaignNext(target, options) {
       3,
     );
   }
-  const workValidation = commandWorkValidate(target);
-  const evidenceValidation = commandEvidenceValidate(target);
-  if (!workValidation.ok || !evidenceValidation.ok) {
+  const contracts = loadValidatedWorkEvidence(target);
+  if (!contracts.ok) {
     throw new StackError(
       "Campaign iteration refused because repository work or evidence is invalid.",
       3,
-      [...workValidation.errors, ...evidenceValidation.errors],
+      [
+        ...contracts.ledger.errors,
+        ...contracts.graph.errors,
+        ...contracts.linkageErrors,
+      ],
     );
   }
-  const ledger = readJson(
-    projectFile(target, WORK_LEDGER_PATH, "work ledger"),
-    "work ledger",
-  );
+  const ledger = contracts.ledger.value;
   const items = new Map(ledger.items.map((item) => [item.id, item]));
   if (campaign.active_work_item !== null) {
     const active = items.get(campaign.active_work_item);
@@ -3559,7 +3559,10 @@ function commandCampaignStop(target, options) {
 
 function validateRepositoryContract(target, path, validator, label) {
   try {
-    const value = readJson(projectFile(target, path, label), label);
+    const value = readJson(
+      projectFileWithoutSymlinkComponents(target, path, label),
+      label,
+    );
     const errors = validator(value);
     return {
       ok: errors.length === 0,
@@ -5744,23 +5747,20 @@ function validatedLinearWriteContext(target, operation, options) {
       [readonlyIssue, writeIssue].filter(Boolean),
     );
   }
-  const workValidation = commandWorkValidate(target);
-  const evidenceValidation = commandEvidenceValidate(target);
-  if (!workValidation.ok || !evidenceValidation.ok) {
+  const contracts = loadValidatedWorkEvidence(target);
+  if (!contracts.ok) {
     throw new StackError(
       "Refusing Linear write until repository work and evidence validate.",
       3,
-      [...workValidation.errors, ...evidenceValidation.errors],
+      [
+        ...contracts.ledger.errors,
+        ...contracts.graph.errors,
+        ...contracts.linkageErrors,
+      ],
     );
   }
-  const ledger = readJson(
-    projectFile(target, WORK_LEDGER_PATH, "work ledger"),
-    "work ledger",
-  );
-  const graph = readJson(
-    projectFile(target, EVIDENCE_GRAPH_PATH, "evidence graph"),
-    "evidence graph",
-  );
+  const ledger = contracts.ledger.value;
+  const graph = contracts.graph.value;
   const item = ledger.items.find(
     (candidate) => candidate.id === options.workItemId,
   );

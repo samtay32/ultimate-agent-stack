@@ -147,6 +147,17 @@ const verifyChangeSkill = readFileSync(
   join(PACKAGE_ROOT, "skills/verify-change/SKILL.md"),
   "utf8",
 );
+const coordinateDeliverySkill = readFileSync(
+  join(PACKAGE_ROOT, "skills/coordinate-parallel-delivery/SKILL.md"),
+  "utf8",
+);
+const delegationContract = readFileSync(
+  join(
+    PACKAGE_ROOT,
+    "skills/coordinate-parallel-delivery/references/delegation-contract.md",
+  ),
+  "utf8",
+);
 const setupProjectSkill = readFileSync(
   join(PACKAGE_ROOT, "skills/setup-autonomous-project/SKILL.md"),
   "utf8",
@@ -621,6 +632,35 @@ test("workflow loading stays route-aware and provider-neutral", () => {
   );
 });
 
+test("independent review fails closed without a real separate result", () => {
+  for (const source of [
+    projectAgents,
+    handoffTemplate,
+    runDeliverySkill,
+    verifyChangeSkill,
+    coordinateDeliverySkill,
+    delegationContract,
+  ]) {
+    assert.match(source, /separate reviewer|worker or thread ID/i);
+    assert.match(
+      source,
+      /returns?\s+an inspectable\s+result|returned result|worker result/i,
+    );
+    assert.match(source, /self-review/i);
+    assert.match(source, /blocked|incomplete/i);
+  }
+  for (const source of [
+    projectAgents,
+    handoffTemplate,
+    runDeliverySkill,
+    verifyChangeSkill,
+    coordinateDeliverySkill,
+    delegationContract,
+  ]) {
+    assert.doesNotMatch(source, /Ed25519|evaluation-authority|outer collector/i);
+  }
+});
+
 test("working brief and lock guidance preserve honest promotion boundaries", () => {
   for (const marker of [
     "Status: DRAFT",
@@ -837,7 +877,7 @@ test("packed installs cover flexible intake and live evidence stays harness-scop
   }
   assert.match(
     readme.replace(/\s+/g, " "),
-    /every other supported harness must be named as untested/,
+    /every untested scenario and harness must be named/,
   );
   assert.match(trustGuide, /must not\s+be generalized to another harness/);
 });
@@ -1019,11 +1059,7 @@ test("release docs separate deterministic contracts from live model evidence", (
   assert.match(behavioralEvals, /surface.hash/i);
   assert.match(releaseGuide, /real\s+supported harness/);
   assert.equal(
-    [
-      ...releaseGuide.matchAll(
-        /no\s+accepted evaluated report exists or the behavior-surface hash\s+changed/g,
-      ),
-    ].length,
+    [...releaseGuide.matchAll(/behavior-surface hash changed/g)].length,
     2,
   );
   assert.match(

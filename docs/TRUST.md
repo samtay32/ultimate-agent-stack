@@ -265,17 +265,17 @@ negative, edge, authority, continuity, and existing-project cases remain
 defined against current skill names. It also tests the deterministic evaluator.
 Those checks do **not** prove model behavior. When skill instructions or
 activation metadata change, release readiness additionally requires an
-evaluated run from a real named harness and model. The report is bound to a hash
-of the behavioral surface and must not be presented as evidence for an untested
-harness. The evaluator does not authenticate a collector's claims; reviewers
-must inspect the named run evidence. See
+representative smoke run from a real named harness and model. The evidence must
+name the exact behavior-surface hash and must not be presented as evidence for
+an untested harness or scenario. Reviewers must inspect the named smoke
+evidence. See
 [Behavioral Evaluations](BEHAVIORAL_EVALS.md).
 
-Flexible-intake release evidence must include live runs from at least two
-distinct primary supported harnesses before behavior is described as broadly
-supported. No named harness is privileged by this rule. A passing deterministic
-contract or a run from one harness must not be generalized to another harness,
-model, version, prompt, or tool environment.
+Cross-harness flexible-intake evidence must include the documented current
+smoke matrix from at least two distinct primary supported harnesses. No named
+harness is privileged by this rule. A passing deterministic contract or a run
+from one harness must not be generalized to another harness, model, version,
+prompt, tool environment, or untested scenario.
 
 The implementation lives in
 [`bin/ultimate-agent-stack.mjs`](../bin/ultimate-agent-stack.mjs), the protected

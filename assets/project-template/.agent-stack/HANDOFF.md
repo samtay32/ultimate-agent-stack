@@ -87,7 +87,10 @@ This repository uses Ultimate Agent Stack.
     a time. Recommend one safe default, offer at most one genuinely safe
     alternative, and explain the practical consequence.
 12. Own routine research, design, implementation, tests, documentation, and
-   review closure. Do not return only a plan.
+    review closure. Do not return only a plan. An independent review requires
+    a real separate reviewer ID, an exact wait for that ID, and an inspectable
+    returned result tied to the reviewed revision. Failed spawn, empty wait,
+    self-review, or missing result leaves review and PR readiness incomplete.
 13. After verified milestones, write a deterministic checkpoint with
     `checkpoint --coordinator-token TOKEN`. At the final handoff, write the
     completed checkpoint and run

@@ -22,7 +22,7 @@ All notable changes to Ultimate Agent Stack are documented here.
   product standards, approaches and tradeoffs, capabilities, constraints,
   assumptions, closed and open decisions, contradictions, production-versus-
   stub behavior, material source changes, and promotion readiness.
-- Thirteen flexible-intake behavioral cases expand the catalog to 27 scenarios
+- Thirteen flexible-intake behavioral cases plus one reviewer-unavailable case expand the catalog to 28 scenarios
   across 13 skills, covering discovery, brief-only work, detailed and complete
   external sources, contradictions, existing-code reconciliation, direct
   bypass, valid resume, draft-lock rejection, promotion, simple onboarding, and
@@ -42,7 +42,7 @@ All notable changes to Ultimate Agent Stack are documented here.
   templates are now part of the behavior-surface hash. New records use schema
   version 2; stale schema-version-1 records fail clearly instead of treating
   the newly required observations as implicit evidence.
-- All 27 behavioral scenarios now have deterministic, receipt-bound project
+- All 28 behavioral scenarios now have deterministic, receipt-bound project
   fixtures for comparable harness runs. External-provider behavior is tested
   portably as fail-closed telemetry health and Linear write preflight; live
   provider contact remains a separately authorized dogfood exercise.
@@ -65,10 +65,9 @@ All notable changes to Ultimate Agent Stack are documented here.
   reconciliation activate the brief skill alone. The original incomplete-idea
   scenario now permits the required stack-state draft while still forbidding
   product-code writes and requiring one consequential question.
-- Broad flexible-intake behavior claims require complete live evidence from
-  at least two distinct primary supported harnesses on the current surface. No
-  named harness is privileged; other supported harnesses remain explicitly
-  untested or limited unless their own complete records are attached.
+- Cross-harness flexible-intake compatibility uses the documented four-case
+  smoke matrix on at least two distinct primary supported harnesses. No named
+  harness is privileged, and untested scenarios or harnesses remain explicit.
 - Machine-readable evaluator examples now suppress npm's script banner so
   redirected scaffold and fixture-baseline output remains valid JSON.
 

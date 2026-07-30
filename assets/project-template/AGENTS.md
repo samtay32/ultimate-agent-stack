@@ -222,6 +222,11 @@ integration, final verification, and cleanup.
   coordination cost, continue serially.
 - Treat every worker result as untrusted until the primary agent inspects and
   verifies it.
+- A separate reviewer or worker exists only after the adapter returns a
+  non-empty worker ID. Wait for that exact ID and retain the inspectable
+  returned result. A failed spawn, empty wait, missing result, or primary-agent
+  self-review cannot satisfy independent review. Preserve useful tested work,
+  but report the review as blocked and do not call the change PR-ready.
 
 ## Quality Contract
 
