@@ -80,6 +80,7 @@ const closeReviewSkill = readFileSync(
   join(PACKAGE_ROOT, "skills/close-review-loop/SKILL.md"),
   "utf8",
 );
+const closeReviewDescription = frontmatterDescription(closeReviewSkill);
 const runDeliverySkill = readFileSync(
   join(PACKAGE_ROOT, "skills/run-autonomous-delivery/SKILL.md"),
   "utf8",
@@ -452,6 +453,10 @@ test("release guidance preserves current review and Markdown contracts", () => {
 });
 
 test("review closure validates claims and has one disposition vocabulary", () => {
+  const decodedCloseReviewDescription = JSON.parse(closeReviewDescription);
+  assert.equal(typeof decodedCloseReviewDescription, "string");
+  assert.match(decodedCloseReviewDescription, /review thread: address/);
+
   const dispositionLine = reviewClosurePolicy.match(
     /^Disposition: (.+)$/m,
   );
