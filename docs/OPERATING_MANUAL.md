@@ -274,31 +274,6 @@ separate Create comments key. Every command requires the active coordinator
 token, `--confirm-external-write`, and a recorded authority source. Run
 `receipts validate` and `doctor` after writes.
 
-Local pre-PR review uses the same fail-closed evidence discipline. A project may
-record the claimed reviewer ID, exact approved delivery baseline, reviewed
-revision, both review axes, result hash, and adapter provenance under
-`.agent-stack/review-receipts/`, but that file is an unsigned candidate. It is
-not worker authentication and cannot make a verified local review or
-`PRE_PR_REVIEW.md` approval pass through the ordinary project CLI. A trusted
-outer collector must independently validate the actual dispatch, wait, returned
-result, and exact candidate content, then supply its attestation through the
-protected in-process validation boundary. There is intentionally no project
-file, environment variable, or CLI option for adding trust.
-
-The selected candidate must match every scope field in `PRE_PR_REVIEW.md`, its
-node must have an exact `reviews` edge to the candidate work item, and that work
-item must link the node through `evidence_refs`. The current candidate alone is
-checked against `HEAD`; superseded and failed candidates remain structurally
-validated history. Run the deterministic full `verify` gate before independent
-review and commit its evidence in the reviewed revision. After review, only the
-exact candidate, review artifact, evidence graph, and ledger may change without
-making the candidate stale. Outer attestation validation is read-only: consume
-it through `evidence validate` and `receipts validate`; do not rerun `verify`
-after attestation. A post-review `verify` attempt remains fail-closed and its
-new run output is not trusted final-state evidence. A failed spawn, empty wait,
-missing worker result, primary-agent self-review, or missing outer attestation
-leaves the artifact DRAFT and the change not PR-ready.
-
 For a bounded campaign, use `campaign start` with 1–25 iterations and then
 `campaign next` for one repository item at a time. Campaign mode never calls a
 provider. Stop when the bound is reached, evidence is incomplete, work is

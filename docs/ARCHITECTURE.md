@@ -156,12 +156,7 @@ flowchart LR
    contains no LLM decision logic.
 6. **Review plane** — independently checks engineering standards and locked
    intent, then uses the configured independent review adapter as an additional
-   adversarial surface when required. A local review may write a bounded,
-   unsigned candidate containing the claimed reviewer identity, exact
-   revisions, delivery baseline, two-axis verdict, and adapter/result hashes.
-   Project state cannot authenticate its own candidate. Only a trusted outer
-   collector may attest the actual dispatch, wait, and returned result;
-   unavailable or unattested delegation remains an explicit blocker.
+   adversarial surface when required.
 7. **Authority plane** — limits interruptions without pretending authority does
    not exist. Reversible engineering is agent-owned; credentials, cost, legal
    risk, destructive production actions, and unauthorized releases remain
@@ -175,7 +170,6 @@ flowchart LR
 | `.agent-stack/config.json` | Repository | Actual command arrays and automation policy |
 | `.agent-stack/core-policy.json` | Package | Protected mechanical safety rules |
 | `.agent-stack/installation.json` | CLI | Managed hashes, customizations, and update proposals |
-| `.agent-stack/review-receipts/` | Review | Unsigned local independent-review candidates retained as inspectable history |
 | `BRIEF.md` | Brief development | Optional unlocked source audit and working brief for `EXTERNAL` or `DISCOVER` intake |
 | `DELIVERY.md` | Delivery | Outcome, capabilities, acceptance, non-goals |
 | `ARCHITECTURE.md` | Delivery | Binding architecture decisions only |

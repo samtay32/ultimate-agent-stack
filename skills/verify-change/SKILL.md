@@ -32,10 +32,6 @@ Evidence, not confidence, decides readiness.
 5. Perform independent reviews:
    - **standards:** correctness, data loss, security, privacy, concurrency, performance, reliability, observability, maintainability;
    - **intent:** every requirement, non-goal, compatibility promise, migration, UX state, and operational outcome.
-   A local review counts only when a separate reviewer actually returns a
-   result for the exact reviewed commit and the protected review-receipt and
-   evidence-linkage validation passes. Failed spawn, empty wait, self-review,
-   or handwritten approval prose is a blocker, not review evidence.
 6. For visual changes, inspect rendered output at meaningful sizes and include screenshots or recordings.
 7. For integrations, test timeouts, malformed input, retries, idempotency, partial failure, and authentication boundaries where applicable.
 8. Classify every failure:
@@ -55,9 +51,6 @@ Evidence, not confidence, decides readiness.
 - silently skipping unavailable tools.
 - claiming a test was added, a review was closed, or an artifact was locked
   without matching repository and command evidence.
-- approving `.agent-stack/artifacts/PRE_PR_REVIEW.md`, verifying a review node,
-  or declaring PR readiness without a valid linked receipt under
-  `.agent-stack/review-receipts/`.
 
 ## Exit Contract
 

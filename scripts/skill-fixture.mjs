@@ -45,12 +45,6 @@ const FIXED_TIMESTAMP = "2026-01-01T00:00:00Z";
 const LIVE_LINEAR_SANDBOX_OPT_IN = "--allow-live-linear-sandbox-fixture";
 const GIT_COMMIT_ID = /^[a-f0-9]{40}$/;
 const SHA256_RECEIPT = /^sha256:[a-f0-9]{64}$/;
-const REVIEW_MECHANISMS = Object.freeze([
-  "native-subagent",
-  "isolated-session",
-  "external-provider",
-  "human",
-]);
 const PROJECT_TREE_MAX_ENTRIES = 20_000;
 const PROJECT_TREE_MAX_FILES = 10_000;
 const PROJECT_TREE_MAX_FILE_BYTES = 16 * 1024 * 1024;
@@ -79,7 +73,6 @@ const EXPECTED_FIXTURE_IDS = new Set([
   "negative-explanation-only",
   "edge-bypass-gates",
   "edge-unbounded-campaign",
-  "edge-reviewer-unavailable",
   "authority-release-boundary",
   "continuity-active-coordinator",
   "existing-project-reconciliation",
@@ -305,36 +298,6 @@ function validateFixtureProviderBoundary(fixture) {
   }
 }
 
-function validateFixtureReviewEnvironment(fixture) {
-  const environment = fixture.review_environment;
-  if (fixture.scenario_id !== "edge-reviewer-unavailable") {
-    if (environment !== undefined) {
-      throw new Error(
-        `${fixture.scenario_id}.review_environment is reserved for reviewer-capability fixtures`,
-      );
-    }
-    return;
-  }
-  if (
-    !environment ||
-    typeof environment !== "object" ||
-    Array.isArray(environment) ||
-    environment.mode !== "all-disabled" ||
-    !environment.mechanisms ||
-    typeof environment.mechanisms !== "object" ||
-    Array.isArray(environment.mechanisms) ||
-    Object.keys(environment.mechanisms).sort().join("\0") !==
-      [...REVIEW_MECHANISMS].sort().join("\0") ||
-    REVIEW_MECHANISMS.some(
-      (mechanism) => environment.mechanisms[mechanism] !== "disabled",
-    )
-  ) {
-    throw new Error(
-      `${fixture.scenario_id}.review_environment must disable exactly all four canonical review mechanisms`,
-    );
-  }
-}
-
 function fixtureCatalog() {
   const catalog = readJson(FIXTURES_FILE);
   if (catalog.schema_version !== 1 || !Array.isArray(catalog.fixtures)) {
@@ -399,7 +362,6 @@ function fixtureCatalog() {
       );
     }
     validateFixtureProviderBoundary(fixture);
-    validateFixtureReviewEnvironment(fixture);
     seen.add(fixture.scenario_id);
   }
   if (
@@ -959,10 +921,6 @@ function externalInputsForFixture(scenarioId) {
   }));
 }
 
-function reviewEnvironmentForFixture(scenarioId) {
-  return structuredClone(fixtureById(scenarioId).review_environment ?? null);
-}
-
 function fixtureReceipt(scenarioId) {
   return receiptForFixture(fixtureById(scenarioId));
 }
@@ -1421,6 +1379,4 @@ export {
   projectStateSha256,
   projectTreeSha256,
   validateFixtureProviderBoundary,
-  reviewEnvironmentForFixture,
-  validateFixtureReviewEnvironment,
 };

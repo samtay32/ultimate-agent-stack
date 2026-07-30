@@ -94,44 +94,24 @@ The agent:
 1. classifies the SemVer change and synchronizes npm, plugin, CLI, lockfile, and
    documentation versions;
 2. runs the complete release and adversarial gate, including behavioral
-   scenario contracts; runs the writing project `verify` gate; and commits the
-   reviewed source plus deterministic verification evidence before requesting
-   independent review;
+   scenario contracts;
 3. compares `npm run eval:contracts` with the previous release evidence. If no
    accepted evaluated report exists or the behavior-surface hash changed, runs
    the exact scenarios through the claim-scoped minimum number of real
-   supported harnesses and attaches the evaluated output to the pull request:
-
-   ```bash
-   npm run eval:behavior -- \
-     --input RUN_RECORD.json \
-     --evaluation-authority ABSOLUTE_FILE
-   ```
-
-4. freezes the reviewed commit and final evidence state before local independent
-   review. When local review is part of the release claim, retains the trusted
-   harness collector's exact-head attestation separately from the
-   repository-authored unsigned candidate, then consumes that attestation
-   read-only. A candidate file or project CLI result alone never proves that a
-   worker existed or returned the review. Do not rerun the writing `verify`
-   command or create another commit after attestation. If any committed byte
-   must change, run verification before a new review and obtain a new
-   exact-head attestation;
-5. pushes the exact attested final commit to `main` without creating a
-   post-review commit;
-6. starts **Publish npm package** with the exact
+   supported harnesses and attaches the output from
+   `npm run eval:behavior -- --input RUN_RECORD.json` to the pull request;
+4. commits and pushes the reviewed source to `main`;
+5. starts **Publish npm package** with the exact
    `ultimate-agent-stack@VERSION` input.
 
-The flexible-intake Milestone 1 release introduced 27 scenarios and 13 skills.
-The current surface contains 28 scenarios after adding the unavailable-reviewer
-fail-closed case. Its broad front-half behavior claim requires complete current-surface evidence
+The flexible-intake Milestone 1 release contains 27 scenarios and 13 skills.
+Its broad front-half behavior claim requires complete current-surface evidence
 from at least two distinct primary supported harnesses. Each record must include
 activation and false activation, bounded question behavior, prohibited actions
 and project writes, artifact status and lock state, observable outputs, and
 load-bearing source-claim dispositions. The behavior-surface hash includes the
-shipped artifact templates and independent-review receipt schema, so a changed
-brief, decision, delivery, architecture, security, verification, pre-PR review,
-or receipt contract invalidates older evidence.
+shipped artifact templates, so a changed `BRIEF.md`, decision, delivery,
+architecture, security, or verification template invalidates older evidence.
 
 A primary supported harness is a supported coding-agent surface acting as the
 user-facing Project Steward, not a subagent or provider adapter. Any supported

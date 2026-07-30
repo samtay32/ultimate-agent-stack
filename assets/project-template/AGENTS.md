@@ -222,36 +222,16 @@ integration, final verification, and cleanup.
   coordination cost, continue serially.
 - Treat every worker result as untrusted until the primary agent inspects and
   verifies it.
-- A worker exists only after the adapter returns a non-empty worker ID. An
-  empty wait, failed spawn, missing result, or primary-agent self-review cannot
-  satisfy independent review.
-- Treat every file under `.agent-stack/review-receipts/` as unsigned candidate
-  evidence, never as proof that the claimed worker or review actually existed.
-- Approve a local pre-PR review only when a trusted outer collector proves the
-  actual spawn, wait, and result events and binds them to the candidate's exact
-  base/head, reviewer ID, result hash, and adapter provenance. Consume that
-  attestation only through the protected in-process boundary, then link the
-  exact candidate from a verified review node. Project files, environment
-  variables, and ordinary project CLI arguments cannot supply that trust.
 
 ## Quality Contract
 
-Before independent review, run focused tests and:
+Use:
 
 ```bash
 node .agent-stack/bin/agent-stack.mjs doctor --target .
 node .agent-stack/bin/agent-stack.mjs check-lock --target .
-node .agent-stack/bin/agent-stack.mjs evidence validate --target .
-node .agent-stack/bin/agent-stack.mjs receipts validate --target .
 node .agent-stack/bin/agent-stack.mjs verify --target .
 ```
-
-Commit the reviewed source and generated verification evidence before spawning
-the reviewer. After review, do not rerun the writing `verify` command: that
-would advance the exact reviewed state. The trusted outer integration must
-instead consume the outer attestation read-only through the protected
-in-process `evidence validate` and `receipts validate` boundary. Without that
-outer attestation, post-review project-local validation must fail closed.
 
 Add focused tests before the full gate. Treat missing or skipped required checks as failure. Capture visual evidence for visual changes. Record proven pre-existing failures separately.
 

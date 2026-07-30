@@ -119,7 +119,7 @@ function main() {
     const packedContracts = JSON.parse(
       run(process.execPath, [evalScript, "contracts"], fixtureConsumer),
     );
-    if (!packedContracts.ok || packedContracts.scenario_count !== 28) {
+    if (!packedContracts.ok || packedContracts.scenario_count !== 27) {
       throw new Error("packed behavioral contracts did not validate");
     }
     const fixtureList = JSON.parse(
@@ -127,7 +127,7 @@ function main() {
     );
     if (
       !fixtureList.ok ||
-      fixtureList.scenarios.length !== 28 ||
+      fixtureList.scenarios.length !== 27 ||
       fixtureList.scenarios.some(
         (item) =>
           !/^sha256:[a-f0-9]{64}$/.test(item.fixture_receipt) ||

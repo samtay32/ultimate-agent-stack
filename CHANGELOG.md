@@ -4,7 +4,14 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ## Unreleased
 
-## 0.9.0 - 2026-07-30
+### Fixed
+
+- Complete source-audit and working-brief requests now stop with a gap-free
+  DRAFT ready for later approval without manufacturing an approval question.
+  Explicit approved-brief requests and end-to-end promotion retain their
+  separate product-owner acceptance boundaries.
+
+## 0.9.0 - 2026-07-29
 
 ### Added
 
@@ -21,16 +28,6 @@ All notable changes to Ultimate Agent Stack are documented here.
   bypass, valid resume, draft-lock rejection, promotion, simple onboarding, and
   credential redaction.
 
-### Fixed
-
-- Complete source-audit and working-brief requests now stop with a gap-free
-  DRAFT ready for later approval without manufacturing an approval question.
-  Explicit approved-brief requests and end-to-end promotion retain their
-  separate product-owner acceptance boundaries.
-- Failed or empty reviewer delegation can no longer satisfy local independent
-  review through prose alone. Verified review evidence now requires a
-  provenance-bound receipt tied to a separate reviewer and exact revisions.
-
 ### Changed
 
 - `run-autonomous-delivery` now routes intake in `RESUME`, `EXTERNAL`,
@@ -43,15 +40,12 @@ All notable changes to Ultimate Agent Stack are documented here.
   project-relative write observations, artifact and lock states, observable
   outputs, and load-bearing source-claim dispositions. Shipped artifact
   templates are now part of the behavior-surface hash. New records use schema
-  version 4 and carry collector-signed independent-review provenance; stale
-  schema-version-1 through schema-version-3 records fail clearly instead of
-  treating newly required observations as implicit evidence.
-- A new unavailable-reviewer case expands the catalog to 28 scenarios and
-  requires an honest blocked handoff instead of a fabricated review or PR-ready
-  claim. All 28 scenarios have deterministic, receipt-bound project fixtures
-  for comparable harness runs. External-provider behavior is tested portably
-  as fail-closed telemetry health and Linear write preflight; live provider
-  contact remains a separately authorized dogfood exercise.
+  version 2; stale schema-version-1 records fail clearly instead of treating
+  the newly required observations as implicit evidence.
+- All 27 behavioral scenarios now have deterministic, receipt-bound project
+  fixtures for comparable harness runs. External-provider behavior is tested
+  portably as fail-closed telemetry health and Linear write preflight; live
+  provider contact remains a separately authorized dogfood exercise.
 - Simple no-coder onboarding recommends one private repository-only setup and
   suppresses separate memory, work-tracking, telemetry, review-provider, data,
   and merge questions after that recommendation is approved. Advanced choices

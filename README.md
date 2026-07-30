@@ -444,8 +444,6 @@ The CLI checks the controls it owns:
 - Missing, failed, skipped, or timed-out required checks block completion.
 - Changed project intent is detected through locked file hashes.
 - Provider writes require explicit authority and validated local receipts.
-- Local independent review requires a separate reviewer receipt tied to the
-  exact reviewed revision; failed or empty delegation cannot become approval.
 - Campaigns are iteration-bounded and select only one eligible work item.
 - Required review must be current with no unresolved actionable thread.
 - One active Project Steward lease owns a checkout; explicit confirmation is
@@ -506,7 +504,7 @@ videos, platform references, and tradeoffs:
 
 ```bash
 npm run release:check
-npx --yes markdownlint-cli2@0.20.0 '**/*.md' '#node_modules/**'
+npx --yes markdownlint-cli2@0.20.0 '**/*.md'
 ```
 
 Releases use protected GitHub Actions, npm trusted publishing, staged human 2FA

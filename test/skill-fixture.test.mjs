@@ -93,12 +93,12 @@ function git(target, args) {
   return result.stdout.trim();
 }
 
-test("canonical catalog covers exactly all 28 current scenarios", () => {
+test("canonical catalog covers exactly all 27 current scenarios", () => {
   const catalog = fixtureCatalog();
   const fixtureIds = catalog.fixtures.map((fixture) => fixture.scenario_id);
   const scenarioIds = scenarios.scenarios.map((scenario) => scenario.id);
-  assert.equal(fixtureIds.length, 28);
-  assert.equal(EXPECTED_FIXTURE_IDS.size, 28);
+  assert.equal(fixtureIds.length, 27);
+  assert.equal(EXPECTED_FIXTURE_IDS.size, 27);
   assert.deepEqual(new Set(fixtureIds), new Set(scenarioIds));
   assert.equal(fixtureIds.filter((id) => id.startsWith("flexible-")).length, 13);
   for (const id of fixtureIds) {
