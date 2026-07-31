@@ -1032,6 +1032,11 @@ test("package has no install hooks and guards publication with prepublishOnly", 
     true,
     "package files must include the private vulnerability reporting policy",
   );
+  assert.doesNotMatch(
+    readFileSync(join(PACKAGE_ROOT, "scripts", "packed-smoke.mjs"), "utf8"),
+    /["']exec["'][\s\S]{0,120}--package=/,
+    "packed smoke must execute the already-installed tarball instead of relying on npm exec syntax",
+  );
   assert.equal(packageData.files.includes("lib/"), true);
   assert.equal(packageData.files.includes("evals/"), true);
   assert.equal(

@@ -117,6 +117,13 @@ function main() {
       "scripts",
       "skill-eval.mjs",
     );
+    const packedCli = join(
+      fixtureConsumer,
+      "node_modules",
+      "ultimate-agent-stack",
+      "bin",
+      "ultimate-agent-stack.mjs",
+    );
     const packedContracts = JSON.parse(
       run(process.execPath, [evalScript, "contracts"], fixtureConsumer),
     );
@@ -262,13 +269,10 @@ function main() {
         "",
       ].join("\n"),
     );
-    runNpm(
+    run(
+      process.execPath,
       [
-        "exec",
-        "--yes",
-        `--package=${tarball}`,
-        "--",
-        "ultimate-agent-stack",
+        packedCli,
         "init",
         "--target",
         project,
