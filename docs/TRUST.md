@@ -82,6 +82,10 @@ credential-like content. It cannot prove that a referenced artifact is true,
 that an external provider is current, or that every relevant relationship was
 recorded; those remain verification and review responsibilities.
 
+Skill activation entries are explicitly labeled `agent-recorded`. They make
+routing inspectable across harnesses that expose different transcript detail,
+but they cannot independently prove that a native harness tool call occurred.
+
 Linear uses separate protected helpers for bounded reads and the two optional
 write operations. Writes are disabled by default. An approved write requires
 the active coordinator token, explicit external-write confirmation, a bounded

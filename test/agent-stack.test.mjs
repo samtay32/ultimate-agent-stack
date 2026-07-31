@@ -35,6 +35,7 @@ import {
   StackError,
   TELEMETRY_READONLY_PATH,
   WORK_LEDGER_PATH,
+  assertSupportedNodeVersion,
   checksHash,
   commandCheckpoint,
   commandCapabilities,
@@ -50,6 +51,7 @@ import {
   commandDetect,
   commandDoctor,
   commandEvidenceReport,
+  commandEvidenceActivate,
   commandEvidenceValidate,
   commandLinearHealth,
   commandLinearEvidenceComment,
@@ -93,6 +95,19 @@ const CLAUDE_ADAPTER = readFileSync(
   ),
   "utf8",
 );
+
+test("CLI enforces the declared Node 22 minimum", () => {
+  assert.deepEqual(assertSupportedNodeVersion("22.0.0"), {
+    ok: true,
+    detected: "22.0.0",
+    minimum_major: 22,
+  });
+  assert.equal(assertSupportedNodeVersion("24.17.0").ok, true);
+  assert.throws(
+    () => assertSupportedNodeVersion("20.19.5"),
+    /requires Node\.js 22 or newer.*Detected 20\.19\.5/,
+  );
+});
 
 function temporaryProject() {
   const directory = mkdtempSync(join(tmpdir(), "ultimate-agent-stack-test-"));
@@ -2455,6 +2470,75 @@ test("work ledger and evidence graph reject unsafe or broken repository state", 
     /dependency relations must not contain a cycle/,
   );
 
+  const invalidActivationGraph = structuredClone(graph);
+  invalidActivationGraph.skill_activations = [
+    {
+      id: "skill-activation-invalid",
+      skill: "run-autonomous-delivery",
+      mode: "file-read",
+      harness: "test-harness",
+      model: "test-model",
+      run_id: "test-run",
+      event_id: "test-event",
+      recorded_at: null,
+      skill_path: "../outside/SKILL.md",
+      skill_sha256: "a".repeat(64),
+      claim: "agent-recorded",
+    },
+  ];
+  const activationErrors =
+    validateEvidenceGraph(invalidActivationGraph).join("\n");
+  assert.match(activationErrors, /recorded_at must not be null/);
+  assert.match(
+    activationErrors,
+    /skill_path must be a bounded project-relative path/,
+  );
+  const eventIdentity = {
+    event_id: "event-1",
+    harness: "codex",
+    model: "gpt-5",
+    run_id: "run-1",
+  };
+  const deterministicActivationId =
+    `skill-activation-${createHash("sha256")
+      .update(JSON.stringify(eventIdentity))
+      .digest("hex")
+      .slice(0, 20)}`;
+  const activation = {
+    id: deterministicActivationId,
+    skill: "run-autonomous-delivery",
+    mode: "native",
+    harness: eventIdentity.harness,
+    model: eventIdentity.model,
+    run_id: eventIdentity.run_id,
+    event_id: eventIdentity.event_id,
+    recorded_at: "2026-07-30T00:00:00Z",
+    skill_path:
+      ".agents/skills/run-autonomous-delivery/SKILL.md",
+    skill_sha256: "a".repeat(64),
+    claim: "agent-recorded",
+  };
+  const duplicateActivationGraph = structuredClone(graph);
+  duplicateActivationGraph.skill_activations = [
+    activation,
+    {
+      ...activation,
+      id: `skill-activation-${"b".repeat(20)}`,
+      mode: "file-read",
+    },
+  ];
+  const duplicateActivationErrors = validateEvidenceGraph(
+    duplicateActivationGraph,
+  ).join("\n");
+  assert.match(
+    duplicateActivationErrors,
+    /duplicate skill activation events/,
+  );
+  assert.match(
+    duplicateActivationErrors,
+    /id must match its deterministic event identity/,
+  );
+
   const fixture = temporaryProject();
   try {
     const invalidLedger = structuredClone(ledger);
@@ -2522,6 +2606,116 @@ test(
     }
   },
 );
+
+test("skill activations are recorded once with an honest evidence boundary", () => {
+  const fixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    createJavaScriptFixture(fixture.directory);
+    installOrUpgrade(fixture.directory, { mode: "init" });
+    const coordinatorToken = commandStart(
+      fixture.directory,
+      "Record one test activation",
+    ).coordinator.coordinator_token;
+    assert.throws(
+      () =>
+        commandEvidenceActivate(fixture.directory, {
+          skill: "run-autonomous-delivery",
+          skillPath:
+            ".agents/skills/run-autonomous-delivery/SKILL.md",
+          mode: "native",
+          harness: "codex",
+          model: "gpt-5",
+          runId: "thread-123",
+          eventId: "unauthorized-call",
+          coordinatorToken: "wrong-token",
+        }),
+      /Another Project Steward .* owns this checkout/,
+    );
+
+    const first = commandEvidenceActivate(fixture.directory, {
+      skill: "run-autonomous-delivery",
+      skillPath:
+        ".agents/skills/run-autonomous-delivery/SKILL.md",
+      mode: "native",
+      harness: "codex",
+      model: "gpt-5",
+      runId: "thread-123",
+      eventId: "skill-call-1",
+      coordinatorToken,
+    });
+    assert.equal(first.ok, true);
+    assert.equal(first.recorded, true);
+    assert.equal(first.activation.claim, "agent-recorded");
+    assert.match(
+      first.boundary,
+      /not independent proof of a harness tool call/,
+    );
+    assert.equal(first.activation.skill_path, [
+      ".agents",
+      "skills",
+      "run-autonomous-delivery",
+      "SKILL.md",
+    ].join("/"));
+    assert.match(first.activation.skill_sha256, /^[a-f0-9]{64}$/);
+
+    const duplicate = commandEvidenceActivate(fixture.directory, {
+      skill: "run-autonomous-delivery",
+      skillPath:
+        ".agents/skills/run-autonomous-delivery/SKILL.md",
+      mode: "native",
+      harness: "codex",
+      model: "gpt-5",
+      runId: "thread-123",
+      eventId: "skill-call-1",
+      coordinatorToken,
+    });
+    assert.equal(duplicate.recorded, false);
+    assert.equal(duplicate.reason, "already-recorded");
+    assert.throws(
+      () =>
+        commandEvidenceActivate(fixture.directory, {
+          skill: "run-autonomous-delivery",
+          skillPath:
+            ".agents/skills/run-autonomous-delivery/SKILL.md",
+          mode: "file-read",
+          harness: "codex",
+          model: "gpt-5",
+          runId: "thread-123",
+          eventId: "skill-call-1",
+          coordinatorToken,
+        }),
+      /Activation event idempotency conflict/,
+    );
+
+    const secondEvent = commandEvidenceActivate(fixture.directory, {
+      skill: "run-autonomous-delivery",
+      skillPath:
+        ".agents/skills/run-autonomous-delivery/SKILL.md",
+      mode: "native",
+      harness: "codex",
+      model: "gpt-5",
+      runId: "thread-123",
+      eventId: "skill-call-2",
+      coordinatorToken,
+    });
+    assert.equal(secondEvent.recorded, true);
+
+    const validation = commandEvidenceValidate(fixture.directory);
+    assert.equal(validation.ok, true, JSON.stringify(validation));
+    assert.equal(validation.skill_activation_count, 2);
+    const report = commandEvidenceReport(fixture.directory);
+    assert.equal(report.report.totals.skill_activations, 2);
+    assert.deepEqual(report.report.skill_activations.by_skill, {
+      "run-autonomous-delivery": 2,
+    });
+    assert.deepEqual(report.report.skill_activations.by_harness_model, {
+      "codex / gpt-5": 2,
+    });
+  } finally {
+    fixture.cleanup();
+  }
+});
 
 test("work ledger validates schema-maximum dependency depth without recursion", () => {
   const itemCount = 10_000;
@@ -2644,6 +2838,7 @@ test("evidence reports are deterministic, bounded, and Mermaid-safe", () => {
       work_items: 1,
       nodes: 2,
       edges: 1,
+      skill_activations: 0,
     });
     assert.equal(first.report.coverage.work_items_without_evidence, 0);
 
@@ -4528,6 +4723,35 @@ test("detect invalidates approval when discovered checks change", () => {
   }
 });
 
+test("fresh init verification gives one plain setup path before any checks run", () => {
+  const fixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    createJavaScriptFixture(fixture.directory);
+    installOrUpgrade(fixture.directory, { mode: "init" });
+
+    const verification = commandVerify(fixture.directory);
+    assert.equal(verification.ok, false);
+    assert.equal(verification.blocked_by, "setup");
+    assert.deepEqual(verification.checks, []);
+    assert.equal(verification.configuration_errors.length, 1);
+    assert.match(
+      verification.configuration_errors[0],
+      /Setup is incomplete\. Run configure --preset simple first/,
+    );
+    assert.match(verification.next_steps[0], /configure --preset simple/);
+    assert.match(verification.next_steps[1], /approve-checks/);
+
+    const receipt = readJson(
+      join(fixture.directory, ".agent-stack", "runs", "latest.json"),
+    );
+    assert.equal(receipt.blocked_by, "setup");
+    assert.equal(receipt.configuration_errors.length, 1);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("changing an approved package script invalidates approval before execution", () => {
   const fixture = temporaryProject();
   const outside = temporaryProject();
@@ -4540,6 +4764,13 @@ test("changing an approved package script invalidates approval before execution"
     });
     writeFileSync(join(fixture.directory, "safe.mjs"), "process.exit(0);\n");
     installOrUpgrade(fixture.directory, { mode: "init" });
+    commandConfigure(fixture.directory, {
+      profile: "standard",
+      review: "builtin",
+      knowledge: "repository",
+      externalData: "local_only",
+      reason: "Approved safe local defaults for script-change testing",
+    });
     commandApproveChecks(
       fixture.directory,
       "Inspected the exact original package test script definition",

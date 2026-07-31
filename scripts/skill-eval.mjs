@@ -162,6 +162,7 @@ function behaviorSurfaceEntries() {
     "assets/project-template/.gemini/agents/uas-researcher.md",
     "assets/project-template/.opencode/agents/uas-researcher.md",
     "assets/project-template/AGENTS.md",
+    "assets/project-template/CLAUDE.md",
     "assets/project-template/GEMINI.md",
     "evals/fixture-baselines.json",
     "evals/fixtures.json",
@@ -1149,9 +1150,253 @@ function buildScaffold(catalog = readJson(SCENARIOS_FILE)) {
   };
 }
 
+function summarizeRoutingRates(
+  records,
+  catalog = readJson(SCENARIOS_FILE),
+) {
+  const scenarios = new Map(
+    asArray(catalog?.scenarios).map((scenario) => [scenario.id, scenario]),
+  );
+  const behavioralFinding = (finding) =>
+    [
+      /^required skill did not activate:/,
+      /^forbidden skill activated:/,
+      /^required clarifying question was not asked$/,
+      /^a clarifying question was forbidden$/,
+      /^at least \d+ question\(s\) were required$/,
+      /^at most \d+ question\(s\) were allowed/,
+      /^required question tag was not observed:/,
+      /^forbidden question tag was observed:/,
+      /^required action was not performed:/,
+      /^forbidden action was performed:/,
+      /^required outcome was not observed:/,
+      /^forbidden write path was observed:/,
+      /^required write path was absent:/,
+      /^required artifact state was not observed:/,
+      /^artifact .* expected .* but observed /,
+      /^noncanonical artifact status was observed:/,
+      /^required observable output was absent:/,
+      /^required source claim was not accounted for:/,
+    ].some((pattern) => pattern.test(finding));
+  const usedSessions = new Set();
+  const groups = new Map();
+  const errors = [];
+  for (const [recordIndex, record] of asArray(records).entries()) {
+    const recordLabel = `run record ${recordIndex + 1}`;
+    if (
+      record?.schema_version !== CURRENT_RUN_RECORD_SCHEMA_VERSION ||
+      record?.surface_hash !== behaviorSurfaceHash() ||
+      !record?.harness ||
+      typeof record.harness !== "object" ||
+      Array.isArray(record.harness) ||
+      ![
+        record.harness.name,
+        record.harness.version,
+        record.harness.model,
+      ].every(isCompletedField) ||
+      !isCompletedField(record.recorded_at) ||
+      Number.isNaN(Date.parse(record.recorded_at)) ||
+      !Array.isArray(record.cases) ||
+      record.cases.length !== scenarios.size
+    ) {
+      errors.push(
+        `${recordLabel} is not a complete current behavioral record`,
+      );
+      continue;
+    }
+    const caseIds = record.cases.map((item) => item?.scenario_id);
+    if (
+      new Set(caseIds).size !== scenarios.size ||
+      caseIds.some((id) => !scenarios.has(id))
+    ) {
+      errors.push(
+        `${recordLabel} must contain each current scenario exactly once`,
+      );
+      continue;
+    }
+    const evaluation = validateRunRecord(record, catalog);
+    const structuralFindings = evaluation.cases.flatMap((item) =>
+      item.findings
+        .filter((finding) => !behavioralFinding(finding))
+        .map((finding) => `${item.scenario_id}: ${finding}`),
+    );
+    if (evaluation.errors.length > 0 || structuralFindings.length > 0) {
+      errors.push(
+        `${recordLabel} lacks current structured evidence: ${[
+          ...evaluation.errors,
+          ...structuralFindings,
+        ][0]}`,
+      );
+      continue;
+    }
+    const sessionIds = record.cases.map(
+      (item) => item.harness_session.id,
+    );
+    if (
+      new Set(sessionIds).size !== sessionIds.length ||
+      sessionIds.some((sessionId) => usedSessions.has(sessionId))
+    ) {
+      errors.push(`${recordLabel} reuses a harness session`);
+      continue;
+    }
+    sessionIds.forEach((sessionId) => usedSessions.add(sessionId));
+
+    const harness = {
+      name: record.harness.name,
+      version: record.harness.version,
+      model: record.harness.model,
+    };
+    const groupKey = JSON.stringify(harness);
+    const group = groups.get(groupKey) ?? {
+      harness,
+      run_records: 0,
+      evaluated_runs_passed: 0,
+      requiredSkills: new Map(),
+      forbiddenSkills: new Map(),
+      routes: new Map(),
+      matchedConstraints: 0,
+      constraints: 0,
+      matchedScenarios: 0,
+      scenarioAttempts: 0,
+    };
+    group.run_records += 1;
+    if (evaluation.ok) {
+      group.evaluated_runs_passed += 1;
+    }
+    for (const item of record.cases) {
+      const scenario = scenarios.get(item?.scenario_id);
+      const activated = new Set(item.observed.activated_skills);
+      let scenarioMatched = true;
+      let scenarioConstraints = 0;
+      for (const [expected, skills] of [
+        ["activate", asArray(scenario.expected?.must_activate)],
+        ["not-activate", asArray(scenario.expected?.must_not_activate)],
+      ]) {
+        for (const skill of skills) {
+          const observedActivated = activated.has(skill);
+          const matched =
+            observedActivated === (expected === "activate") ? 1 : 0;
+          const skillMap =
+            expected === "activate"
+              ? group.requiredSkills
+              : group.forbiddenSkills;
+          const skillCount = skillMap.get(skill) ?? {
+            skill,
+            matched: 0,
+            opportunities: 0,
+          };
+          skillCount.matched += matched;
+          skillCount.opportunities += 1;
+          skillMap.set(skill, skillCount);
+
+          const routeKey = `${scenario.id}\0${skill}\0${expected}`;
+          const routeCount = group.routes.get(routeKey) ?? {
+            scenario_id: scenario.id,
+            skill,
+            expected,
+            matched: 0,
+            observed_activated: 0,
+            attempts: 0,
+          };
+          routeCount.matched += matched;
+          routeCount.observed_activated += observedActivated ? 1 : 0;
+          routeCount.attempts += 1;
+          group.routes.set(routeKey, routeCount);
+          group.matchedConstraints += matched;
+          group.constraints += 1;
+          scenarioMatched &&= matched === 1;
+          scenarioConstraints += 1;
+        }
+      }
+      if (scenarioConstraints > 0) {
+        group.matchedScenarios += scenarioMatched ? 1 : 0;
+        group.scenarioAttempts += 1;
+      }
+    }
+    groups.set(groupKey, group);
+  }
+  for (const group of groups.values()) {
+    if (group.run_records < 2) {
+      errors.push(
+        `${group.harness.name} ${group.harness.version} / ${group.harness.model} has ${group.run_records}/2 required independent run records`,
+      );
+    }
+  }
+  const rate = (matched, opportunities) =>
+    `${matched}/${opportunities}`;
+  const skillRates = (items, matchedLabel) =>
+    [...items.values()]
+      .sort((left, right) => left.skill.localeCompare(right.skill))
+      .map((item) => ({
+        skill: item.skill,
+        [matchedLabel]: item.matched,
+        opportunities: item.opportunities,
+        rate: rate(item.matched, item.opportunities),
+      }));
+  return {
+    ok: errors.length === 0,
+    errors,
+    surface_hash: behaviorSurfaceHash(),
+    boundary:
+      "Rates summarize complete independent recorded observations. They do not authenticate that a collector described a run truthfully.",
+    groups: [...groups.values()]
+      .sort((left, right) =>
+        JSON.stringify(left.harness).localeCompare(
+          JSON.stringify(right.harness),
+        ),
+      )
+      .map((group) => ({
+        harness: group.harness,
+        run_records: group.run_records,
+        reliability_ready: group.run_records >= 2,
+        evaluated_runs_passed: group.evaluated_runs_passed,
+        scenario_route_accuracy: {
+          matched: group.matchedScenarios,
+          opportunities: group.scenarioAttempts,
+          rate: rate(group.matchedScenarios, group.scenarioAttempts),
+        },
+        constraint_micro_accuracy: {
+          matched: group.matchedConstraints,
+          opportunities: group.constraints,
+          rate: rate(group.matchedConstraints, group.constraints),
+        },
+        required_activation_recall: skillRates(
+          group.requiredSkills,
+          "activated",
+        ),
+        forbidden_activation_compliance: skillRates(
+          group.forbiddenSkills,
+          "not_activated",
+        ),
+        routes: [...group.routes.values()]
+          .sort(
+            (left, right) =>
+              left.scenario_id.localeCompare(right.scenario_id) ||
+              left.skill.localeCompare(right.skill) ||
+              left.expected.localeCompare(right.expected),
+          )
+          .map((item) => ({
+            ...item,
+            rate: rate(item.matched, item.attempts),
+          })),
+      })),
+  };
+}
+
 function argumentValue(args, name) {
   const index = args.indexOf(name);
   return index === -1 ? null : args[index + 1] ?? null;
+}
+
+function argumentValues(args, name) {
+  const values = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] === name && args[index + 1]) {
+      values.push(args[index + 1]);
+      index += 1;
+    }
+  }
+  return values;
 }
 
 function print(value) {
@@ -1188,8 +1433,30 @@ function main(args = process.argv.slice(2)) {
     }
     return;
   }
+  if (command === "routing-rate") {
+    const inputs = argumentValues(args, "--input");
+    if (
+      inputs.length === 0 ||
+      inputs.some(
+        (input) =>
+          !existsSync(resolve(input)) || !statSync(resolve(input)).isFile(),
+      )
+    ) {
+      throw new Error(
+        "routing-rate requires one or more --input run-record files",
+      );
+    }
+    const result = summarizeRoutingRates(
+      inputs.map((input) => readJson(resolve(input))),
+    );
+    print(result);
+    if (!result.ok) {
+      process.exitCode = 2;
+    }
+    return;
+  }
   throw new Error(
-    "usage: skill-eval.mjs contracts | surface-hash | scaffold | evaluate --input FILE",
+    "usage: skill-eval.mjs contracts | surface-hash | scaffold | evaluate --input FILE | routing-rate --input FILE [--input FILE ...]",
   );
 }
 
@@ -1212,6 +1479,7 @@ export {
   hashBehaviorEntries,
   parseSkillMetadata,
   readBehaviorSurfacePath,
+  summarizeRoutingRates,
   validateRunRecord,
   validateScenarioCatalog,
 };

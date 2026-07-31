@@ -41,6 +41,7 @@
     "eval:fixture": "node scripts/skill-fixture.mjs",
     "eval:scaffold": "node scripts/skill-eval.mjs scaffold",
     "eval:behavior": "node scripts/skill-eval.mjs evaluate",
+    "eval:routing": "node scripts/skill-eval.mjs routing-rate",
     "upstream:check": "node bin/ultimate-agent-stack.mjs upstream-check",
     "package:check": "npm pack --dry-run --json",
     "package:smoke": "node scripts/packed-smoke.mjs",

@@ -78,6 +78,19 @@ or a hash-bound read of that installed skill. The trace must retain which mode
 occurred plus the path and hash for a file load; never call a file read a native
 activation.
 
+After an applicable skill is actually activated or hash-bound read, record the
+event with `node .agent-stack/bin/agent-stack.mjs evidence activate` as soon as
+the current session owns the checkout through `start`. Use the skill name,
+the exact installed `SKILL.md` path that was activated or read, `native` or
+`file-read` mode, current harness and model, one stable run ID, and the
+coordinator token. Use one stable event ID for the specific activation so a
+retry is idempotent while a later activation remains a separate event. Never
+write this receipt before activation, guess the skill path, or write without
+checkout ownership and repository-write authority. For a read-only request,
+retain the exposed trace outside project state and report that the receipt was
+not persisted. This is agent-recorded trace evidence, not independent proof
+that a harness tool call occurred.
+
 A question that asks the user to accept a recommendation ends the turn. Do not
 continue as though the recommendation approved itself. A prior explicit
 instruction such as "use the recommendation" is approval and should not trigger
@@ -173,7 +186,8 @@ recording progress, reconciling a configured work provider, or proving
 completion. `.agent-stack/work-items.json` is the portable normalized ledger.
 `.agent-stack/evidence-graph.json` indexes bounded references that connect
 intent, requirements, decisions, work, implementation, tests, review, and
-release.
+release. It also retains bounded agent-recorded skill activation receipts so
+routing can be inspected without parsing a raw transcript.
 
 Run `work validate` and `evidence validate` before relying on these files.
 Use only canonical statuses and graph relations. An external work-provider

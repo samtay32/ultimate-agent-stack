@@ -282,6 +282,24 @@ Then evaluate it:
 npm run eval:behavior -- --input /safe/temporary/path/uas-run.json
 ```
 
+Do not turn one run into a reliability claim. Once two or more current run
+records exist, aggregate the observations by harness and model:
+
+```bash
+npm run eval:routing -- \
+  --input /safe/temporary/path/run-1.json \
+  --input /safe/temporary/path/run-2.json
+```
+
+The report requires at least two complete records with non-overlapping session
+IDs per harness/version/model. It states required activation recall,
+forbidden-activation compliance, exact-scenario route accuracy, and an
+explicitly labeled constraint micro-average as `k/N`. Incomplete, duplicate,
+stale, or structurally unreceipted records fail instead of shrinking the
+denominator. The command consumes existing records and does not launch models
+or create a harness. Like the underlying records, the rate does not
+authenticate a collector's truthfulness.
+
 New scaffolds use run-record schema version 2, which requires
 `source_claim_dispositions` and the other expanded observation fields in every
 case. Schema-version-1 records described the smaller pre-flexible-intake

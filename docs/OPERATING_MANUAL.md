@@ -285,6 +285,13 @@ Keep `--max-nodes` proportionate to the review context. The renderer also caps
 the total edges at four times the selected-node count. The report counts nodes
 excluded by the node bound and selected-node edges excluded by that aggregate
 cap. Those omissions are not lost evidence; they remain in the validated graph.
+After a skill actually activates or is hash-bound read, record it with
+`evidence activate --skill NAME --skill-path PATH --mode native|file-read
+--harness NAME --model NAME --run ID --event ID --coordinator-token TOKEN`
+after the current session owns the checkout. Use the exact installed `SKILL.md`
+path and one stable ID for the activation event. The entry is agent-recorded
+trace evidence and must not be presented as independent proof of a harness tool
+call. Do not persist it when the user authorized read-only work only.
 
 ## What Happens With Subagents
 

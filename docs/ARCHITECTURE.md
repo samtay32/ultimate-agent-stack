@@ -254,9 +254,11 @@ Work tracking uses one normalized contract regardless of provider. The
 repository ledger contains bounded objectives, acceptance criteria, scope,
 dependencies, status, and external references. The evidence graph connects
 those items to intent, requirements, decisions, files, tests, commits, pull
-requests, review, release, checkpoints, and telemetry. It stores references and
-short redacted summaries, not copies of remote systems. The graph is derived
-evidence navigation; the referenced artifacts remain authoritative.
+requests, review, release, checkpoints, and telemetry. It also stores bounded
+agent-recorded skill activation entries bound to the installed skill path and
+hash. It stores references and short redacted summaries, not copies of remote
+systems. The graph is derived evidence navigation; referenced artifacts and
+native harness traces remain authoritative.
 
 `evidence report` derives a provider-neutral summary from those two validated
 files. JSON output contains only counts and bounded identifier samples. Mermaid

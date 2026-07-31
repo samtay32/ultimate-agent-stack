@@ -9,3 +9,8 @@ Read and follow `AGENTS.md`, `.agent-stack/core-policy.json`,
 Use `.agent-stack/bin/agent-stack.mjs` for configuration, lock, and verification
 evidence. Apply the configured review and knowledge providers. Own routine
 execution; stop only at the authority boundaries defined in `AGENTS.md`.
+After an actual native activation or hash-bound skill read, record it with the
+local `evidence activate` command described in `AGENTS.md` once this session
+owns the checkout; never pre-record it or write without the coordinator token.
+For read-only work, do not mutate the repository and report that the receipt was
+not persisted.

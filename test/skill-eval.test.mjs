@@ -11,6 +11,7 @@ import {
   hashBehaviorEntries,
   parseSkillMetadata,
   readBehaviorSurfacePath,
+  summarizeRoutingRates,
   validateRunRecord,
   validateScenarioCatalog,
 } from "../scripts/skill-eval.mjs";
@@ -243,6 +244,7 @@ test("behavior surface includes installed handoff and runtime start prompts", ()
   );
   assert.ok(paths.has("evals/fixtures.json"));
   assert.ok(paths.has("scripts/skill-fixture.mjs"));
+  assert.ok(paths.has("assets/project-template/CLAUDE.md"));
   assert.ok(paths.has(".agent-stack/start-prompt-policy.json"));
   const promptEntry = entries.find(
     ([path]) => path === ".agent-stack/start-prompt-policy.json",
@@ -274,6 +276,16 @@ test("behavior surface includes installed handoff and runtime start prompts", ()
   ]);
   assert.notEqual(
     hashBehaviorEntries(changedMaterializer),
+    hashBehaviorEntries(entries),
+  );
+  const changedClaudeAdapter = entries.map(([path, content]) => [
+    path,
+    path === "assets/project-template/CLAUDE.md"
+      ? Buffer.from(`${content.toString("utf8")}\nchanged adapter\n`)
+      : content,
+  ]);
+  assert.notEqual(
+    hashBehaviorEntries(changedClaudeAdapter),
     hashBehaviorEntries(entries),
   );
 });
@@ -482,6 +494,114 @@ test("false activation fails the negative scenario", () => {
     JSON.stringify(result),
     /forbidden skill activated: run-autonomous-delivery/,
   );
+});
+
+test("routing reliability is reported as k/N per harness and model", () => {
+  const first = passingRecord();
+  const second = passingRecord();
+  for (const item of second.cases) {
+    item.harness_session.id = `${item.harness_session.id}:second`;
+  }
+  const route = second.cases.find(
+    (item) => item.scenario_id === "flexible-direct-bypass",
+  );
+  route.observed.activated_skills =
+    route.observed.activated_skills.filter(
+      (skill) => skill !== "run-autonomous-delivery",
+    );
+  second.cases
+    .find((item) => item.scenario_id === "negative-explanation-only")
+    .observed.activated_skills.push("run-autonomous-delivery");
+
+  const result = summarizeRoutingRates([first, second], catalog);
+  assert.equal(result.ok, true);
+  assert.equal(result.groups.length, 1);
+  assert.equal(result.groups[0].run_records, 2);
+  assert.equal(result.groups[0].reliability_ready, true);
+  assert.equal(result.groups[0].evaluated_runs_passed, 1);
+  const directRoute = result.groups[0].routes.find(
+    (item) =>
+      item.scenario_id === "flexible-direct-bypass" &&
+      item.skill === "run-autonomous-delivery" &&
+      item.expected === "activate",
+  );
+  assert.deepEqual(directRoute, {
+    scenario_id: "flexible-direct-bypass",
+    skill: "run-autonomous-delivery",
+    expected: "activate",
+    matched: 1,
+    observed_activated: 1,
+    attempts: 2,
+    rate: "1/2",
+  });
+  const deliverySkill =
+    result.groups[0].required_activation_recall.find(
+      (item) => item.skill === "run-autonomous-delivery",
+    );
+  assert.ok(deliverySkill.opportunities > 2);
+  assert.match(deliverySkill.rate, /^\d+\/\d+$/);
+  const falseActivation =
+    result.groups[0].forbidden_activation_compliance.find(
+      (item) => item.skill === "run-autonomous-delivery",
+    );
+  assert.ok(
+    falseActivation.not_activated <
+      falseActivation.opportunities,
+  );
+  const negativeRoute = result.groups[0].routes.find(
+    (item) =>
+      item.scenario_id === "negative-explanation-only" &&
+      item.skill === "run-autonomous-delivery" &&
+      item.expected === "not-activate",
+  );
+  assert.equal(negativeRoute.matched, 1);
+  assert.equal(negativeRoute.observed_activated, 1);
+  assert.equal(negativeRoute.rate, "1/2");
+  assert.match(result.boundary, /do not authenticate/);
+
+  const incomplete = passingRecord();
+  incomplete.cases = incomplete.cases.slice(0, 1);
+  assert.equal(
+    summarizeRoutingRates([incomplete, second], catalog).ok,
+    false,
+  );
+
+  const duplicate = summarizeRoutingRates(
+    [first, structuredClone(first)],
+    catalog,
+  );
+  assert.equal(duplicate.ok, false);
+  assert.match(duplicate.errors.join("\n"), /reuses a harness session/);
+
+  for (const mutate of [
+    (record) => {
+      delete record.cases[0].observed.question_count;
+    },
+    (record) => {
+      record.cases[0].final_baseline_ancestor = false;
+    },
+    (record) => {
+      record.cases[0].final_project_state_sha256 =
+        `sha256:${"0".repeat(64)}`;
+    },
+  ]) {
+    const invalid = passingRecord();
+    const independent = passingRecord();
+    for (const item of independent.cases) {
+      item.harness_session.id =
+        `${item.harness_session.id}:independent`;
+    }
+    mutate(invalid);
+    const rejected = summarizeRoutingRates(
+      [invalid, independent],
+      catalog,
+    );
+    assert.equal(rejected.ok, false);
+    assert.match(
+      rejected.errors.join("\n"),
+      /lacks current structured evidence/,
+    );
+  }
 });
 
 test("telemetry diagnosis requires explicit activation and rejects project writes", () => {
