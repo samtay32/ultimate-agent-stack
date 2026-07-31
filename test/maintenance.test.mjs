@@ -197,6 +197,10 @@ const projectAgents = readFileSync(
   join(PACKAGE_ROOT, "assets/project-template/AGENTS.md"),
   "utf8",
 );
+const claudeAdapter = readFileSync(
+  join(PACKAGE_ROOT, "assets/project-template/CLAUDE.md"),
+  "utf8",
+);
 const geminiAdapter = readFileSync(
   join(PACKAGE_ROOT, "assets/project-template/GEMINI.md"),
   "utf8",
@@ -512,11 +516,11 @@ test("flexible intake stays ordered, proportionate, and source preserving", () =
   );
   assert.match(
     developBriefDescription,
-    /activate this together with run-autonomous-delivery/,
+    /For an end-to-end DISCOVER or EXTERNAL request, activate run-autonomous-delivery instead/,
   );
   assert.match(
     developBriefDescription,
-    /activate this alone only when the request is explicitly limited to brief refinement, source audit, or reconciliation/,
+    /Activate this directly only when the request is explicitly limited to brief refinement, source audit, or reconciliation/,
   );
   assert.match(runDeliveryDescription, /Do not activate for explanation-only/);
   assert.match(
@@ -596,6 +600,7 @@ test("flexible intake stays ordered, proportionate, and source preserving", () =
 });
 
 test("workflow loading stays route-aware and provider-neutral", () => {
+  assert.match(claudeAdapter, /^@AGENTS\.md$/m);
   for (const source of [
     projectAgents,
     geminiAdapter,

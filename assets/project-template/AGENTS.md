@@ -38,14 +38,17 @@ Use the first matching route:
    intent that needs development;
 4. DIRECT clear bounded testable work.
 
-Apply `$develop-project-brief` only for EXTERNAL or DISCOVER. Preserve supplied
-sources unchanged, persist only bounded redacted provenance, and reconcile
-source claims against repository reality. A supporting screenshot, log, or
-attachment does not turn otherwise clear bounded work into EXTERNAL, and clear
-bounded work remains DIRECT in a new or empty repository. DIRECT work keeps the
-proportionate micro-brief path. RESUME continues the first unmet condition
-without reopening closed product decisions; completed state and a fully
-satisfied lock do not hijack a new request.
+For end-to-end EXTERNAL or DISCOVER work, activate
+`$run-autonomous-delivery` first; its intake stage then activates
+`$develop-project-brief`. Activate `$develop-project-brief` directly only when
+the request is explicitly limited to brief refinement, source audit, or
+reconciliation. Preserve supplied sources unchanged, persist only bounded
+redacted provenance, and reconcile source claims against repository reality. A
+supporting screenshot, log, or attachment does not turn otherwise clear
+bounded work into EXTERNAL, and clear bounded work remains DIRECT in a new or
+empty repository. DIRECT work keeps the proportionate micro-brief path. RESUME
+continues the first unmet condition without reopening closed product decisions;
+completed state and a fully satisfied lock do not hijack a new request.
 
 ## Workflow Loading
 

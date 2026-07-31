@@ -76,6 +76,7 @@ function main() {
     );
     for (const requiredPath of [
       ".gitattributes",
+      "assets/project-template/CLAUDE.md",
       "assets/project-template/.agent-stack/artifacts/BRIEF.md",
       "skills/develop-project-brief/SKILL.md",
       "skills/develop-project-brief/references/brief-contract.md",
@@ -298,6 +299,10 @@ function main() {
       [
         [".agents", "skills", "manage-project-work", "SKILL.md"],
         "work-management skill",
+      ],
+      [
+        ["CLAUDE.md"],
+        "Claude project instruction bridge",
       ],
       [
         [".agents", "skills", "develop-project-brief", "SKILL.md"],

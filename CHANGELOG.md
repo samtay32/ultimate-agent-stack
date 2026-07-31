@@ -6,6 +6,9 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ### Fixed
 
+- Claude Code now receives a minimal project instruction bridge to the shared
+  agent contract, and end-to-end discovery routing unambiguously activates the
+  delivery controller before the working-brief stage.
 - Complete source-audit and working-brief requests now stop with a gap-free
   DRAFT ready for later approval without manufacturing an approval question.
   Explicit approved-brief requests and end-to-end promotion retain their

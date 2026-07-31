@@ -3653,6 +3653,11 @@ test("Claude mode installs the native read-only worker and skill copy", () => {
         ),
       ),
     );
+    assert.equal(
+      readFileSync(join(fixture.directory, "CLAUDE.md"), "utf8"),
+      "# Ultimate Agent Stack\n\n@AGENTS.md\n",
+    );
+    assert.ok(installation.managed_files["CLAUDE.md"]);
     assert.ok(installation.harnesses.includes("claude"));
   } finally {
     fixture.cleanup();
@@ -3669,6 +3674,14 @@ test("init auto-detects Claude markers and upgrades remember the adapter", () =>
     const initialized = installOrUpgrade(fixture.directory, { mode: "init" });
     assert.deepEqual(initialized.harnesses.detected, ["claude", "grok"]);
     assert.ok(initialized.harnesses.enabled.includes("claude"));
+    assert.equal(
+      readFileSync(join(fixture.directory, "CLAUDE.md"), "utf8"),
+      "# Claude\n",
+    );
+    assert.equal(
+      loadInstallation(fixture.directory).pending_files["CLAUDE.md"].reason,
+      "pre-existing-file",
+    );
     assert.ok(
       existsSync(
         join(
@@ -3713,6 +3726,10 @@ test("default init installs the Claude entry skill without project markers", () 
           "SKILL.md",
         ),
       ),
+    );
+    assert.equal(
+      readFileSync(join(fixture.directory, "CLAUDE.md"), "utf8"),
+      "# Ultimate Agent Stack\n\n@AGENTS.md\n",
     );
   } finally {
     fixture.cleanup();
