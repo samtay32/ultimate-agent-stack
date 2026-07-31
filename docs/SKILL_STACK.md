@@ -113,12 +113,14 @@ Plugins work in supported desktop/CLI surfaces. Repository skills are the portab
 
 ### Claude Code
 
-The default install adds a small `CLAUDE.md` bridge to the shared `AGENTS.md`,
-copies the canonical skills from `.agents/skills/` into `.claude/skills/`, and
-installs the read-only Claude worker profile, including in a brand-new folder
-with no harness markers. A pre-existing `CLAUDE.md` is preserved and proposed
-for reconciliation instead of overwritten. Existing `.claude/` markers are
-also reported to the agent. Upgrades remember installed harnesses, the legacy
+The default install adds a small `CLAUDE.md` adapter that imports the shared
+`AGENTS.md` and explicitly invokes Claude Code's native delivery,
+implementation, and verification skills at their phase boundaries. It copies
+the canonical skills from `.agents/skills/` into `.claude/skills/` and installs
+the read-only Claude worker profile, including in a brand-new folder with no
+harness markers. A pre-existing `CLAUDE.md` is preserved and proposed for
+reconciliation instead of overwritten. Existing `.claude/` markers are also
+reported to the agent. Upgrades remember installed harnesses, the legacy
 `--claude` flag remains accepted, and customizations are preserved for
 reconciliation.
 

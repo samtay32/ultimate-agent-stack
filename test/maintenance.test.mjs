@@ -601,6 +601,18 @@ test("flexible intake stays ordered, proportionate, and source preserving", () =
 
 test("workflow loading stays route-aware and provider-neutral", () => {
   assert.match(claudeAdapter, /^@AGENTS\.md$/m);
+  assert.match(
+    claudeAdapter,
+    /native\s+`Skill`\s+tool to invoke `run-autonomous-delivery` before any other tool/i,
+  );
+  assert.match(
+    claudeAdapter,
+    /enters implementation or verification[\s\S]*`build-vertical-slice` or `verify-change`/i,
+  );
+  assert.match(
+    claudeAdapter,
+    /Reading this file or `AGENTS\.md` does not count as skill[\s\S]*activation/i,
+  );
   for (const source of [
     projectAgents,
     geminiAdapter,

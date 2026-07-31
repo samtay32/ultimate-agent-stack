@@ -87,6 +87,12 @@ import {
 const PACKAGE_CLI = fileURLToPath(
   new URL("../bin/ultimate-agent-stack.mjs", import.meta.url),
 );
+const CLAUDE_ADAPTER = readFileSync(
+  fileURLToPath(
+    new URL("../assets/project-template/CLAUDE.md", import.meta.url),
+  ),
+  "utf8",
+);
 
 function temporaryProject() {
   const directory = mkdtempSync(join(tmpdir(), "ultimate-agent-stack-test-"));
@@ -3655,7 +3661,7 @@ test("Claude mode installs the native read-only worker and skill copy", () => {
     );
     assert.equal(
       readFileSync(join(fixture.directory, "CLAUDE.md"), "utf8"),
-      "# Ultimate Agent Stack\n\n@AGENTS.md\n",
+      CLAUDE_ADAPTER,
     );
     assert.ok(installation.managed_files["CLAUDE.md"]);
     assert.ok(installation.harnesses.includes("claude"));
@@ -3729,7 +3735,7 @@ test("default init installs the Claude entry skill without project markers", () 
     );
     assert.equal(
       readFileSync(join(fixture.directory, "CLAUDE.md"), "utf8"),
-      "# Ultimate Agent Stack\n\n@AGENTS.md\n",
+      CLAUDE_ADAPTER,
     );
   } finally {
     fixture.cleanup();
