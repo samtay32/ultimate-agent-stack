@@ -15,8 +15,12 @@ Configure the repository without erasing its conventions. Setup is complete only
 2. Install the current package into the repository:
 
    ```bash
-   npx -y ultimate-agent-stack@latest init
+   npx -y ultimate-agent-stack@latest init --concise
    ```
+
+   The concise result reports counts plus one `attention` list. It includes
+   every path needing reconciliation or another manual decision, and notable
+   preserved local paths; ordinary outcomes are represented by their counts.
 
 3. Reconcile, do not overwrite.
    - If setup reports a pending reconciliation, inspect its proposal under `.agent-stack/update-proposals/`.

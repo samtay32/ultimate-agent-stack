@@ -151,7 +151,7 @@ otherwise they use serial delivery.
 ## Upgrade Rule
 
 Never overwrite a project's changed skill, instruction, or config blindly. Run
-`npx -y ultimate-agent-stack@latest upgrade`; inspect the versioned proposals;
+`npx -y ultimate-agent-stack@latest upgrade --concise`; inspect the versioned proposals;
 merge substantive changes; record them with `adopt-managed`; re-run `doctor`
 and the baseline.
 

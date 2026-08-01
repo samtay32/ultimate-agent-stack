@@ -4,29 +4,16 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ## Unreleased
 
-### Added
+### Changed
 
-- Bounded, hash-bound skill activation entries in the repository evidence graph
-  with an explicit agent-recorded trust boundary.
-- Behavioral routing-rate summaries as `k/N` by harness, model, skill, and
-  scenario, using existing run records without launching another model harness.
+- `init` and `upgrade` keep their detailed JSON result by default for
+  compatibility with existing scripts and agents. The explicit `--concise`
+  option provides a smaller summary with one non-duplicated `attention` list
+  containing every path that needs reconciliation or another manual decision,
+  plus notable preserved local paths; outcome counts summarize ordinary paths.
+  The setup skill and user-facing setup examples use the concise mode.
 
-### Fixed
-
-- Fresh-project verification now returns one plain setup-required path instead
-  of cascading approval-hash errors.
-- The CLI now enforces the declared Node.js 22 minimum at startup.
-- Claude Code now receives a small project adapter to the shared agent contract
-  that requires native delivery-controller activation for end-to-end work while
-  keeping implementation and verification skills available as direct,
-  phase-specific entry points. End-to-end discovery routing also unambiguously
-  activates the delivery controller before the working-brief stage.
-- Complete source-audit and working-brief requests now stop with a gap-free
-  DRAFT ready for later approval without manufacturing an approval question.
-  Explicit approved-brief requests and end-to-end promotion retain their
-  separate product-owner acceptance boundaries.
-
-## 0.9.0 - 2026-07-29
+## 0.9.0 - 2026-08-01
 
 ### Added
 
@@ -42,6 +29,10 @@ All notable changes to Ultimate Agent Stack are documented here.
   external sources, contradictions, existing-code reconciliation, direct
   bypass, valid resume, draft-lock rejection, promotion, simple onboarding, and
   credential redaction.
+- Bounded, hash-bound skill activation entries in the repository evidence graph
+  with an explicit agent-recorded trust boundary.
+- Behavioral routing-rate summaries as `k/N` by harness, model, skill, and
+  scenario, using existing run records without launching another model harness.
 
 ### Changed
 
@@ -85,6 +76,21 @@ All notable changes to Ultimate Agent Stack are documented here.
   harness is privileged, and untested scenarios or harnesses remain explicit.
 - Machine-readable evaluator examples now suppress npm's script banner so
   redirected scaffold and fixture-baseline output remains valid JSON.
+
+### Fixed
+
+- Fresh-project verification now returns one plain setup-required path instead
+  of cascading approval-hash errors.
+- The CLI now enforces the declared Node.js 22 minimum at startup.
+- Claude Code now receives a small project adapter to the shared agent contract
+  that requires native delivery-controller activation for end-to-end work while
+  keeping implementation and verification skills available as direct,
+  phase-specific entry points. End-to-end discovery routing also unambiguously
+  activates the delivery controller before the working-brief stage.
+- Complete source-audit and working-brief requests now stop with a gap-free
+  DRAFT ready for later approval without manufacturing an approval question.
+  Explicit approved-brief requests and end-to-end promotion retain their
+  separate product-owner acceptance boundaries.
 
 ### Security
 

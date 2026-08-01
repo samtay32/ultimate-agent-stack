@@ -71,18 +71,23 @@ Coders and maintainers can run the CLI directly:
 
 ```bash
 # Add the stack to the current project
-npx -y ultimate-agent-stack@latest init
+npx -y ultimate-agent-stack@latest init --concise
 
 # See whether setup and safety checks are ready
 node .agent-stack/bin/agent-stack.mjs doctor --human
 
 # Update safely later
-npx -y ultimate-agent-stack@latest upgrade
+npx -y ultimate-agent-stack@latest upgrade --concise
 ```
 
 The CLI is non-interactive. The coding agent runs the guided conversation and
 records the choices you approve. Existing files are preserved when they differ;
 updates create proposals for review instead of overwriting them.
+The setup examples use `--concise` so an agent sees a small result that still
+lists every path needing reconciliation or another manual decision, plus
+notable preserved local paths. Counts summarize ordinary outcomes. The CLI
+returns the complete per-file JSON result by default for scripts and maintainers
+that need every outcome.
 
 ## Continuing in Another Conversation
 

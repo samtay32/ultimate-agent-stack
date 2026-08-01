@@ -96,6 +96,34 @@ const CLAUDE_ADAPTER = readFileSync(
   "utf8",
 );
 
+test("agent-facing setup examples use concise install output", () => {
+  const setupSkill = readFileSync(
+    fileURLToPath(
+      new URL("../skills/setup-autonomous-project/SKILL.md", import.meta.url),
+    ),
+    "utf8",
+  );
+  const readme = readFileSync(
+    fileURLToPath(new URL("../README.md", import.meta.url)),
+    "utf8",
+  );
+  const operatingManual = readFileSync(
+    fileURLToPath(new URL("../docs/OPERATING_MANUAL.md", import.meta.url)),
+    "utf8",
+  );
+  assert.match(setupSkill, /ultimate-agent-stack@latest init --concise/);
+  assert.match(readme, /ultimate-agent-stack@latest init --concise/);
+  assert.match(readme, /ultimate-agent-stack@latest upgrade --concise/);
+  assert.match(
+    operatingManual,
+    /ultimate-agent-stack@latest init --concise/,
+  );
+  assert.match(
+    operatingManual,
+    /ultimate-agent-stack@latest upgrade --concise/,
+  );
+});
+
 test("CLI enforces the declared Node 22 minimum", () => {
   assert.deepEqual(assertSupportedNodeVersion("22.0.0"), {
     ok: true,
@@ -1629,6 +1657,243 @@ test("doctor keeps JSON by default and offers an explicit human summary", () => 
     assert.match(unsafeDoctor.stdout, /Needs attention\./);
     assert.match(unsafeDoctor.stdout, /protected safety files/);
     assert.match(unsafeDoctor.stdout, /Do not edit the protected files yourself/);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("init and upgrade preserve detailed JSON with opt-in concise summaries", () => {
+  const fixture = temporaryProject();
+  const freshFixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    writeFileSync(
+      join(fixture.directory, "AGENTS.md"),
+      "Project-specific policy.\n",
+      "utf8",
+    );
+
+    const detailed = spawnSync(
+      process.execPath,
+      [PACKAGE_CLI, "init", "--target", fixture.directory],
+      { encoding: "utf8", shell: false },
+    );
+    assert.equal(detailed.status, 0, detailed.stderr);
+    const detail = JSON.parse(detailed.stdout);
+    assert.equal(detail.ok, true);
+    assert.equal(detail.action, "initialized");
+    assert.ok(Array.isArray(detail.outcomes));
+    assert.ok(detail.outcomes.length > 100);
+    assert.equal(
+      detail.outcomes.find((outcome) => outcome.path === "AGENTS.md")?.status,
+      "preserved-existing",
+    );
+
+    const conciseUpgrade = spawnSync(
+      process.execPath,
+      [PACKAGE_CLI, "upgrade", "--target", fixture.directory, "--concise"],
+      { encoding: "utf8", shell: false },
+    );
+    assert.equal(conciseUpgrade.status, 0, conciseUpgrade.stderr);
+    const upgradeSummary = JSON.parse(conciseUpgrade.stdout);
+    assert.equal(upgradeSummary.ok, true);
+    assert.equal(upgradeSummary.action, "upgraded");
+    assert.equal(upgradeSummary.outcomes, undefined);
+    assert.equal(upgradeSummary.pending_reconciliation, undefined);
+    assert.ok(upgradeSummary.files_processed > 100);
+    assert.equal(upgradeSummary.outcome_counts["preserved-existing"], 1);
+    assert.deepEqual(upgradeSummary.proposals, undefined);
+    assert.equal(upgradeSummary.attention.length, 1);
+    assert.equal(upgradeSummary.attention_total, 1);
+    assert.deepEqual(upgradeSummary.attention[0], {
+      path: "AGENTS.md",
+      status: "preserved-existing",
+      requires_action: true,
+      proposal: ".agent-stack/update-proposals/0.9.0/AGENTS.md",
+    });
+    assert.ok(
+      conciseUpgrade.stdout.length < 4_096,
+      `expected concise upgrade JSON, got ${conciseUpgrade.stdout.length} bytes`,
+    );
+
+    const removedVerbose = spawnSync(
+      process.execPath,
+      [PACKAGE_CLI, "upgrade", "--target", fixture.directory, "--verbose"],
+      { encoding: "utf8", shell: false },
+    );
+    assert.notEqual(removedVerbose.status, 0);
+    assert.match(removedVerbose.stderr, /Unknown option: --verbose/);
+
+    const conciseFresh = spawnSync(
+      process.execPath,
+      [PACKAGE_CLI, "init", "--target", freshFixture.directory, "--concise"],
+      { encoding: "utf8", shell: false },
+    );
+    assert.equal(conciseFresh.status, 0, conciseFresh.stderr);
+    const freshSummary = JSON.parse(conciseFresh.stdout);
+    assert.equal(freshSummary.ok, true);
+    assert.equal(freshSummary.action, "initialized");
+    assert.equal(freshSummary.outcomes, undefined);
+    assert.equal(freshSummary.pending_reconciliation, undefined);
+    assert.ok(freshSummary.outcome_counts.created > 100);
+    assert.deepEqual(freshSummary.attention, []);
+    assert.equal(freshSummary.attention_total, 0);
+
+    const unknownFlag = spawnSync(
+      process.execPath,
+      [PACKAGE_CLI, "init", "--target", freshFixture.directory, "--compact"],
+      { encoding: "utf8", shell: false },
+    );
+    assert.notEqual(unknownFlag.status, 0);
+    assert.match(unknownFlag.stderr, /Unknown option: --compact/);
+
+    const missingTarget = spawnSync(
+      process.execPath,
+      [PACKAGE_CLI, "upgrade", "--target"],
+      { encoding: "utf8", shell: false },
+    );
+    assert.notEqual(missingTarget.status, 0);
+    assert.match(missingTarget.stderr, /--target requires a value/);
+  } finally {
+    fixture.cleanup();
+    freshFixture.cleanup();
+  }
+});
+
+test("concise upgrade reports every action-required path once", () => {
+  const fixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    installOrUpgrade(fixture.directory, { mode: "init" });
+
+    const localPath = ".agent-stack/HANDOFF.md";
+    writeFileSync(
+      join(fixture.directory, localPath),
+      `${readFileSync(join(fixture.directory, localPath), "utf8")}\nLocal rule.\n`,
+      "utf8",
+    );
+
+    const deletedPath = ".agent-stack/artifacts/BRIEF.md";
+    rmSync(join(fixture.directory, deletedPath));
+
+    const reconciliationPath = "AGENTS.md";
+    writeFileSync(
+      join(fixture.directory, reconciliationPath),
+      "Local policy changed.\n",
+      "utf8",
+    );
+
+    const installationFile = join(fixture.directory, INSTALLATION_PATH);
+    const installation = readJson(installationFile);
+    installation.managed_files[reconciliationPath].source_hash = "0".repeat(64);
+    const orphanPath = ".agent-stack/retired-file.md";
+    installation.managed_files[orphanPath] = {
+      source_hash: "1".repeat(64),
+      accepted_hash: "1".repeat(64),
+      customized: false,
+      protected: false,
+    };
+    writeJson(installationFile, installation);
+
+    const concise = spawnSync(
+      process.execPath,
+      [PACKAGE_CLI, "upgrade", "--target", fixture.directory, "--concise"],
+      { encoding: "utf8", shell: false },
+    );
+    assert.equal(concise.status, 0, concise.stderr);
+    const summary = JSON.parse(concise.stdout);
+    assert.equal(summary.ok, true);
+    assert.equal(summary.outcomes, undefined);
+    assert.equal(
+      summary.outcome_counts["adopted-local-change"],
+      1,
+    );
+    assert.equal(summary.outcome_counts["preserved-deletion"], 1);
+    assert.equal(summary.outcome_counts["needs-reconciliation"], 1);
+    assert.equal(summary.outcome_counts["upstream-removed-preserved"], 1);
+    assert.equal(summary.attention_total, 4);
+    assert.ok(
+      summary.attention
+        .filter((outcome) => outcome.requires_action)
+        .every((outcome) => outcome.status !== "adopted-local-change"),
+    );
+    assert.ok(
+      summary.attention.some(
+        (outcome) =>
+          outcome.path === localPath &&
+          outcome.status === "adopted-local-change" &&
+          outcome.requires_action === false,
+      ),
+    );
+    assert.ok(
+      summary.attention.some(
+        (outcome) =>
+          outcome.path === deletedPath && outcome.status === "preserved-deletion",
+      ),
+    );
+    assert.ok(
+      summary.attention.some(
+        (outcome) =>
+          outcome.path === reconciliationPath &&
+          outcome.status === "needs-reconciliation" &&
+          outcome.proposal,
+      ),
+    );
+    assert.ok(
+      summary.attention.some(
+        (outcome) =>
+          outcome.path === orphanPath &&
+          outcome.status === "upstream-removed-preserved",
+      ),
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("concise upgrade never hides action-required paths", () => {
+  const fixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    installOrUpgrade(fixture.directory, { mode: "init" });
+
+    const installationFile = join(fixture.directory, INSTALLATION_PATH);
+    const installation = readJson(installationFile);
+    const paths = Object.keys(installation.managed_files).slice(0, 40);
+    assert.equal(paths.length, 40);
+    for (const path of paths) {
+      const file = join(fixture.directory, path);
+      writeFileSync(
+        file,
+        `${readFileSync(file, "utf8")}\nLocal change for concise-output coverage.\n`,
+        "utf8",
+      );
+      installation.managed_files[path].source_hash = "0".repeat(64);
+    }
+    writeJson(installationFile, installation);
+
+    const concise = spawnSync(
+      process.execPath,
+      [PACKAGE_CLI, "upgrade", "--target", fixture.directory, "--concise"],
+      { encoding: "utf8", shell: false },
+    );
+    assert.equal(concise.status, 0, concise.stderr);
+    const summary = JSON.parse(concise.stdout);
+    assert.equal(summary.ok, true);
+    assert.equal(summary.attention_total, 40);
+    assert.equal(summary.attention.length, 40);
+    assert.deepEqual(
+      summary.attention.map((outcome) => outcome.path),
+      paths,
+    );
+    assert.ok(
+      summary.attention.every(
+        (outcome) =>
+          outcome.status === "needs-reconciliation" &&
+          outcome.requires_action === true &&
+          typeof outcome.proposal === "string",
+      ),
+    );
   } finally {
     fixture.cleanup();
   }

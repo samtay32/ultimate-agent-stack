@@ -4646,6 +4646,65 @@ function installOrUpgrade(
   };
 }
 
+// Init and upgrade can touch a large portable bundle. Keep a deliberately
+// opt-in compact response for agents that need to conserve context without
+// dropping any path that requires reconciliation or another manual decision.
+// The attention list contains each notable path once; ordinary outcomes remain
+// represented by counts. The normal CLI response and installOrUpgrade() keep
+// exposing the original detailed result.
+const ATTENTION_INSTALL_STATUSES = new Set([
+  "preserved-existing",
+  "preserved-deletion",
+  "adopted-local-change",
+  "preserved-local",
+  "needs-reconciliation",
+  "upstream-removed-preserved",
+]);
+const ACTIONABLE_INSTALL_STATUSES = new Set([
+  "preserved-existing",
+  "preserved-deletion",
+  "needs-reconciliation",
+  "upstream-removed-preserved",
+]);
+
+function summarizeInstallResult(result) {
+  if (!result || !Array.isArray(result.outcomes)) {
+    return result;
+  }
+
+  const outcomeCounts = {};
+  for (const outcome of result.outcomes) {
+    const status = outcome?.status ?? "unknown";
+    outcomeCounts[status] = (outcomeCounts[status] ?? 0) + 1;
+  }
+
+  const attention = result.outcomes
+    .filter((outcome) => ATTENTION_INSTALL_STATUSES.has(outcome?.status))
+    .map(({ path, status, proposal }) => ({
+      path,
+      status,
+      requires_action: ACTIONABLE_INSTALL_STATUSES.has(status),
+      ...(proposal ? { proposal: proposal.split(sep).join("/") } : {}),
+    }));
+
+  const {
+    outcomes,
+    pending_reconciliation: _pendingReconciliation,
+    ...summary
+  } = result;
+  return {
+    ...summary,
+    files_processed: result.outcomes.length,
+    outcome_counts: Object.fromEntries(
+      Object.entries(outcomeCounts).sort(([left], [right]) =>
+        left.localeCompare(right),
+      ),
+    ),
+    attention,
+    attention_total: attention.length,
+  };
+}
+
 function loadConfig(target) {
   return migrateConfig(
     readJson(projectFile(target, CONFIG_PATH, "project config"), "project config"),
@@ -9463,8 +9522,8 @@ function helpText() {
 Your Project Steward — one conversation managing the entire build.
 
 Safe project setup:
-  ultimate-agent-stack init [--target DIR] [--claude]
-  ultimate-agent-stack upgrade [--target DIR] [--claude]
+  ultimate-agent-stack init [--target DIR] [--claude] [--concise]
+  ultimate-agent-stack upgrade [--target DIR] [--claude] [--concise]
   ultimate-agent-stack status [--target DIR]
   ultimate-agent-stack doctor [--target DIR] [--human]
   ultimate-agent-stack capabilities [--target DIR]
@@ -9530,7 +9589,11 @@ Maintainer:
 
 Commands are non-interactive and return JSON by default. doctor --human prints a
 plain-language summary with one recommended next action. init and upgrade never
-overwrite customized files; they create reconciliation proposals instead.
+overwrite customized files; they create reconciliation proposals instead. Init
+and upgrade return the full per-file JSON outcome list by default. Pass
+--concise when an agent or script needs a smaller summary; it includes every
+path that needs reconciliation or another manual decision, plus notable
+preserved local paths, while counts cover ordinary outcomes.
 Parallel delivery is coordinator-managed and falls back to serial work when safe
 isolation is absent. The coding agent conducts guided onboarding; configure records
 the approved choices. The simple preset selects standard, local-only, repository-
@@ -9548,7 +9611,7 @@ Steward owns a checkout at a time.`;
 function execute(command, args) {
   switch (command) {
     case "init": {
-      assertNoUnknownOptions(args, ["--target"], ["--claude"]);
+      assertNoUnknownOptions(args, ["--target"], ["--claude", "--concise"]);
       const target = resolveTarget(getOption(args, "--target", "."));
       return installOrUpgrade(target, {
         claude: hasFlag(args, "--claude"),
@@ -9556,7 +9619,7 @@ function execute(command, args) {
       });
     }
     case "upgrade": {
-      assertNoUnknownOptions(args, ["--target"], ["--claude"]);
+      assertNoUnknownOptions(args, ["--target"], ["--claude", "--concise"]);
       const target = resolveTarget(getOption(args, "--target", "."));
       return installOrUpgrade(target, {
         claude: hasFlag(args, "--claude"),
@@ -9927,7 +9990,12 @@ function main(argv = process.argv.slice(2)) {
     assertSupportedNodeVersion();
     const [command, ...args] = argv;
     const result = execute(command, args);
-    emit(result);
+    const output =
+      (command === "init" || command === "upgrade") &&
+      hasFlag(args, "--concise")
+        ? summarizeInstallResult(result)
+        : result;
+    emit(output);
     return result.ok === false ? 1 : 0;
   } catch (error) {
     const stackError =
