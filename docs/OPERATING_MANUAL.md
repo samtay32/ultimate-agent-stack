@@ -41,7 +41,7 @@ alternative, and handle all routine technical work.
 The agent runs:
 
 ```bash
-npx -y ultimate-agent-stack@latest init
+npx -y ultimate-agent-stack@latest init --concise
 ```
 
 The default install includes the portable skill path and each shipped native
@@ -72,6 +72,12 @@ optional and cannot change merge, deployment, or release authority.
 If you prefer to run setup yourself, that one `npx` command is enough. Open a
 fresh agent session afterward if the agent harness discovers new skills only at
 session start.
+
+The setup command uses `--concise` so an agent sees a small result that still
+lists every path needing reconciliation or another manual decision, plus
+notable preserved local paths. Counts summarize ordinary outcomes. `init` and
+`upgrade` print the complete per-file JSON result by default for scripts and
+maintainers that need every outcome.
 
 ## Simple Project Path
 
@@ -504,7 +510,7 @@ evidence. Continue from the first unmet done condition.
 Tell the agent “Update Ultimate Agent Stack safely,” or run:
 
 ```bash
-npx -y ultimate-agent-stack@latest upgrade
+npx -y ultimate-agent-stack@latest upgrade --concise
 ```
 
 Updates never replace an existing differing managed file or delete removed
