@@ -4687,7 +4687,11 @@ function summarizeInstallResult(result) {
       ...(proposal ? { proposal: proposal.split(sep).join("/") } : {}),
     }));
 
-  const { outcomes, ...summary } = result;
+  const {
+    outcomes,
+    pending_reconciliation: _pendingReconciliation,
+    ...summary
+  } = result;
   return {
     ...summary,
     files_processed: result.outcomes.length,

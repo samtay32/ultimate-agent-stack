@@ -1699,6 +1699,7 @@ test("init and upgrade preserve detailed JSON with opt-in concise summaries", ()
     assert.equal(upgradeSummary.ok, true);
     assert.equal(upgradeSummary.action, "upgraded");
     assert.equal(upgradeSummary.outcomes, undefined);
+    assert.equal(upgradeSummary.pending_reconciliation, undefined);
     assert.ok(upgradeSummary.files_processed > 100);
     assert.equal(upgradeSummary.outcome_counts["preserved-existing"], 1);
     assert.deepEqual(upgradeSummary.proposals, undefined);
@@ -1733,6 +1734,7 @@ test("init and upgrade preserve detailed JSON with opt-in concise summaries", ()
     assert.equal(freshSummary.ok, true);
     assert.equal(freshSummary.action, "initialized");
     assert.equal(freshSummary.outcomes, undefined);
+    assert.equal(freshSummary.pending_reconciliation, undefined);
     assert.ok(freshSummary.outcome_counts.created > 100);
     assert.deepEqual(freshSummary.attention, []);
     assert.equal(freshSummary.attention_total, 0);
