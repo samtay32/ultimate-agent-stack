@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -11,6 +18,7 @@ import {
   hashBehaviorEntries,
   parseSkillMetadata,
   readBehaviorSurfacePath,
+  sanitizeEvidenceText,
   summarizeRoutingRates,
   validateRunRecord,
   validateScenarioCatalog,
@@ -25,6 +33,8 @@ const PACKAGE_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const catalog = JSON.parse(
   readFileSync(join(PACKAGE_ROOT, "evals", "scenarios.json"), "utf8"),
 );
+const COORDINATOR_TOKEN = "0123456789abcdef".repeat(4);
+const NORMAL_HASH = "fedcba9876543210".repeat(4);
 
 function passingRecord() {
   const record = buildScaffold(catalog);
@@ -319,6 +329,172 @@ test("skill metadata and surface hashes are stable across line endings", () => {
       description: "Example skill.",
     },
   );
+});
+
+test("evidence sanitizer redacts shell coordinator-token arguments", () => {
+  const raw = [
+    `node .agent-stack/bin/agent-stack.mjs start --coordinator-token ${COORDINATOR_TOKEN}`,
+    `node .agent-stack/bin/agent-stack.mjs checkpoint --coordinator-token='${COORDINATOR_TOKEN}'`,
+  ].join("\n");
+  const redacted = sanitizeEvidenceText(raw);
+  assert.doesNotMatch(redacted, new RegExp(COORDINATOR_TOKEN, "i"));
+  assert.match(redacted, /--coordinator-token \[REDACTED\]/);
+  assert.match(redacted, /--coordinator-token='\[REDACTED\]'/);
+});
+
+test("evidence sanitizer redacts snake and camel JSON token fields", () => {
+  const raw = JSON.stringify({
+    coordinator_token: COORDINATOR_TOKEN,
+    coordinatorToken: COORDINATOR_TOKEN,
+    project_tree_sha256: `sha256:${NORMAL_HASH}`,
+  });
+  const parsed = JSON.parse(sanitizeEvidenceText(raw));
+  assert.equal(parsed.coordinator_token, "[REDACTED]");
+  assert.equal(parsed.coordinatorToken, "[REDACTED]");
+  assert.equal(parsed.project_tree_sha256, `sha256:${NORMAL_HASH}`);
+});
+
+test("evidence sanitizer redacts the whole JSON field when its value has quotes", () => {
+  const raw = JSON.stringify({
+    coordinator_token: 'prefix"suffix',
+    coordinatorToken: "other\\suffix",
+  });
+  const parsed = JSON.parse(sanitizeEvidenceText(raw));
+  assert.equal(parsed.coordinator_token, "[REDACTED]");
+  assert.equal(parsed.coordinatorToken, "[REDACTED]");
+});
+
+test("evidence sanitizer keeps numeric coordinator fields valid JSON", () => {
+  const numericToken = `1${"0".repeat(63)}`;
+  const raw = `{"coordinator_token":${numericToken}}`;
+  const parsed = JSON.parse(sanitizeEvidenceText(raw));
+  assert.equal(parsed.coordinator_token, "[REDACTED]");
+});
+
+test("evidence sanitizer handles JSON argv and escaped shell token arguments", () => {
+  const escapedShell = String.raw`node --coordinator-token \"${COORDINATOR_TOKEN}\"`;
+  const raw = [
+    JSON.stringify({
+      argv: ["node", "--coordinator-token", COORDINATOR_TOKEN],
+    }),
+    JSON.stringify({ command: escapedShell }),
+  ].join("\n");
+  const lines = sanitizeEvidenceText(raw)
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.equal(lines[0].argv[2], "[REDACTED]");
+  assert.equal(
+    lines[1].command,
+    String.raw`node --coordinator-token \"[REDACTED]\"`,
+  );
+  assert.doesNotMatch(
+    JSON.stringify(lines),
+    new RegExp(COORDINATOR_TOKEN, "i"),
+  );
+});
+
+test("evidence sanitizer handles escaped JSONL payloads", () => {
+  const raw = [
+    JSON.stringify({
+      event: "tool-result",
+      payload: JSON.stringify({ coordinatorToken: COORDINATOR_TOKEN }),
+    }),
+    JSON.stringify({
+      event: "tool-result",
+      payload: JSON.stringify({ coordinator_token: COORDINATOR_TOKEN }),
+    }),
+  ].join("\n");
+  const lines = sanitizeEvidenceText(raw)
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  for (const line of lines) {
+    const payload = JSON.parse(line.payload);
+    assert.equal(
+      payload.coordinatorToken ?? payload.coordinator_token,
+      "[REDACTED]",
+    );
+  }
+});
+
+test("evidence sanitizer preserves validity through nested escaped JSONL", () => {
+  const raw = JSON.stringify({
+    payload: JSON.stringify({
+      payload: JSON.stringify({ coordinator_token: COORDINATOR_TOKEN }),
+    }),
+  });
+  const outer = JSON.parse(sanitizeEvidenceText(raw));
+  const middle = JSON.parse(outer.payload);
+  const inner = JSON.parse(middle.payload);
+  assert.equal(inner.coordinator_token, "[REDACTED]");
+  assert.doesNotMatch(
+    JSON.stringify(outer),
+    new RegExp(COORDINATOR_TOKEN, "i"),
+  );
+});
+
+test("evidence sanitizer replaces repeated discovered token values", () => {
+  const raw = [
+    `first observation: ${COORDINATOR_TOKEN}`,
+    JSON.stringify({ coordinator_token: COORDINATOR_TOKEN }),
+    `last observation: ${COORDINATOR_TOKEN}`,
+  ].join("\n");
+  const redacted = sanitizeEvidenceText(raw);
+  assert.doesNotMatch(redacted, new RegExp(COORDINATOR_TOKEN, "i"));
+  assert.equal(
+    redacted.split("[REDACTED]").length - 1,
+    3,
+  );
+});
+
+test("evidence sanitizer leaves ordinary hashes intact", () => {
+  const raw = [
+    `sha256:${NORMAL_HASH}`,
+    JSON.stringify({ project_tree_sha256: `sha256:${NORMAL_HASH}` }),
+  ].join("\n");
+  assert.equal(sanitizeEvidenceText(raw), raw);
+});
+
+test("evidence sanitizer fails closed on an unredacted coordinator field", () => {
+  assert.throws(
+    () =>
+      sanitizeEvidenceText(
+        `{"coordinator_token":[${COORDINATOR_TOKEN}]}`,
+      ),
+    /still contains recognizable coordinator token/,
+  );
+});
+
+test("evidence export preserves private raw input and writes a redacted sibling", () => {
+  const target = mkdtempSync(join(tmpdir(), "uas-skill-eval-"));
+  const input = join(target, "raw.jsonl");
+  const output = join(target, "redacted.jsonl");
+  const raw = JSON.stringify({ coordinator_token: COORDINATOR_TOKEN });
+  try {
+    writeFileSync(input, raw, "utf8");
+    const result = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          join(PACKAGE_ROOT, "scripts", "skill-eval.mjs"),
+          "export-evidence",
+          "--input",
+          input,
+          "--output",
+          output,
+        ],
+        { encoding: "utf8" },
+      ),
+    );
+    assert.equal(result.ok, true);
+    assert.equal(result.raw_preserved, true);
+    assert.equal(readFileSync(input, "utf8"), raw);
+    assert.equal(
+      JSON.parse(readFileSync(output, "utf8")).coordinator_token,
+      "[REDACTED]",
+    );
+  } finally {
+    rmSync(target, { recursive: true, force: true });
+  }
 });
 
 test("a complete live run record passes against the current behavior surface", () => {
@@ -740,10 +916,6 @@ test("bounded DIRECT delivery requires implementation and verification evidence"
   const direct = record.cases.find(
     (item) => item.scenario_id === "flexible-direct-bypass",
   );
-  direct.observed.activated_skills =
-    direct.observed.activated_skills.filter(
-      (name) => name !== "build-vertical-slice",
-    );
   direct.observed.performed_actions =
     direct.observed.performed_actions.filter(
       (action) => action !== "run_project_tests",
@@ -754,7 +926,7 @@ test("bounded DIRECT delivery requires implementation and verification evidence"
     );
   const result = validateRunRecord(record, catalog);
   assert.equal(result.ok, false);
-  assert.match(
+  assert.doesNotMatch(
     JSON.stringify(result),
     /required skill did not activate: build-vertical-slice/,
   );

@@ -8,7 +8,10 @@ Follow the route-aware workflow-loading contract in `AGENTS.md`. End-to-end
 delivery and RESUME use `$run-autonomous-delivery`; a request explicitly limited
 to brief refinement, source audit, or reconciliation uses
 `$develop-project-brief` directly and stops before delivery. Explanation-only
-work loads neither.
+work loads neither. The delivery controller owns implementation and verification
+quality gates without requiring nested native phase activations. Requests
+explicitly limited to implementation or verification may use
+`$build-vertical-slice` or `$verify-change` directly.
 
 After each actual native activation or hash-bound skill read, record it with the
 local `evidence activate` command described in `AGENTS.md` as soon as this

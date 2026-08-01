@@ -98,8 +98,18 @@ Do not say "done" until all applicable conditions hold:
    serial or uses bounded native subagents, owns every assignment and
    integration, and never makes the user manage workers.
 5. **Plan vertical slices.** Each slice must be user-observable or operationally demonstrable, independently verifiable, small enough for one focused context, and explicit about blockers.
-6. **Implement.** Apply `$build-vertical-slice` one slice at a time. Keep the repository runnable. Do not mix unrelated cleanup into the change.
-7. **Verify.** Apply `$verify-change`; run focused checks during development and the deterministic full gate before review.
+6. **Implement.** Own implementation in this controller one slice at a time.
+   Preserve the `$build-vertical-slice` quality contract: each slice is
+   demonstrable, focused checks pass, the repository remains runnable, and
+   docs or migrations stay current. End-to-end delivery does not require a
+   nested native activation of that phase skill. A request explicitly limited
+   to implementation may invoke `$build-vertical-slice` directly.
+7. **Verify.** Own verification in this controller. Run focused checks during
+   development and the deterministic full gate before review, and produce the
+   `$verify-change` evidence matrix with its binary readiness result.
+   End-to-end delivery does not require a nested native activation of that
+   phase skill. A request explicitly limited to verification may invoke
+   `$verify-change` directly.
 8. **Review adversarially.** Review two axes independently:
    - standards: correctness, security, reliability, performance, maintainability, operations;
    - intent: acceptance criteria, non-goals, UX, migrations, documentation, compatibility.

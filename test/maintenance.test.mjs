@@ -607,7 +607,11 @@ test("workflow loading stays route-aware and provider-neutral", () => {
   );
   assert.match(
     claudeAdapter,
-    /enters implementation or verification[\s\S]*`build-vertical-slice` or `verify-change`/i,
+    /controller owns implementation and verification[\s\S]*(?:it )?does\s+not require nested native activation[\s\S]*`build-vertical-slice`[\s\S]*`verify-change`/i,
+  );
+  assert.doesNotMatch(
+    claudeAdapter,
+    /workflow enters implementation or verification[\s\S]*invoke[\s\S]*`build-vertical-slice`/i,
   );
   assert.match(
     claudeAdapter,
@@ -628,13 +632,27 @@ test("workflow loading stays route-aware and provider-neutral", () => {
     assert.match(source, /develop-project-brief/);
   }
   for (const source of [projectAgents, runDeliverySkill, packageCliSource]) {
-    assert.match(source, /implementation.*build-vertical-slice/is);
-    assert.match(source, /verification.*verify-change/is);
+    assert.match(
+      source,
+      /explicitly\s+(?:phase-specific|limited\s+to)\s+implementation[\s\S]*build-vertical-slice/is,
+    );
+    assert.match(
+      source,
+      /explicitly\s+(?:phase-specific|limited\s+to)\s+verification[\s\S]*verify-change/is,
+    );
+    assert.match(
+      source,
+      /(?:(?:without\s+requiring)|(?:does\s+not\s+require))\s+(?:a\s+)?nested native[\s\S]*(?:build-vertical-slice|verify-change)|controller owns routine implementation and verification/is,
+    );
     assert.match(
       source,
       /close-review-loop.*existing pull request.*(?:provider|human).*review thread/is,
     );
   }
+  assert.match(
+    runDeliverySkill,
+    /focused checks[\s\S]*deterministic full gate[\s\S]*evidence matrix[\s\S]*binary readiness/i,
+  );
   assert.match(
     manageProjectWorkSkill,
     /provider-write readiness[\s\S]*diagramming[\s\S]*bounded campaign/i,

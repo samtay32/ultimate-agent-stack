@@ -293,6 +293,19 @@ path and one stable ID for the activation event. The entry is agent-recorded
 trace evidence and must not be presented as independent proof of a harness tool
 call. Do not persist it when the user authorized read-only work only.
 
+When sharing a transcript or JSONL trace, keep the private raw file and export a
+separate redacted copy:
+
+```bash
+node scripts/skill-eval.mjs export-evidence \
+  --input /private/path/run.jsonl \
+  --output /safe/path/run.redacted.jsonl
+```
+
+The exporter removes coordinator-token command arguments and JSON token fields,
+including escaped JSONL forms, and fails closed if a recognizable token remains.
+It leaves ordinary hashes intact and never overwrites the raw input.
+
 ## What Happens With Subagents
 
 You continue speaking only with the primary coding agent—the Project Steward.

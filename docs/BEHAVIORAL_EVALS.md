@@ -322,6 +322,24 @@ Run records can contain model output or operational details. Redact secrets and
 private project data before attaching evidence to a pull request. Do not commit
 raw transcripts merely to make a gate green.
 
+### Exporting evidence safely
+
+Keep the private raw transcript or JSONL trace in its original location and
+write a separate redacted attachment:
+
+```bash
+node scripts/skill-eval.mjs export-evidence \
+  --input /private/path/run.jsonl \
+  --output /safe/path/run.redacted.jsonl
+```
+
+The exporter redacts `--coordinator-token` command arguments and
+`coordinator_token`/`coordinatorToken` JSON fields, including escaped JSONL
+payloads. Once a token is discovered, every repeated occurrence is replaced.
+The output check fails closed if a recognizable coordinator token remains;
+ordinary SHA-256 hashes are not treated as coordinator tokens. The input is
+never overwritten, and no evidence graph records are changed.
+
 The onboarding recommendation and approval are separate evidence boundaries. A
 run that asks "Use this?" must end that turn without recording the preset. A
 separate run whose request already says to use the recommendation must record

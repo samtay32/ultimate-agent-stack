@@ -65,6 +65,12 @@ reopening a closed decision. A supporting screenshot, log, or attachment does
 not turn clear bounded work into EXTERNAL, and clear bounded work remains DIRECT
 in a new or empty repository.
 
+The end-to-end `run-autonomous-delivery` controller owns the implementation and
+verification gates represented by this flow. `build-vertical-slice` and
+`verify-change` remain available as direct entry points for requests explicitly
+limited to those phases; an otherwise correct controller run does not require
+nested native activation of either phase skill.
+
 ## Component Architecture
 
 ```mermaid

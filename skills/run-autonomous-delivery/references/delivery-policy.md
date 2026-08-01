@@ -18,6 +18,15 @@ in a new or empty repository. A new request that conflicts with an active lock
 is a proposed locked-intent change: surface it, record authority, unlock with an
 audit reason when authorized, and reshape.
 
+## Execution Skill Routing
+
+`run-autonomous-delivery` is the required controller activation for end-to-end
+delivery and RESUME. The controller owns implementation and verification
+quality gates, so an otherwise correct end-to-end run does not require nested
+native activation of `$build-vertical-slice` or `$verify-change`. Those skills
+remain available as direct entry points when a request is explicitly limited to
+implementation or verification, respectively.
+
 ## Scale Router
 
 | Tier | Typical work | Required shaping |

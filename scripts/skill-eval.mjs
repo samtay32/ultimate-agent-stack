@@ -7,6 +7,7 @@ import {
   readdirSync,
   realpathSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,6 +35,26 @@ const SOURCE_CLAIM_DISPOSITIONS = new Set([
   "rejected",
   "deferred",
 ]);
+const EVIDENCE_REDACTION_MARKER = "[REDACTED]";
+const RECOGNIZABLE_COORDINATOR_TOKEN = /^[a-f0-9]{64}$/i;
+const COORDINATOR_TOKEN_FIELD_NAMES = new Set([
+  "coordinator_token",
+  "coordinatorToken",
+]);
+const SHELL_COORDINATOR_TOKEN_ARGUMENT =
+  /(--coordinator-token(?:=[ \t]*|[ \t]+))(?:(['"])(.*?)\2|([^\s'"`\\]+))/g;
+const ESCAPED_SHELL_COORDINATOR_TOKEN_ARGUMENT =
+  /(--coordinator-token(?:=[ \t]*|[ \t]+))(\\+)(['"])(.*?)\2\3/g;
+const JSON_COORDINATOR_TOKEN_ARGUMENT =
+  /(\\*"--coordinator-token\\*")(\\*[ \t]*,[ \t]*\\*")((?:\\\\.|[^"\\\\])*)(\\*")/g;
+const COORDINATOR_TOKEN_FIELD =
+  /(\\*"(?:coordinator_token|coordinatorToken)\\*"\\*[ \t]*:[ \t]*\\*")((?:\\\\.|[^"\\\\])*?)(\\*")/g;
+const INLINE_COORDINATOR_TOKEN_ARGUMENT =
+  /(--coordinator-token(?:=[ \t]*|[ \t]+)\\*["']?)([a-f0-9]{64})/gi;
+const INLINE_COORDINATOR_TOKEN_FIELD =
+  /(\\*"(?:coordinator_token|coordinatorToken)\\*"\\*[ \t]*:[ \t]*\\*["']?)([a-f0-9]{64})/gi;
+const ANY_COORDINATOR_TOKEN_FIELD_VALUE =
+  /(\\*"(?:coordinator_token|coordinatorToken)\\*"\\*[ \t]*:[^,\r\n}\]]*?)([a-f0-9]{64})(?=[,\r\n}\]"'])/gi;
 const CURRENT_RUN_RECORD_SCHEMA_VERSION = 2;
 const SHA256_RECEIPT = /^sha256:[a-f0-9]{64}$/;
 const GIT_COMMIT_ID = /^[a-f0-9]{40}$/;
@@ -1399,6 +1420,269 @@ function argumentValues(args, name) {
   return values;
 }
 
+function decodeEvidenceString(value) {
+  const candidate = String(value ?? "");
+  try {
+    return JSON.parse(`"${candidate}"`);
+  } catch {
+    // Evidence may contain a partially escaped line from a failed tool call.
+    // Decode the quote/backslash pairs that are relevant to token discovery,
+    // while leaving the bytes being exported untouched.
+    return candidate.replace(/\\(["'\\])/g, "$1");
+  }
+}
+
+function rememberCoordinatorToken(discovered, value) {
+  const token = decodeEvidenceString(value).trim();
+  if (RECOGNIZABLE_COORDINATOR_TOKEN.test(token)) {
+    discovered.add(token);
+  }
+}
+
+function replaceWithPattern(text, pattern, replacer) {
+  pattern.lastIndex = 0;
+  const replaced = text.replace(pattern, replacer);
+  pattern.lastIndex = 0;
+  return replaced;
+}
+
+function recursivelyRedactJson(value, discovered) {
+  if (typeof value === "string") {
+    let nested;
+    try {
+      nested = JSON.parse(value);
+    } catch {
+      return { value, changed: false };
+    }
+    if (!nested || typeof nested !== "object") {
+      return { value, changed: false };
+    }
+    const result = recursivelyRedactJson(nested, discovered);
+    return result.changed
+      ? { value: JSON.stringify(result.value), changed: true }
+      : { value, changed: false };
+  }
+
+  if (Array.isArray(value)) {
+    let changed = false;
+    for (let index = 0; index < value.length; index += 1) {
+      const item = value[index];
+      if (typeof item === "string") {
+        if (item === "--coordinator-token" && typeof value[index + 1] === "string") {
+          rememberCoordinatorToken(discovered, value[index + 1]);
+          value[index + 1] = EVIDENCE_REDACTION_MARKER;
+          changed = true;
+          index += 1;
+          continue;
+        }
+        if (item.startsWith("--coordinator-token=")) {
+          rememberCoordinatorToken(
+            discovered,
+            item.slice("--coordinator-token=".length),
+          );
+          value[index] = `--coordinator-token=${EVIDENCE_REDACTION_MARKER}`;
+          changed = true;
+          continue;
+        }
+      }
+      const result = recursivelyRedactJson(item, discovered);
+      if (result.changed) {
+        value[index] = result.value;
+        changed = true;
+      }
+    }
+    return { value, changed };
+  }
+
+  if (value && typeof value === "object") {
+    let changed = false;
+    for (const [key, item] of Object.entries(value)) {
+      if (COORDINATOR_TOKEN_FIELD_NAMES.has(key)) {
+        if (typeof item === "string") {
+          rememberCoordinatorToken(discovered, item);
+        }
+        value[key] = EVIDENCE_REDACTION_MARKER;
+        changed = true;
+        continue;
+      }
+      const result = recursivelyRedactJson(item, discovered);
+      if (result.changed) {
+        value[key] = result.value;
+        changed = true;
+      }
+    }
+    return { value, changed };
+  }
+
+  return { value, changed: false };
+}
+
+function redactParseableJsonLines(text, discovered) {
+  return text
+    .split("\n")
+    .map((line) => {
+      const hasCarriageReturn = line.endsWith("\r");
+      const body = hasCarriageReturn ? line.slice(0, -1) : line;
+      let parsed;
+      try {
+        parsed = JSON.parse(body);
+      } catch {
+        return line;
+      }
+      const result = recursivelyRedactJson(parsed, discovered);
+      if (!result.changed) {
+        return line;
+      }
+      return `${JSON.stringify(result.value)}${hasCarriageReturn ? "\r" : ""}`;
+    })
+    .join("\n");
+}
+
+function remainingCoordinatorTokens(text, discovered) {
+  const remaining = new Set();
+  const inspect = (value) => {
+    const token = decodeEvidenceString(value).trim();
+    if (RECOGNIZABLE_COORDINATOR_TOKEN.test(token)) {
+      remaining.add(token);
+    }
+  };
+
+  replaceWithPattern(text, ESCAPED_SHELL_COORDINATOR_TOKEN_ARGUMENT, (_match, _prefix, _slashes, _quote, value) => {
+    inspect(value);
+    return _match;
+  });
+  replaceWithPattern(text, SHELL_COORDINATOR_TOKEN_ARGUMENT, (_match, _prefix, _quote, quoted, unquoted) => {
+    inspect(quoted ?? unquoted);
+    return _match;
+  });
+  replaceWithPattern(text, JSON_COORDINATOR_TOKEN_ARGUMENT, (_match, _prefix, _separator, value) => {
+    inspect(value);
+    return _match;
+  });
+  replaceWithPattern(text, INLINE_COORDINATOR_TOKEN_ARGUMENT, (_match, _prefix, token) => {
+    inspect(token);
+    return _match;
+  });
+  replaceWithPattern(text, COORDINATOR_TOKEN_FIELD, (_match, _prefix, value) => {
+    inspect(value);
+    return _match;
+  });
+  replaceWithPattern(text, INLINE_COORDINATOR_TOKEN_FIELD, (_match, _prefix, token) => {
+    inspect(token);
+    return _match;
+  });
+  replaceWithPattern(text, ANY_COORDINATOR_TOKEN_FIELD_VALUE, (_match, _prefix, token) => {
+    inspect(token);
+    return _match;
+  });
+  for (const token of discovered) {
+    if (text.includes(token)) {
+      remaining.add(token);
+    }
+    const upper = token.toUpperCase();
+    if (upper !== token && text.includes(upper)) {
+      remaining.add(upper);
+    }
+  }
+  return remaining;
+}
+
+/**
+ * Redact coordinator bearer tokens from a text or JSONL evidence stream.
+ *
+ * The input is never written by this function. Callers can write the returned
+ * string to a separate export path after this fail-closed check succeeds.
+ */
+function sanitizeEvidenceText(rawEvidence) {
+  if (typeof rawEvidence !== "string") {
+    throw new TypeError("evidence must be a text string");
+  }
+
+  const discovered = new Set();
+  // Parse each JSONL line first. This gives escaped strings an exact JSON
+  // boundary (including nested JSON strings) before textual fallback patterns
+  // handle shell transcripts and malformed/non-JSON lines.
+  let redacted = redactParseableJsonLines(rawEvidence, discovered);
+
+  // Replace complete JSON fields first. The quote prefix/suffix accepts both
+  // ordinary JSON and any number of escape layers found in JSONL strings.
+  redacted = replaceWithPattern(
+    redacted,
+    COORDINATOR_TOKEN_FIELD,
+    (_match, prefix, value, suffix) => {
+      rememberCoordinatorToken(discovered, value);
+      return `${prefix}${EVIDENCE_REDACTION_MARKER}${suffix}`;
+    },
+  );
+
+  // Shell command arguments are redacted even when they are placeholders or
+  // non-hex values; a command line is still sensitive evidence.
+  redacted = replaceWithPattern(
+    redacted,
+    JSON_COORDINATOR_TOKEN_ARGUMENT,
+    (_match, prefix, separator, value, suffix) => {
+      rememberCoordinatorToken(discovered, value);
+      return `${prefix}${separator}${EVIDENCE_REDACTION_MARKER}${suffix}`;
+    },
+  );
+
+  redacted = replaceWithPattern(
+    redacted,
+    ESCAPED_SHELL_COORDINATOR_TOKEN_ARGUMENT,
+    (_match, prefix, slashes, quote, value) => {
+      rememberCoordinatorToken(discovered, value);
+      return `${prefix}${slashes}${quote}${EVIDENCE_REDACTION_MARKER}${slashes}${quote}`;
+    },
+  );
+
+  redacted = replaceWithPattern(
+    redacted,
+    SHELL_COORDINATOR_TOKEN_ARGUMENT,
+    (_match, prefix, quote, quoted, unquoted) => {
+      const value = quoted ?? unquoted;
+      rememberCoordinatorToken(discovered, value);
+      return `${prefix}${quote ? `${quote}${EVIDENCE_REDACTION_MARKER}${quote}` : EVIDENCE_REDACTION_MARKER}`;
+    },
+  );
+
+  // Fail-closed fallback for malformed quoting or an escaped command/field
+  // whose closing delimiter is missing. It only matches recognizable tokens,
+  // so ordinary SHA-256 hashes elsewhere remain intact.
+  redacted = replaceWithPattern(
+    redacted,
+    INLINE_COORDINATOR_TOKEN_FIELD,
+    (_match, prefix, token) => {
+      rememberCoordinatorToken(discovered, token);
+      return `${prefix}${EVIDENCE_REDACTION_MARKER}`;
+    },
+  );
+  redacted = replaceWithPattern(
+    redacted,
+    INLINE_COORDINATOR_TOKEN_ARGUMENT,
+    (_match, prefix, token) => {
+      rememberCoordinatorToken(discovered, token);
+      return `${prefix}${EVIDENCE_REDACTION_MARKER}`;
+    },
+  );
+
+  // A discovered bearer value can recur in a trace field, a nested JSONL
+  // payload, or a repeated command. Replace every exact/case variant before
+  // validating the exported bytes.
+  for (const token of discovered) {
+    redacted = replaceWithPattern(
+      redacted,
+      new RegExp(token, "gi"),
+      () => EVIDENCE_REDACTION_MARKER,
+    );
+  }
+
+  const remaining = remainingCoordinatorTokens(redacted, discovered);
+  if (remaining.size > 0) {
+    throw new Error("evidence export still contains recognizable coordinator token(s)");
+  }
+  return redacted;
+}
+
 function print(value) {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
@@ -1419,6 +1703,37 @@ function main(args = process.argv.slice(2)) {
   }
   if (command === "scaffold") {
     print(buildScaffold());
+    return;
+  }
+  if (command === "export-evidence") {
+    const input = argumentValue(args, "--input");
+    const output = argumentValue(args, "--output");
+    if (!input || !existsSync(resolve(input)) || !statSync(resolve(input)).isFile()) {
+      throw new Error("export-evidence requires --input pointing to a text evidence file");
+    }
+    if (!output) {
+      throw new Error("export-evidence requires --output pointing to a separate redacted file");
+    }
+    const inputPath = resolve(input);
+    const outputPath = resolve(output);
+    if (inputPath === outputPath) {
+      throw new Error("export-evidence refuses to overwrite the private raw evidence");
+    }
+    if (
+      existsSync(outputPath) &&
+      realpathSync(inputPath) === realpathSync(outputPath)
+    ) {
+      throw new Error("export-evidence refuses to overwrite the private raw evidence");
+    }
+    const redacted = sanitizeEvidenceText(readFileSync(inputPath, "utf8"));
+    writeFileSync(outputPath, redacted, "utf8");
+    print({
+      ok: true,
+      input: inputPath,
+      output: outputPath,
+      raw_preserved: true,
+      redacted_bytes: Buffer.byteLength(redacted, "utf8"),
+    });
     return;
   }
   if (command === "evaluate") {
@@ -1456,7 +1771,7 @@ function main(args = process.argv.slice(2)) {
     return;
   }
   throw new Error(
-    "usage: skill-eval.mjs contracts | surface-hash | scaffold | evaluate --input FILE | routing-rate --input FILE [--input FILE ...]",
+    "usage: skill-eval.mjs contracts | surface-hash | scaffold | export-evidence --input FILE --output FILE | evaluate --input FILE | routing-rate --input FILE [--input FILE ...]",
   );
 }
 
@@ -1479,6 +1794,7 @@ export {
   hashBehaviorEntries,
   parseSkillMetadata,
   readBehaviorSurfacePath,
+  sanitizeEvidenceText,
   summarizeRoutingRates,
   validateRunRecord,
   validateScenarioCatalog,

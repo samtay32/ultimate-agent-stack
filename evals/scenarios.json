@@ -47,9 +47,7 @@
       },
       "expected": {
         "must_activate": [
-          "run-autonomous-delivery",
-          "build-vertical-slice",
-          "verify-change"
+          "run-autonomous-delivery"
         ],
         "must_not_activate": [
           "setup-autonomous-project",
@@ -838,9 +836,7 @@
       },
       "expected": {
         "must_activate": [
-          "run-autonomous-delivery",
-          "build-vertical-slice",
-          "verify-change"
+          "run-autonomous-delivery"
         ],
         "must_not_activate": [
           "develop-project-brief"
@@ -1119,8 +1115,6 @@
       "expected": {
         "must_activate": [
           "run-autonomous-delivery",
-          "build-vertical-slice",
-          "verify-change",
           "coordinate-parallel-delivery"
         ],
         "must_not_activate": [

@@ -25,6 +25,7 @@ sandbox and the Markdown skills are not executable security controls.
 | Verify project-local GBrain path containment, health, and identity | Treat optional memory as advisory |
 | Restrict reviewed telemetry to fixed endpoints, bounded responses, source-hash-protected health operations, and configured project/account identity | Treat read-only project telemetry as advisory evidence |
 | Validate repository work and evidence vocabulary, bounds, dependencies, and graph endpoints | Keep external work synchronized and require real acceptance evidence |
+| Redact coordinator bearer tokens from text/JSONL evidence exports and fail closed on a remaining recognizable token | Keep private raw traces out of pull requests and other shared evidence |
 | Restrict Linear reads to fixed queries and writes to issue/comment creation with explicit authority, idempotency, and receipts | Create separate upstream Linear keys with only their documented permissions |
 | Limit campaigns to one eligible repository item and at most 25 iterations | Stop for consequential decisions and verify each selected item normally |
 | Keep package publishing behind the protected release workflow | Stop after bounded non-improving repair loops and report the blocker |
@@ -136,6 +137,14 @@ operating system permits it to read.
 Required checks fail closed when a command is missing, times out, exits
 nonzero, or does not produce complete evidence. The latest run is stored under
 `.agent-stack/runs/`, which is ignored by default.
+
+Textual evidence can be exported without changing the private source. The
+dependency-free `skill-eval.mjs export-evidence` command writes a separate
+redacted file, removes coordinator-token command arguments and JSON token
+fields (including escaped JSONL), replaces repeated discovered values, and
+rejects the export if a recognizable bearer token remains. This protects the
+export boundary only; the raw trace and any other private project data still
+require appropriate local access controls and review.
 
 ### Intent and review
 

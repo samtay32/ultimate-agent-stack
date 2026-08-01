@@ -58,9 +58,13 @@ Use one route-aware workflow contract across capable coding harnesses:
 - a request explicitly limited to brief refinement, source audit, or
   reconciliation loads `$develop-project-brief` directly and stops before
   delivery;
-- end-to-end delivery and RESUME load `$run-autonomous-delivery`;
-- entering implementation loads `$build-vertical-slice`;
-- entering verification loads `$verify-change`;
+- end-to-end delivery and RESUME load `$run-autonomous-delivery`; that
+  controller owns implementation and verification quality gates without
+  requiring nested native phase activations;
+- an explicitly phase-specific implementation request loads
+  `$build-vertical-slice` directly;
+- an explicitly phase-specific verification request loads `$verify-change`
+  directly;
 - `$close-review-loop` loads only for an existing pull request or an external
   provider or human review thread;
 - work readiness, evidence reports, and bounded campaign requests load
