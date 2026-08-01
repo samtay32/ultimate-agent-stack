@@ -1984,10 +1984,19 @@ function main(args = process.argv.slice(2)) {
         "routing-rate requires one or more --input run-record files",
       );
     }
+    const inputPaths = inputs.map((input) => resolve(input));
     const result = summarizeRoutingRates(
-      inputs.map((input) => readJson(resolve(input))),
+      inputPaths.map((inputPath) => readJson(inputPath)),
     );
-    print(result);
+    print({
+      ...result,
+      command: "routing-rate",
+      input_paths: inputPaths,
+      invocation: {
+        command: "node scripts/skill-eval.mjs routing-rate",
+        input_paths: inputPaths,
+      },
+    });
     if (!result.ok) {
       process.exitCode = 2;
     }

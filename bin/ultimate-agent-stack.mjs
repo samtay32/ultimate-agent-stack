@@ -3785,26 +3785,33 @@ function installedSkillFile(target, skill, skillPath) {
   if (!contractIdentifier(skill)) {
     throw new StackError("--skill must be a canonical installed skill name");
   }
+  const normalizedSkillPath =
+    typeof skillPath === "string"
+      ? skillPath
+          .replaceAll("\\", "/")
+          .replace(/\/{2,}/g, "/")
+          .replace(/^(?:\.\/)+/, "")
+      : skillPath;
   const allowed = new Set([
     `.agents/skills/${skill}/SKILL.md`,
     `.claude/skills/${skill}/SKILL.md`,
   ]);
-  if (!allowed.has(skillPath)) {
+  if (!allowed.has(normalizedSkillPath)) {
     throw new StackError(
       "--skill-path must name the actual installed .agents or .claude SKILL.md for --skill",
     );
   }
   const file = projectFileWithoutSymlinkComponents(
     target,
-    skillPath,
+    normalizedSkillPath,
     "installed skill",
   );
   if (!existsSync(file) || !statSync(file).isFile()) {
     throw new StackError(
-      `Installed skill not found at ${skillPath}. Run init or upgrade first.`,
+      `Installed skill not found at ${normalizedSkillPath}. Run init or upgrade first.`,
     );
   }
-  return { path: skillPath, file };
+  return { path: normalizedSkillPath, file };
 }
 
 function commandEvidenceActivate(
@@ -3889,6 +3896,10 @@ function commandEvidenceActivate(
       ok: true,
       recorded: false,
       reason: "already-recorded",
+      result: "already-recorded",
+      command: "evidence activate",
+      path: EVIDENCE_GRAPH_PATH,
+      evidence_graph_path: EVIDENCE_GRAPH_PATH,
       activation: existing,
       boundary:
         "Agent-recorded evidence is not independent proof of a harness tool call.",
@@ -3913,6 +3924,10 @@ function commandEvidenceActivate(
   return {
     ok: true,
     recorded: true,
+    result: "recorded",
+    command: "evidence activate",
+    path: EVIDENCE_GRAPH_PATH,
+    evidence_graph_path: EVIDENCE_GRAPH_PATH,
     activation,
     boundary:
       "Agent-recorded evidence is not independent proof of a harness tool call.",

@@ -785,6 +785,46 @@ test("routing reliability is reported as k/N per harness and model", () => {
   }
 });
 
+test("routing-rate CLI output identifies its input records and invocation", () => {
+  const target = mkdtempSync(join(tmpdir(), "uas-routing-rate-"));
+  const firstPath = join(target, "first.json");
+  const secondPath = join(target, "second.json");
+  const first = passingRecord();
+  const second = passingRecord();
+  for (const item of second.cases) {
+    item.harness_session.id = `${item.harness_session.id}:second`;
+  }
+  try {
+    writeFileSync(firstPath, `${JSON.stringify(first)}\n`, "utf8");
+    writeFileSync(secondPath, `${JSON.stringify(second)}\n`, "utf8");
+    const result = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          join(PACKAGE_ROOT, "scripts", "skill-eval.mjs"),
+          "routing-rate",
+          "--input",
+          firstPath,
+          "--input",
+          secondPath,
+        ],
+        { encoding: "utf8" },
+      ),
+    );
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(result.command, "routing-rate");
+    assert.deepEqual(result.input_paths, [firstPath, secondPath]);
+    assert.equal(
+      result.invocation.command,
+      "node scripts/skill-eval.mjs routing-rate",
+    );
+    assert.deepEqual(result.invocation.input_paths, [firstPath, secondPath]);
+    assert.equal(result.groups[0].reliability_ready, true);
+  } finally {
+    rmSync(target, { recursive: true, force: true });
+  }
+});
+
 test("telemetry diagnosis requires explicit activation and rejects project writes", () => {
   const record = passingRecord();
   const telemetry = record.cases.find(

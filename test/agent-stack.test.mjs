@@ -2646,6 +2646,10 @@ test("skill activations are recorded once with an honest evidence boundary", () 
     });
     assert.equal(first.ok, true);
     assert.equal(first.recorded, true);
+    assert.equal(first.result, "recorded");
+    assert.equal(first.command, "evidence activate");
+    assert.equal(first.path, EVIDENCE_GRAPH_PATH);
+    assert.equal(first.evidence_graph_path, EVIDENCE_GRAPH_PATH);
     assert.equal(first.activation.claim, "agent-recorded");
     assert.match(
       first.boundary,
@@ -2672,6 +2676,10 @@ test("skill activations are recorded once with an honest evidence boundary", () 
     });
     assert.equal(duplicate.recorded, false);
     assert.equal(duplicate.reason, "already-recorded");
+    assert.equal(duplicate.result, "already-recorded");
+    assert.equal(duplicate.command, "evidence activate");
+    assert.equal(duplicate.path, EVIDENCE_GRAPH_PATH);
+    assert.equal(duplicate.evidence_graph_path, EVIDENCE_GRAPH_PATH);
     assert.throws(
       () =>
         commandEvidenceActivate(fixture.directory, {
@@ -2712,6 +2720,50 @@ test("skill activations are recorded once with an honest evidence boundary", () 
     assert.deepEqual(report.report.skill_activations.by_harness_model, {
       "codex / gpt-5": 2,
     });
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("evidence activation accepts equivalent installed skill paths", () => {
+  const fixture = temporaryProject();
+  try {
+    initializeGit(fixture.directory);
+    createJavaScriptFixture(fixture.directory);
+    installOrUpgrade(fixture.directory, { mode: "init" });
+    const coordinatorToken = commandStart(
+      fixture.directory,
+      "Record normalized path activations",
+    ).coordinator.coordinator_token;
+    const common = {
+      skill: "run-autonomous-delivery",
+      mode: "native",
+      harness: "codex",
+      model: "gpt-5",
+      runId: "normalized-paths",
+      coordinatorToken,
+    };
+    const windows = commandEvidenceActivate(fixture.directory, {
+      ...common,
+      skillPath: ".agents\\skills\\run-autonomous-delivery\\SKILL.md",
+      eventId: "windows-separators",
+    });
+    assert.equal(windows.recorded, true);
+    assert.equal(
+      windows.activation.skill_path,
+      ".agents/skills/run-autonomous-delivery/SKILL.md",
+    );
+
+    const dotted = commandEvidenceActivate(fixture.directory, {
+      ...common,
+      skillPath: "./.agents/skills/run-autonomous-delivery/SKILL.md",
+      eventId: "leading-dot-segment",
+    });
+    assert.equal(dotted.recorded, true);
+    assert.equal(
+      dotted.activation.skill_path,
+      ".agents/skills/run-autonomous-delivery/SKILL.md",
+    );
   } finally {
     fixture.cleanup();
   }
