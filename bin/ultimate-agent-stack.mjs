@@ -4684,7 +4684,7 @@ function summarizeInstallResult(result) {
       path,
       status,
       requires_action: ACTIONABLE_INSTALL_STATUSES.has(status),
-      ...(proposal ? { proposal } : {}),
+      ...(proposal ? { proposal: proposal.split(sep).join("/") } : {}),
     }));
 
   const { outcomes, ...summary } = result;
