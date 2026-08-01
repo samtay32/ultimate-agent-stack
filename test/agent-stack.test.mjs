@@ -1709,7 +1709,7 @@ test("init and upgrade preserve detailed JSON with opt-in concise summaries", ()
       path: "AGENTS.md",
       status: "preserved-existing",
       requires_action: true,
-      proposal: ".agent-stack/update-proposals/0.9.0/AGENTS.md",
+      proposal: ".agent-stack/update-proposals/0.9.1/AGENTS.md",
     });
     assert.ok(
       conciseUpgrade.stdout.length < 4_096,

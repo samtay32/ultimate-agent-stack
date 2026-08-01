@@ -4,6 +4,8 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ## Unreleased
 
+## 0.9.1 - 2026-08-01
+
 ### Changed
 
 - `init` and `upgrade` keep their detailed JSON result by default for
@@ -12,6 +14,13 @@ All notable changes to Ultimate Agent Stack are documented here.
   containing every path that needs reconciliation or another manual decision,
   plus notable preserved local paths; outcome counts summarize ordinary paths.
   The setup skill and user-facing setup examples use the concise mode.
+
+### Fixed
+
+- Concise proposal paths use forward slashes consistently on Windows and
+  POSIX systems.
+- Concise output omits the overlapping `pending_reconciliation` field so
+  `attention` remains the single non-duplicated path list.
 
 ## 0.9.0 - 2026-08-01
 

@@ -1,6 +1,6 @@
 {
   "name": "ultimate-agent-stack",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Your Project Steward: guided, provider-neutral delivery with verified continuity, review, and safety gates.",
   "type": "module",
   "bin": {
