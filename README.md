@@ -353,7 +353,8 @@ Every installed project receives `.agent-stack/work-items.json` and
 `.agent-stack/evidence-graph.json`. The first tracks bounded objectives,
 acceptance criteria, scope, dependencies, and canonical status. The second
 connects intent and work to implementation, tests, review, release, and
-optional telemetry through bounded references.
+optional telemetry through bounded references. It can also retain
+agent-recorded skill activations without storing a raw conversation transcript.
 
 The graph is an index, not a second database and not proof by itself. The local
 CLI validates both files, rejects unknown vocabulary and broken references, and
@@ -371,6 +372,25 @@ node .agent-stack/bin/agent-stack.mjs evidence report \
   --max-nodes 200 \
   --output .agent-stack/reports/evidence.mmd
 ```
+
+After a skill is actually activated, the agent records the event with:
+
+```bash
+node .agent-stack/bin/agent-stack.mjs evidence activate \
+  --skill run-autonomous-delivery \
+  --skill-path .agents/skills/run-autonomous-delivery/SKILL.md \
+  --mode native \
+  --harness codex \
+  --model gpt-5 \
+  --run current-session-id \
+  --event current-skill-call-id \
+  --coordinator-token ACTIVE_TOKEN
+```
+
+The CLI binds each event to the installed `SKILL.md` path and hash. Retrying the
+same event ID is idempotent; a later activation uses a new event ID. This is an
+inspectable agent record, not independent proof that a harness tool call
+occurred. Read-only work does not mutate the graph.
 
 The JSON report shows work status, node/edge/provider counts, evidence coverage,
 and bounded samples of missing or unconnected evidence. Mermaid uses generated
@@ -509,10 +529,10 @@ npx --yes markdownlint-cli2@0.20.0 '**/*.md'
 
 Releases use protected GitHub Actions, npm trusted publishing, staged human 2FA
 approval, registry provenance, and a matching GitHub Release. `release:check`
-validates the behavioral scenario contracts. This milestone's broad
-front-half behavior claim also requires current evaluated runs on at least two
-distinct primary supported harnesses; every other supported harness must be
-named as untested. No named harness is privileged by this release rule. See
+validates every deterministic scenario contract. Cross-harness compatibility
+also requires the documented current smoke matrix on at least two distinct
+primary supported harnesses; every untested scenario and harness must be named.
+No named harness is privileged by this release rule. See
 [Behavioral Evaluations](docs/BEHAVIORAL_EVALS.md).
 
 ## License

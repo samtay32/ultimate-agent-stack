@@ -76,6 +76,7 @@ function main() {
     );
     for (const requiredPath of [
       ".gitattributes",
+      "assets/project-template/CLAUDE.md",
       "assets/project-template/.agent-stack/artifacts/BRIEF.md",
       "skills/develop-project-brief/SKILL.md",
       "skills/develop-project-brief/references/brief-contract.md",
@@ -116,10 +117,17 @@ function main() {
       "scripts",
       "skill-eval.mjs",
     );
+    const packedCli = join(
+      fixtureConsumer,
+      "node_modules",
+      "ultimate-agent-stack",
+      "bin",
+      "ultimate-agent-stack.mjs",
+    );
     const packedContracts = JSON.parse(
       run(process.execPath, [evalScript, "contracts"], fixtureConsumer),
     );
-    if (!packedContracts.ok || packedContracts.scenario_count !== 27) {
+    if (!packedContracts.ok || packedContracts.scenario_count !== 28) {
       throw new Error("packed behavioral contracts did not validate");
     }
     const fixtureList = JSON.parse(
@@ -127,7 +135,7 @@ function main() {
     );
     if (
       !fixtureList.ok ||
-      fixtureList.scenarios.length !== 27 ||
+      fixtureList.scenarios.length !== 28 ||
       fixtureList.scenarios.some(
         (item) =>
           !/^sha256:[a-f0-9]{64}$/.test(item.fixture_receipt) ||
@@ -261,13 +269,10 @@ function main() {
         "",
       ].join("\n"),
     );
-    runNpm(
+    run(
+      process.execPath,
       [
-        "exec",
-        "--yes",
-        `--package=${tarball}`,
-        "--",
-        "ultimate-agent-stack",
+        packedCli,
         "init",
         "--target",
         project,
@@ -298,6 +303,10 @@ function main() {
       [
         [".agents", "skills", "manage-project-work", "SKILL.md"],
         "work-management skill",
+      ],
+      [
+        ["CLAUDE.md"],
+        "Claude project instruction bridge",
       ],
       [
         [".agents", "skills", "develop-project-brief", "SKILL.md"],

@@ -32,6 +32,10 @@ Evidence, not confidence, decides readiness.
 5. Perform independent reviews:
    - **standards:** correctness, data loss, security, privacy, concurrency, performance, reliability, observability, maintainability;
    - **intent:** every requirement, non-goal, compatibility promise, migration, UX state, and operational outcome.
+   A local independent review counts only when a real separate reviewer
+   returns an inspectable result for the exact reviewed commit. Failed spawn,
+   empty wait, missing result, self-review, or handwritten approval prose is a
+   blocker, not review evidence.
 6. For visual changes, inspect rendered output at meaningful sizes and include screenshots or recordings.
 7. For integrations, test timeouts, malformed input, retries, idempotency, partial failure, and authentication boundaries where applicable.
 8. Classify every failure:

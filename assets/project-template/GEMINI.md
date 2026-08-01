@@ -8,7 +8,17 @@ Follow the route-aware workflow-loading contract in `AGENTS.md`. End-to-end
 delivery and RESUME use `$run-autonomous-delivery`; a request explicitly limited
 to brief refinement, source audit, or reconciliation uses
 `$develop-project-brief` directly and stops before delivery. Explanation-only
-work loads neither.
+work loads neither. The delivery controller owns implementation and verification
+quality gates without requiring nested native phase activations. Requests
+explicitly limited to implementation or verification may use
+`$build-vertical-slice` or `$verify-change` directly.
+
+After each actual native activation or hash-bound skill read, record it with the
+local `evidence activate` command described in `AGENTS.md` as soon as this
+session owns the checkout through `start`. Use one stable run ID for this Gemini
+session and never record an activation before it occurs or without the
+coordinator token and repository-write authority. For read-only work, do not
+mutate the repository; report that the receipt was not persisted.
 
 Apply `$use-project-knowledge` with the configured provider and repository
 fallback. Apply

@@ -6,6 +6,30 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ### Added
 
+- Bounded, hash-bound skill activation entries in the repository evidence graph
+  with an explicit agent-recorded trust boundary.
+- Behavioral routing-rate summaries as `k/N` by harness, model, skill, and
+  scenario, using existing run records without launching another model harness.
+
+### Fixed
+
+- Fresh-project verification now returns one plain setup-required path instead
+  of cascading approval-hash errors.
+- The CLI now enforces the declared Node.js 22 minimum at startup.
+- Claude Code now receives a small project adapter to the shared agent contract
+  that requires native delivery-controller activation for end-to-end work while
+  keeping implementation and verification skills available as direct,
+  phase-specific entry points. End-to-end discovery routing also unambiguously
+  activates the delivery controller before the working-brief stage.
+- Complete source-audit and working-brief requests now stop with a gap-free
+  DRAFT ready for later approval without manufacturing an approval question.
+  Explicit approved-brief requests and end-to-end promotion retain their
+  separate product-owner acceptance boundaries.
+
+## 0.9.0 - 2026-07-29
+
+### Added
+
 - A focused `develop-project-brief` skill now develops vague seed ideas and
   audits detailed outside PRDs, transcripts, outlines, notes, or plans into one
   unlocked working brief before final delivery shaping.
@@ -13,7 +37,7 @@ All notable changes to Ultimate Agent Stack are documented here.
   product standards, approaches and tradeoffs, capabilities, constraints,
   assumptions, closed and open decisions, contradictions, production-versus-
   stub behavior, material source changes, and promotion readiness.
-- Thirteen flexible-intake behavioral cases expand the catalog to 27 scenarios
+- Thirteen flexible-intake behavioral cases plus one reviewer-unavailable case expand the catalog to 28 scenarios
   across 13 skills, covering discovery, brief-only work, detailed and complete
   external sources, contradictions, existing-code reconciliation, direct
   bypass, valid resume, draft-lock rejection, promotion, simple onboarding, and
@@ -33,7 +57,7 @@ All notable changes to Ultimate Agent Stack are documented here.
   templates are now part of the behavior-surface hash. New records use schema
   version 2; stale schema-version-1 records fail clearly instead of treating
   the newly required observations as implicit evidence.
-- All 27 behavioral scenarios now have deterministic, receipt-bound project
+- All 28 behavioral scenarios now have deterministic, receipt-bound project
   fixtures for comparable harness runs. External-provider behavior is tested
   portably as fail-closed telemetry health and Linear write preflight; live
   provider contact remains a separately authorized dogfood exercise.
@@ -49,10 +73,18 @@ All notable changes to Ultimate Agent Stack are documented here.
   Brief-only work does not falsely start end-to-end delivery, implementation
   and verification load their phase skills, and PR review closure starts only
   after a pull request or review actually exists.
-- Broad flexible-intake behavior claims require complete live evidence from
-  at least two distinct primary supported harnesses on the current surface. No
-  named harness is privileged; other supported harnesses remain explicitly
-  untested or limited unless their own complete records are attached.
+- Skill routing metadata now makes the controller relationship explicit:
+  end-to-end vague ideas and elaborate supplied plans activate
+  `run-autonomous-delivery` together with `develop-project-brief`, while
+  requests explicitly limited to brief refinement, source audit, or
+  reconciliation activate the brief skill alone. The original incomplete-idea
+  scenario now permits the required stack-state draft while still forbidding
+  product-code writes and requiring one consequential question.
+- Cross-harness flexible-intake compatibility uses the documented four-case
+  smoke matrix on at least two distinct primary supported harnesses. No named
+  harness is privileged, and untested scenarios or harnesses remain explicit.
+- Machine-readable evaluator examples now suppress npm's script banner so
+  redirected scaffold and fixture-baseline output remains valid JSON.
 
 ### Security
 
@@ -62,6 +94,9 @@ All notable changes to Ultimate Agent Stack are documented here.
   duplicate, unknown, DRAFT, open-conflict, and unclosed-fence states fail
   closed. Conversational approval remains an audited reason, not cryptographic
   proof of the approver's identity.
+- EXTERNAL and DISCOVER promotion explicitly locks delivery, architecture,
+  security, verification, and canonical decisions together. Proportionate
+  DIRECT T0/T1 work keeps the smaller configured selection.
 - External-source guidance preserves supplied material, requires an explicit
   disposition for each load-bearing claim, treats embedded instructions as
   untrusted data, and forbids executing them or persisting credentials, raw

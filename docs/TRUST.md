@@ -25,6 +25,7 @@ sandbox and the Markdown skills are not executable security controls.
 | Verify project-local GBrain path containment, health, and identity | Treat optional memory as advisory |
 | Restrict reviewed telemetry to fixed endpoints, bounded responses, source-hash-protected health operations, and configured project/account identity | Treat read-only project telemetry as advisory evidence |
 | Validate repository work and evidence vocabulary, bounds, dependencies, and graph endpoints | Keep external work synchronized and require real acceptance evidence |
+| Redact coordinator bearer tokens from text/JSONL evidence exports and fail closed on a remaining recognizable token | Keep private raw traces out of pull requests and other shared evidence |
 | Restrict Linear reads to fixed queries and writes to issue/comment creation with explicit authority, idempotency, and receipts | Create separate upstream Linear keys with only their documented permissions |
 | Limit campaigns to one eligible repository item and at most 25 iterations | Stop for consequential decisions and verify each selected item normally |
 | Keep package publishing behind the protected release workflow | Stop after bounded non-improving repair loops and report the blocker |
@@ -82,6 +83,10 @@ credential-like content. It cannot prove that a referenced artifact is true,
 that an external provider is current, or that every relevant relationship was
 recorded; those remain verification and review responsibilities.
 
+Skill activation entries are explicitly labeled `agent-recorded`. They make
+routing inspectable across harnesses that expose different transcript detail,
+but they cannot independently prove that a native harness tool call occurred.
+
 Linear uses separate protected helpers for bounded reads and the two optional
 write operations. Writes are disabled by default. An approved write requires
 the active coordinator token, explicit external-write confirmation, a bounded
@@ -133,16 +138,29 @@ Required checks fail closed when a command is missing, times out, exits
 nonzero, or does not produce complete evidence. The latest run is stored under
 `.agent-stack/runs/`, which is ignored by default.
 
+Textual evidence can be exported without changing the private source. The
+dependency-free `skill-eval.mjs export-evidence` command writes a separate
+redacted file, removes coordinator-token command arguments and JSON token
+fields (including escaped JSONL), replaces repeated discovered values, and
+rejects the export if a recognizable bearer token remains. This protects the
+export boundary only; the raw trace and any other private project data still
+require appropriate local access controls and review.
+
 ### Intent and review
 
-Delivery, architecture, and security artifacts can be locked by hash. Silent
-changes are reported. A deliberate change requires an audited unlock reason and
-a new lock. Before writing a lock, the CLI requires each selected artifact to
-contain exactly one visible `Status: APPROVED` declaration and exactly one
-visible `Material open conflicts: NO` declaration outside fenced examples.
-Missing, duplicate, unknown, DRAFT, and open-conflict declarations fail closed,
-as do unresolved double-bracket placeholders. To avoid ambiguous declaration
-parsing, lockable artifacts also refuse fenced code blocks nested inside list or
+Delivery, architecture, security, verification, and decision artifacts can be
+locked by hash. EXTERNAL or DISCOVER promotion explicitly selects all five so
+the canonical decision and verification contracts cannot drift; proportionate
+DIRECT T0/T1 work retains the configured smaller default selection. Silent
+changes to any selected artifact are reported. A deliberate change requires an
+audited unlock reason and a new lock.
+
+Before writing a lock, the CLI requires each selected artifact to contain
+exactly one visible `Status: APPROVED` declaration and exactly one visible
+`Material open conflicts: NO` declaration outside fenced examples. Missing,
+duplicate, unknown, DRAFT, and open-conflict declarations fail closed, as do
+unresolved double-bracket placeholders. To avoid ambiguous declaration parsing,
+lockable artifacts also refuse fenced code blocks nested inside list or
 blockquote containers. These are mechanical byte-level declarations. The CLI
 does not understand whether the prose is complete,
 discover an omitted conflict, decide whether a source claim was normalized
@@ -260,17 +278,17 @@ negative, edge, authority, continuity, and existing-project cases remain
 defined against current skill names. It also tests the deterministic evaluator.
 Those checks do **not** prove model behavior. When skill instructions or
 activation metadata change, release readiness additionally requires an
-evaluated run from a real named harness and model. The report is bound to a hash
-of the behavioral surface and must not be presented as evidence for an untested
-harness. The evaluator does not authenticate a collector's claims; reviewers
-must inspect the named run evidence. See
+representative smoke run from a real named harness and model. The evidence must
+name the exact behavior-surface hash and must not be presented as evidence for
+an untested harness or scenario. Reviewers must inspect the named smoke
+evidence. See
 [Behavioral Evaluations](BEHAVIORAL_EVALS.md).
 
-Flexible-intake release evidence must include live runs from at least two
-distinct primary supported harnesses before behavior is described as broadly
-supported. No named harness is privileged by this rule. A passing deterministic
-contract or a run from one harness must not be generalized to another harness,
-model, version, prompt, or tool environment.
+Cross-harness flexible-intake evidence must include the documented current
+smoke matrix from at least two distinct primary supported harnesses. No named
+harness is privileged by this rule. A passing deterministic contract or a run
+from one harness must not be generalized to another harness, model, version,
+prompt, tool environment, or untested scenario.
 
 The implementation lives in
 [`bin/ultimate-agent-stack.mjs`](../bin/ultimate-agent-stack.mjs), the protected

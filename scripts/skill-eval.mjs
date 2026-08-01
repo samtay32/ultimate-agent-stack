@@ -7,6 +7,7 @@ import {
   readdirSync,
   realpathSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,6 +35,13 @@ const SOURCE_CLAIM_DISPOSITIONS = new Set([
   "rejected",
   "deferred",
 ]);
+const EVIDENCE_REDACTION_MARKER = "[REDACTED]";
+const RECOGNIZABLE_COORDINATOR_TOKEN = /^[a-f0-9]{64}$/i;
+const COORDINATOR_TOKEN_FIELD_NAMES = new Set([
+  "coordinator_token",
+  "coordinatorToken",
+]);
+const COORDINATOR_OPTION = "--coordinator-token";
 const CURRENT_RUN_RECORD_SCHEMA_VERSION = 2;
 const SHA256_RECEIPT = /^sha256:[a-f0-9]{64}$/;
 const GIT_COMMIT_ID = /^[a-f0-9]{40}$/;
@@ -162,6 +170,7 @@ function behaviorSurfaceEntries() {
     "assets/project-template/.gemini/agents/uas-researcher.md",
     "assets/project-template/.opencode/agents/uas-researcher.md",
     "assets/project-template/AGENTS.md",
+    "assets/project-template/CLAUDE.md",
     "assets/project-template/GEMINI.md",
     "evals/fixture-baselines.json",
     "evals/fixtures.json",
@@ -1149,9 +1158,752 @@ function buildScaffold(catalog = readJson(SCENARIOS_FILE)) {
   };
 }
 
+function summarizeRoutingRates(
+  records,
+  catalog = readJson(SCENARIOS_FILE),
+) {
+  const scenarios = new Map(
+    asArray(catalog?.scenarios).map((scenario) => [scenario.id, scenario]),
+  );
+  const behavioralFinding = (finding) =>
+    [
+      /^required skill did not activate:/,
+      /^forbidden skill activated:/,
+      /^required clarifying question was not asked$/,
+      /^a clarifying question was forbidden$/,
+      /^at least \d+ question\(s\) were required$/,
+      /^at most \d+ question\(s\) were allowed/,
+      /^required question tag was not observed:/,
+      /^forbidden question tag was observed:/,
+      /^required action was not performed:/,
+      /^forbidden action was performed:/,
+      /^required outcome was not observed:/,
+      /^forbidden write path was observed:/,
+      /^required write path was absent:/,
+      /^required artifact state was not observed:/,
+      /^artifact .* expected .* but observed /,
+      /^noncanonical artifact status was observed:/,
+      /^required observable output was absent:/,
+      /^required source claim was not accounted for:/,
+    ].some((pattern) => pattern.test(finding));
+  const usedSessions = new Set();
+  const groups = new Map();
+  const errors = [];
+  for (const [recordIndex, record] of asArray(records).entries()) {
+    const recordLabel = `run record ${recordIndex + 1}`;
+    if (
+      record?.schema_version !== CURRENT_RUN_RECORD_SCHEMA_VERSION ||
+      record?.surface_hash !== behaviorSurfaceHash() ||
+      !record?.harness ||
+      typeof record.harness !== "object" ||
+      Array.isArray(record.harness) ||
+      ![
+        record.harness.name,
+        record.harness.version,
+        record.harness.model,
+      ].every(isCompletedField) ||
+      !isCompletedField(record.recorded_at) ||
+      Number.isNaN(Date.parse(record.recorded_at)) ||
+      !Array.isArray(record.cases) ||
+      record.cases.length !== scenarios.size
+    ) {
+      errors.push(
+        `${recordLabel} is not a complete current behavioral record`,
+      );
+      continue;
+    }
+    const caseIds = record.cases.map((item) => item?.scenario_id);
+    if (
+      new Set(caseIds).size !== scenarios.size ||
+      caseIds.some((id) => !scenarios.has(id))
+    ) {
+      errors.push(
+        `${recordLabel} must contain each current scenario exactly once`,
+      );
+      continue;
+    }
+    const evaluation = validateRunRecord(record, catalog);
+    const structuralFindings = evaluation.cases.flatMap((item) =>
+      item.findings
+        .filter((finding) => !behavioralFinding(finding))
+        .map((finding) => `${item.scenario_id}: ${finding}`),
+    );
+    if (evaluation.errors.length > 0 || structuralFindings.length > 0) {
+      errors.push(
+        `${recordLabel} lacks current structured evidence: ${[
+          ...evaluation.errors,
+          ...structuralFindings,
+        ][0]}`,
+      );
+      continue;
+    }
+    const sessionIds = record.cases.map(
+      (item) => item.harness_session.id,
+    );
+    if (
+      new Set(sessionIds).size !== sessionIds.length ||
+      sessionIds.some((sessionId) => usedSessions.has(sessionId))
+    ) {
+      errors.push(`${recordLabel} reuses a harness session`);
+      continue;
+    }
+    sessionIds.forEach((sessionId) => usedSessions.add(sessionId));
+
+    const harness = {
+      name: record.harness.name,
+      version: record.harness.version,
+      model: record.harness.model,
+    };
+    const groupKey = JSON.stringify(harness);
+    const group = groups.get(groupKey) ?? {
+      harness,
+      run_records: 0,
+      evaluated_runs_passed: 0,
+      requiredSkills: new Map(),
+      forbiddenSkills: new Map(),
+      routes: new Map(),
+      matchedConstraints: 0,
+      constraints: 0,
+      matchedScenarios: 0,
+      scenarioAttempts: 0,
+    };
+    group.run_records += 1;
+    if (evaluation.ok) {
+      group.evaluated_runs_passed += 1;
+    }
+    for (const item of record.cases) {
+      const scenario = scenarios.get(item?.scenario_id);
+      const activated = new Set(item.observed.activated_skills);
+      let scenarioMatched = true;
+      let scenarioConstraints = 0;
+      for (const [expected, skills] of [
+        ["activate", asArray(scenario.expected?.must_activate)],
+        ["not-activate", asArray(scenario.expected?.must_not_activate)],
+      ]) {
+        for (const skill of skills) {
+          const observedActivated = activated.has(skill);
+          const matched =
+            observedActivated === (expected === "activate") ? 1 : 0;
+          const skillMap =
+            expected === "activate"
+              ? group.requiredSkills
+              : group.forbiddenSkills;
+          const skillCount = skillMap.get(skill) ?? {
+            skill,
+            matched: 0,
+            opportunities: 0,
+          };
+          skillCount.matched += matched;
+          skillCount.opportunities += 1;
+          skillMap.set(skill, skillCount);
+
+          const routeKey = `${scenario.id}\0${skill}\0${expected}`;
+          const routeCount = group.routes.get(routeKey) ?? {
+            scenario_id: scenario.id,
+            skill,
+            expected,
+            matched: 0,
+            observed_activated: 0,
+            attempts: 0,
+          };
+          routeCount.matched += matched;
+          routeCount.observed_activated += observedActivated ? 1 : 0;
+          routeCount.attempts += 1;
+          group.routes.set(routeKey, routeCount);
+          group.matchedConstraints += matched;
+          group.constraints += 1;
+          scenarioMatched &&= matched === 1;
+          scenarioConstraints += 1;
+        }
+      }
+      if (scenarioConstraints > 0) {
+        group.matchedScenarios += scenarioMatched ? 1 : 0;
+        group.scenarioAttempts += 1;
+      }
+    }
+    groups.set(groupKey, group);
+  }
+  for (const group of groups.values()) {
+    if (group.run_records < 2) {
+      errors.push(
+        `${group.harness.name} ${group.harness.version} / ${group.harness.model} has ${group.run_records}/2 required independent run records`,
+      );
+    }
+  }
+  const rate = (matched, opportunities) =>
+    `${matched}/${opportunities}`;
+  const skillRates = (items, matchedLabel) =>
+    [...items.values()]
+      .sort((left, right) => left.skill.localeCompare(right.skill))
+      .map((item) => ({
+        skill: item.skill,
+        [matchedLabel]: item.matched,
+        opportunities: item.opportunities,
+        rate: rate(item.matched, item.opportunities),
+      }));
+  return {
+    ok: errors.length === 0,
+    errors,
+    surface_hash: behaviorSurfaceHash(),
+    boundary:
+      "Rates summarize complete independent recorded observations. They do not authenticate that a collector described a run truthfully.",
+    groups: [...groups.values()]
+      .sort((left, right) =>
+        JSON.stringify(left.harness).localeCompare(
+          JSON.stringify(right.harness),
+        ),
+      )
+      .map((group) => ({
+        harness: group.harness,
+        run_records: group.run_records,
+        reliability_ready: group.run_records >= 2,
+        evaluated_runs_passed: group.evaluated_runs_passed,
+        scenario_route_accuracy: {
+          matched: group.matchedScenarios,
+          opportunities: group.scenarioAttempts,
+          rate: rate(group.matchedScenarios, group.scenarioAttempts),
+        },
+        constraint_micro_accuracy: {
+          matched: group.matchedConstraints,
+          opportunities: group.constraints,
+          rate: rate(group.matchedConstraints, group.constraints),
+        },
+        required_activation_recall: skillRates(
+          group.requiredSkills,
+          "activated",
+        ),
+        forbidden_activation_compliance: skillRates(
+          group.forbiddenSkills,
+          "not_activated",
+        ),
+        routes: [...group.routes.values()]
+          .sort(
+            (left, right) =>
+              left.scenario_id.localeCompare(right.scenario_id) ||
+              left.skill.localeCompare(right.skill) ||
+              left.expected.localeCompare(right.expected),
+          )
+          .map((item) => ({
+            ...item,
+            rate: rate(item.matched, item.attempts),
+          })),
+      })),
+  };
+}
+
 function argumentValue(args, name) {
   const index = args.indexOf(name);
   return index === -1 ? null : args[index + 1] ?? null;
+}
+
+function argumentValues(args, name) {
+  const values = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] === name && args[index + 1]) {
+      values.push(args[index + 1]);
+      index += 1;
+    }
+  }
+  return values;
+}
+
+function decodeEvidenceString(value) {
+  const candidate = String(value ?? "");
+  try {
+    return JSON.parse(`"${candidate}"`);
+  } catch {
+    // Evidence may contain a partially escaped line from a failed tool call.
+    // Decode the quote/backslash pairs that are relevant to token discovery,
+    // while leaving the bytes being exported untouched.
+    let decoded = "";
+    for (let index = 0; index < candidate.length; index += 1) {
+      if (
+        candidate[index] === "\\" &&
+        index + 1 < candidate.length &&
+        ["\\", '"', "'"].includes(candidate[index + 1])
+      ) {
+        decoded += candidate[index + 1];
+        index += 1;
+      } else {
+        decoded += candidate[index];
+      }
+    }
+    return decoded;
+  }
+}
+
+function rememberCoordinatorToken(discovered, value) {
+  const token = decodeEvidenceString(value).trim();
+  if (RECOGNIZABLE_COORDINATOR_TOKEN.test(token)) {
+    discovered.add(token);
+  }
+}
+
+function isHexCharacter(value) {
+  return (
+    (value >= "0" && value <= "9") ||
+    (value >= "a" && value <= "f") ||
+    (value >= "A" && value <= "F")
+  );
+}
+
+function isRecognizableTokenAt(text, start) {
+  if (start < 0 || start + 64 > text.length) {
+    return false;
+  }
+  for (let index = start; index < start + 64; index += 1) {
+    if (!isHexCharacter(text[index])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function countBackslashesBefore(text, index) {
+  let count = 0;
+  for (let cursor = index - 1; cursor >= 0 && text[cursor] === "\\"; cursor -= 1) {
+    count += 1;
+    if (count > 1_024) {
+      return count;
+    }
+  }
+  return count;
+}
+
+function readEscapedDelimiter(text, start, delimiter) {
+  let slashCount = 0;
+  let cursor = start;
+  while (cursor < text.length && text[cursor] === "\\") {
+    slashCount += 1;
+    cursor += 1;
+    if (slashCount > 1_024) {
+      return null;
+    }
+  }
+  return text[cursor] === delimiter
+    ? { quote: cursor, slashes: slashCount, delimiter }
+    : null;
+}
+
+function readEscapedQuote(text, start) {
+  return readEscapedDelimiter(text, start, '"');
+}
+
+function readShellDelimiter(text, start) {
+  let cursor = start;
+  while (cursor < text.length && text[cursor] === "\\") {
+    cursor += 1;
+  }
+  return ["'", '"'].includes(text[cursor])
+    ? readEscapedDelimiter(text, start, text[cursor])
+    : null;
+}
+
+function findEscapedQuoteEnd(
+  text,
+  openingQuote,
+  openingSlashes,
+  delimiter = '"',
+) {
+  let slashCount = 0;
+  for (let cursor = openingQuote + 1; cursor < text.length; cursor += 1) {
+    const character = text[cursor];
+    if (character === "\\") {
+      slashCount += 1;
+      continue;
+    }
+    if (character === delimiter && slashCount === openingSlashes) {
+      return cursor;
+    }
+    slashCount = 0;
+  }
+  return -1;
+}
+
+function skipHorizontalWhitespace(text, start) {
+  let cursor = start;
+  while (cursor < text.length && (text[cursor] === " " || text[cursor] === "\t")) {
+    cursor += 1;
+  }
+  return cursor;
+}
+
+function coordinatorFieldAt(text, start, name) {
+  if (!text.startsWith(name, start)) {
+    return null;
+  }
+  const keyQuote = start - 1 - countBackslashesBefore(text, start);
+  if (keyQuote < 0 || text[keyQuote] !== '"') {
+    return null;
+  }
+  const keyEnd = start + name.length;
+  const keyClosing = readEscapedQuote(text, keyEnd);
+  if (!keyClosing) {
+    return null;
+  }
+  let cursor = skipHorizontalWhitespace(text, keyClosing.quote + 1);
+  if (text[cursor] !== ":") {
+    return null;
+  }
+  cursor = skipHorizontalWhitespace(text, cursor + 1);
+  const valueOpening = readEscapedQuote(text, cursor);
+  if (!valueOpening) {
+    return {
+      valueStart: cursor,
+      valueEnd: -1,
+      end: cursor,
+    };
+  }
+  const valueEnd = findEscapedQuoteEnd(
+    text,
+    valueOpening.quote,
+    valueOpening.slashes,
+  );
+  return {
+    valueStart: valueOpening.quote + 1,
+    valueEnd,
+    suffixStart:
+      valueEnd === -1
+        ? text.length
+        : valueEnd - countBackslashesBefore(text, valueEnd),
+    end: valueEnd === -1 ? text.length : valueEnd + 1,
+  };
+}
+
+function coordinatorOptionAt(text, start) {
+  if (!text.startsWith(COORDINATOR_OPTION, start)) {
+    return null;
+  }
+  const optionEnd = start + COORDINATOR_OPTION.length;
+  if (
+    optionEnd < text.length &&
+    text[optionEnd] !== "=" &&
+    text[optionEnd] !== " " &&
+    text[optionEnd] !== "\t"
+  ) {
+    return null;
+  }
+  let cursor = optionEnd;
+  if (text[cursor] === "=") {
+    cursor = skipHorizontalWhitespace(text, cursor + 1);
+  } else {
+    cursor = skipHorizontalWhitespace(text, cursor);
+  }
+  if (cursor >= text.length) {
+    return null;
+  }
+  const opening = readShellDelimiter(text, cursor);
+  if (opening) {
+    const valueEnd = findEscapedQuoteEnd(
+      text,
+      opening.quote,
+      opening.slashes,
+      opening.delimiter,
+    );
+    return {
+      valueStart: opening.quote + 1,
+      valueEnd,
+      suffixStart:
+        valueEnd === -1
+          ? text.length
+          : valueEnd - countBackslashesBefore(text, valueEnd),
+      end: valueEnd === -1 ? text.length : valueEnd + 1,
+    };
+  }
+  let valueEnd = cursor;
+  while (
+    valueEnd < text.length &&
+    ![" ", "\t", "\r", "\n", "'", '"', "`", "\\"].includes(
+      text[valueEnd],
+    )
+  ) {
+    valueEnd += 1;
+  }
+  return { valueStart: cursor, valueEnd, end: valueEnd };
+}
+
+function jsonArrayOptionAt(text, start) {
+  if (!text.startsWith(COORDINATOR_OPTION, start)) {
+    return null;
+  }
+  const optionOpening = countBackslashesBefore(text, start);
+  const optionQuote = start - optionOpening - 1;
+  if (optionQuote < 0 || text[optionQuote] !== '"') {
+    return null;
+  }
+  const optionClosing = readEscapedQuote(text, start + COORDINATOR_OPTION.length);
+  if (!optionClosing) {
+    return null;
+  }
+  let cursor = skipHorizontalWhitespace(text, optionClosing.quote + 1);
+  if (text[cursor] !== ",") {
+    return null;
+  }
+  cursor = skipHorizontalWhitespace(text, cursor + 1);
+  const valueOpening = readEscapedQuote(text, cursor);
+  if (!valueOpening) {
+    return null;
+  }
+  const valueEnd = findEscapedQuoteEnd(
+    text,
+    valueOpening.quote,
+    valueOpening.slashes,
+  );
+  return {
+    valueStart: valueOpening.quote + 1,
+    valueEnd,
+    suffixStart:
+      valueEnd === -1
+        ? text.length
+        : valueEnd - countBackslashesBefore(text, valueEnd),
+    end: valueEnd === -1 ? text.length : valueEnd + 1,
+  };
+}
+
+function redactCoordinatorContexts(text, discovered) {
+  let output = "";
+  let copiedThrough = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    let field = null;
+    for (const name of COORDINATOR_TOKEN_FIELD_NAMES) {
+      field = coordinatorFieldAt(text, index, name);
+      if (field) {
+        break;
+      }
+    }
+    const context = field ?? jsonArrayOptionAt(text, index) ?? coordinatorOptionAt(text, index);
+    if (!context) {
+      continue;
+    }
+    if (context.valueEnd < context.valueStart) {
+      index = context.end - 1;
+      continue;
+    }
+    const value = text.slice(context.valueStart, context.valueEnd);
+    rememberCoordinatorToken(discovered, value);
+    output += text.slice(copiedThrough, context.valueStart);
+    output += EVIDENCE_REDACTION_MARKER;
+    copiedThrough = context.suffixStart ?? context.valueEnd;
+    index = context.end - 1;
+  }
+  return copiedThrough === 0
+    ? text
+    : `${output}${text.slice(copiedThrough)}`;
+}
+
+function replaceDiscoveredTokens(text, discovered) {
+  const tokens = new Set([...discovered].map((token) => token.toLowerCase()));
+  if (tokens.size === 0) {
+    return text;
+  }
+  let output = "";
+  let copiedThrough = 0;
+  for (let index = 0; index <= text.length - 64; index += 1) {
+    if (!isRecognizableTokenAt(text, index)) {
+      continue;
+    }
+    const token = text.slice(index, index + 64);
+    if (!tokens.has(token.toLowerCase())) {
+      continue;
+    }
+    output += text.slice(copiedThrough, index);
+    output += EVIDENCE_REDACTION_MARKER;
+    index += 63;
+    copiedThrough = index + 1;
+  }
+  return copiedThrough === 0
+    ? text
+    : `${output}${text.slice(copiedThrough)}`;
+}
+
+function tokenBeforeFieldDelimiter(text, start) {
+  for (let index = start; index <= text.length - 64; index += 1) {
+    if ([",", "}", "]", "\r", "\n"].includes(text[index])) {
+      return null;
+    }
+    if (isRecognizableTokenAt(text, index)) {
+      return text.slice(index, index + 64);
+    }
+  }
+  return null;
+}
+
+function recursivelyRedactJson(value, discovered, depth = 0) {
+  if (depth > 64) {
+    return { value, changed: false };
+  }
+  if (typeof value === "string") {
+    let nested;
+    try {
+      nested = JSON.parse(value);
+    } catch {
+      const redacted = redactCoordinatorContexts(value, discovered);
+      return redacted === value
+        ? { value, changed: false }
+        : { value: redacted, changed: true };
+    }
+    if (!nested || typeof nested !== "object") {
+      const redacted = redactCoordinatorContexts(value, discovered);
+      return redacted === value
+        ? { value, changed: false }
+        : { value: redacted, changed: true };
+    }
+    const result = recursivelyRedactJson(nested, discovered, depth + 1);
+    return result.changed
+      ? { value: JSON.stringify(result.value), changed: true }
+      : { value, changed: false };
+  }
+
+  if (Array.isArray(value)) {
+    let changed = false;
+    for (let index = 0; index < value.length; index += 1) {
+      const item = value[index];
+      if (typeof item === "string") {
+        if (item === "--coordinator-token" && typeof value[index + 1] === "string") {
+          rememberCoordinatorToken(discovered, value[index + 1]);
+          value[index + 1] = EVIDENCE_REDACTION_MARKER;
+          changed = true;
+          index += 1;
+          continue;
+        }
+        if (item.startsWith("--coordinator-token=")) {
+          rememberCoordinatorToken(
+            discovered,
+            item.slice("--coordinator-token=".length),
+          );
+          value[index] = `--coordinator-token=${EVIDENCE_REDACTION_MARKER}`;
+          changed = true;
+          continue;
+        }
+      }
+      const result = recursivelyRedactJson(item, discovered, depth + 1);
+      if (result.changed) {
+        value[index] = result.value;
+        changed = true;
+      }
+    }
+    return { value, changed };
+  }
+
+  if (value && typeof value === "object") {
+    let changed = false;
+    for (const [key, item] of Object.entries(value)) {
+      if (COORDINATOR_TOKEN_FIELD_NAMES.has(key)) {
+        if (typeof item === "string") {
+          rememberCoordinatorToken(discovered, item);
+        }
+        value[key] = EVIDENCE_REDACTION_MARKER;
+        changed = true;
+        continue;
+      }
+      const result = recursivelyRedactJson(item, discovered, depth + 1);
+      if (result.changed) {
+        value[key] = result.value;
+        changed = true;
+      }
+    }
+    return { value, changed };
+  }
+
+  return { value, changed: false };
+}
+
+function redactEvidenceLines(text, discovered) {
+  return text
+    .split("\n")
+    .map((line) => {
+      const hasCarriageReturn = line.endsWith("\r");
+      const body = hasCarriageReturn ? line.slice(0, -1) : line;
+      let parsed;
+      try {
+        parsed = JSON.parse(body);
+      } catch {
+        const redacted = redactCoordinatorContexts(body, discovered);
+        return `${redacted}${hasCarriageReturn ? "\r" : ""}`;
+      }
+      const result = recursivelyRedactJson(parsed, discovered);
+      if (!result.changed) {
+        return line;
+      }
+      return `${JSON.stringify(result.value)}${hasCarriageReturn ? "\r" : ""}`;
+    })
+    .join("\n");
+}
+
+function remainingCoordinatorTokens(text, discovered) {
+  const remaining = new Set();
+  const inspect = (value) => {
+    const token = decodeEvidenceString(value).trim();
+    if (RECOGNIZABLE_COORDINATOR_TOKEN.test(token)) {
+      remaining.add(token);
+    }
+  };
+  for (let index = 0; index < text.length; index += 1) {
+    let context = null;
+    for (const name of COORDINATOR_TOKEN_FIELD_NAMES) {
+      context = coordinatorFieldAt(text, index, name);
+      if (context) {
+        break;
+      }
+    }
+    context = context ?? jsonArrayOptionAt(text, index) ?? coordinatorOptionAt(text, index);
+    if (!context) {
+      continue;
+    }
+    if (context.valueEnd >= context.valueStart) {
+      inspect(text.slice(context.valueStart, context.valueEnd));
+      index = context.end - 1;
+    } else {
+      const token = tokenBeforeFieldDelimiter(text, context.valueStart);
+      if (token) {
+        remaining.add(token);
+      }
+      index = context.end - 1;
+    }
+  }
+  const knownTokens = new Set(
+    [...discovered].map((token) => token.toLowerCase()),
+  );
+  for (let index = 0; index <= text.length - 64; index += 1) {
+    if (!isRecognizableTokenAt(text, index)) {
+      continue;
+    }
+    const token = text.slice(index, index + 64);
+    if (knownTokens.has(token.toLowerCase())) {
+      remaining.add(token);
+      index += 63;
+    }
+  }
+  return remaining;
+}
+
+/**
+ * Redact coordinator bearer tokens from a text or JSONL evidence stream.
+ *
+ * The input is never written by this function. Callers can write the returned
+ * string to a separate export path after this fail-closed check succeeds.
+ */
+function sanitizeEvidenceText(rawEvidence) {
+  if (typeof rawEvidence !== "string") {
+    throw new TypeError("evidence must be a text string");
+  }
+
+  const discovered = new Set();
+  // Parse each JSONL line first. This gives escaped strings an exact JSON
+  // boundary (including nested JSON strings) before textual fallback patterns
+  // handle shell transcripts and malformed/non-JSON lines.
+  let redacted = redactEvidenceLines(rawEvidence, discovered);
+
+  // A discovered bearer value can recur in a trace field, a nested JSONL
+  // payload, or a repeated command. Replace every exact/case variant before
+  // validating the exported bytes.
+  redacted = replaceDiscoveredTokens(redacted, discovered);
+
+  const remaining = remainingCoordinatorTokens(redacted, discovered);
+  if (remaining.size > 0) {
+    throw new Error("evidence export still contains recognizable coordinator token(s)");
+  }
+  return redacted;
 }
 
 function print(value) {
@@ -1176,6 +1928,37 @@ function main(args = process.argv.slice(2)) {
     print(buildScaffold());
     return;
   }
+  if (command === "export-evidence") {
+    const input = argumentValue(args, "--input");
+    const output = argumentValue(args, "--output");
+    if (!input || !existsSync(resolve(input)) || !statSync(resolve(input)).isFile()) {
+      throw new Error("export-evidence requires --input pointing to a text evidence file");
+    }
+    if (!output) {
+      throw new Error("export-evidence requires --output pointing to a separate redacted file");
+    }
+    const inputPath = resolve(input);
+    const outputPath = resolve(output);
+    if (inputPath === outputPath) {
+      throw new Error("export-evidence refuses to overwrite the private raw evidence");
+    }
+    if (
+      existsSync(outputPath) &&
+      realpathSync(inputPath) === realpathSync(outputPath)
+    ) {
+      throw new Error("export-evidence refuses to overwrite the private raw evidence");
+    }
+    const redacted = sanitizeEvidenceText(readFileSync(inputPath, "utf8"));
+    writeFileSync(outputPath, redacted, "utf8");
+    print({
+      ok: true,
+      input: inputPath,
+      output: outputPath,
+      raw_preserved: true,
+      redacted_bytes: Buffer.byteLength(redacted, "utf8"),
+    });
+    return;
+  }
   if (command === "evaluate") {
     const input = argumentValue(args, "--input");
     if (!input || !existsSync(resolve(input)) || !statSync(resolve(input)).isFile()) {
@@ -1188,8 +1971,39 @@ function main(args = process.argv.slice(2)) {
     }
     return;
   }
+  if (command === "routing-rate") {
+    const inputs = argumentValues(args, "--input");
+    if (
+      inputs.length === 0 ||
+      inputs.some(
+        (input) =>
+          !existsSync(resolve(input)) || !statSync(resolve(input)).isFile(),
+      )
+    ) {
+      throw new Error(
+        "routing-rate requires one or more --input run-record files",
+      );
+    }
+    const inputPaths = inputs.map((input) => resolve(input));
+    const result = summarizeRoutingRates(
+      inputPaths.map((inputPath) => readJson(inputPath)),
+    );
+    print({
+      ...result,
+      command: "routing-rate",
+      input_paths: inputPaths,
+      invocation: {
+        command: "node scripts/skill-eval.mjs routing-rate",
+        input_paths: inputPaths,
+      },
+    });
+    if (!result.ok) {
+      process.exitCode = 2;
+    }
+    return;
+  }
   throw new Error(
-    "usage: skill-eval.mjs contracts | surface-hash | scaffold | evaluate --input FILE",
+    "usage: skill-eval.mjs contracts | surface-hash | scaffold | export-evidence --input FILE --output FILE | evaluate --input FILE | routing-rate --input FILE [--input FILE ...]",
   );
 }
 
@@ -1212,6 +2026,8 @@ export {
   hashBehaviorEntries,
   parseSkillMetadata,
   readBehaviorSurfacePath,
+  sanitizeEvidenceText,
+  summarizeRoutingRates,
   validateRunRecord,
   validateScenarioCatalog,
 };

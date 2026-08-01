@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -11,6 +18,8 @@ import {
   hashBehaviorEntries,
   parseSkillMetadata,
   readBehaviorSurfacePath,
+  sanitizeEvidenceText,
+  summarizeRoutingRates,
   validateRunRecord,
   validateScenarioCatalog,
 } from "../scripts/skill-eval.mjs";
@@ -24,6 +33,8 @@ const PACKAGE_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const catalog = JSON.parse(
   readFileSync(join(PACKAGE_ROOT, "evals", "scenarios.json"), "utf8"),
 );
+const COORDINATOR_TOKEN = "0123456789abcdef".repeat(4);
+const NORMAL_HASH = "fedcba9876543210".repeat(4);
 
 function passingRecord() {
   const record = buildScaffold(catalog);
@@ -123,7 +134,7 @@ function passingRecord() {
 test("behavioral scenario contracts cover activation and false activation", () => {
   const result = validateScenarioCatalog(catalog);
   assert.equal(result.ok, true, result.errors.join("\n"));
-  assert.equal(result.scenario_count, 27);
+  assert.equal(result.scenario_count, 28);
   assert.equal(result.skill_count, 13);
   assert.deepEqual(result.categories, [
     "authority",
@@ -243,6 +254,7 @@ test("behavior surface includes installed handoff and runtime start prompts", ()
   );
   assert.ok(paths.has("evals/fixtures.json"));
   assert.ok(paths.has("scripts/skill-fixture.mjs"));
+  assert.ok(paths.has("assets/project-template/CLAUDE.md"));
   assert.ok(paths.has(".agent-stack/start-prompt-policy.json"));
   const promptEntry = entries.find(
     ([path]) => path === ".agent-stack/start-prompt-policy.json",
@@ -274,6 +286,16 @@ test("behavior surface includes installed handoff and runtime start prompts", ()
   ]);
   assert.notEqual(
     hashBehaviorEntries(changedMaterializer),
+    hashBehaviorEntries(entries),
+  );
+  const changedClaudeAdapter = entries.map(([path, content]) => [
+    path,
+    path === "assets/project-template/CLAUDE.md"
+      ? Buffer.from(`${content.toString("utf8")}\nchanged adapter\n`)
+      : content,
+  ]);
+  assert.notEqual(
+    hashBehaviorEntries(changedClaudeAdapter),
     hashBehaviorEntries(entries),
   );
 });
@@ -309,14 +331,185 @@ test("skill metadata and surface hashes are stable across line endings", () => {
   );
 });
 
+test("evidence sanitizer redacts shell coordinator-token arguments", () => {
+  const raw = [
+    `node .agent-stack/bin/agent-stack.mjs start --coordinator-token ${COORDINATOR_TOKEN}`,
+    `node .agent-stack/bin/agent-stack.mjs checkpoint --coordinator-token='${COORDINATOR_TOKEN}'`,
+  ].join("\n");
+  const redacted = sanitizeEvidenceText(raw);
+  assert.doesNotMatch(redacted, new RegExp(COORDINATOR_TOKEN, "i"));
+  assert.match(redacted, /--coordinator-token \[REDACTED\]/);
+  assert.match(redacted, /--coordinator-token='\[REDACTED\]'/);
+});
+
+test("evidence sanitizer redacts snake and camel JSON token fields", () => {
+  const raw = JSON.stringify({
+    coordinator_token: COORDINATOR_TOKEN,
+    coordinatorToken: COORDINATOR_TOKEN,
+    project_tree_sha256: `sha256:${NORMAL_HASH}`,
+  });
+  const parsed = JSON.parse(sanitizeEvidenceText(raw));
+  assert.equal(parsed.coordinator_token, "[REDACTED]");
+  assert.equal(parsed.coordinatorToken, "[REDACTED]");
+  assert.equal(parsed.project_tree_sha256, `sha256:${NORMAL_HASH}`);
+});
+
+test("evidence sanitizer redacts the whole JSON field when its value has quotes", () => {
+  const raw = JSON.stringify({
+    coordinator_token: 'prefix"suffix',
+    coordinatorToken: "other\\suffix",
+  });
+  const parsed = JSON.parse(sanitizeEvidenceText(raw));
+  assert.equal(parsed.coordinator_token, "[REDACTED]");
+  assert.equal(parsed.coordinatorToken, "[REDACTED]");
+});
+
+test("evidence sanitizer keeps numeric coordinator fields valid JSON", () => {
+  const numericToken = `1${"0".repeat(63)}`;
+  const raw = `{"coordinator_token":${numericToken}}`;
+  const parsed = JSON.parse(sanitizeEvidenceText(raw));
+  assert.equal(parsed.coordinator_token, "[REDACTED]");
+});
+
+test("evidence sanitizer handles JSON argv and escaped shell token arguments", () => {
+  const escapedShell = String.raw`node --coordinator-token \"${COORDINATOR_TOKEN}\"`;
+  const raw = [
+    JSON.stringify({
+      argv: ["node", "--coordinator-token", COORDINATOR_TOKEN],
+    }),
+    JSON.stringify({ command: escapedShell }),
+  ].join("\n");
+  const lines = sanitizeEvidenceText(raw)
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.equal(lines[0].argv[2], "[REDACTED]");
+  assert.equal(
+    lines[1].command,
+    String.raw`node --coordinator-token \"[REDACTED]\"`,
+  );
+  assert.doesNotMatch(
+    JSON.stringify(lines),
+    new RegExp(COORDINATOR_TOKEN, "i"),
+  );
+});
+
+test("evidence sanitizer handles escaped JSONL payloads", () => {
+  const raw = [
+    JSON.stringify({
+      event: "tool-result",
+      payload: JSON.stringify({ coordinatorToken: COORDINATOR_TOKEN }),
+    }),
+    JSON.stringify({
+      event: "tool-result",
+      payload: JSON.stringify({ coordinator_token: COORDINATOR_TOKEN }),
+    }),
+  ].join("\n");
+  const lines = sanitizeEvidenceText(raw)
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  for (const line of lines) {
+    const payload = JSON.parse(line.payload);
+    assert.equal(
+      payload.coordinatorToken ?? payload.coordinator_token,
+      "[REDACTED]",
+    );
+  }
+});
+
+test("evidence sanitizer preserves validity through nested escaped JSONL", () => {
+  const raw = JSON.stringify({
+    payload: JSON.stringify({
+      payload: JSON.stringify({ coordinator_token: COORDINATOR_TOKEN }),
+    }),
+  });
+  const outer = JSON.parse(sanitizeEvidenceText(raw));
+  const middle = JSON.parse(outer.payload);
+  const inner = JSON.parse(middle.payload);
+  assert.equal(inner.coordinator_token, "[REDACTED]");
+  assert.doesNotMatch(
+    JSON.stringify(outer),
+    new RegExp(COORDINATOR_TOKEN, "i"),
+  );
+});
+
+test("evidence sanitizer replaces repeated discovered token values", () => {
+  const raw = [
+    `first observation: ${COORDINATOR_TOKEN}`,
+    JSON.stringify({ coordinator_token: COORDINATOR_TOKEN }),
+    `last observation: ${COORDINATOR_TOKEN}`,
+  ].join("\n");
+  const redacted = sanitizeEvidenceText(raw);
+  assert.doesNotMatch(redacted, new RegExp(COORDINATOR_TOKEN, "i"));
+  assert.equal(
+    redacted.split("[REDACTED]").length - 1,
+    3,
+  );
+});
+
+test("evidence sanitizer leaves ordinary hashes intact", () => {
+  const raw = [
+    `sha256:${NORMAL_HASH}`,
+    JSON.stringify({ project_tree_sha256: `sha256:${NORMAL_HASH}` }),
+  ].join("\n");
+  assert.equal(sanitizeEvidenceText(raw), raw);
+});
+
+test("evidence sanitizer handles long adversarial non-JSON input linearly", () => {
+  const raw = `${String.raw`\\"`.repeat(50_000)}${"x".repeat(100_000)}`;
+  assert.equal(sanitizeEvidenceText(raw), raw);
+});
+
+test("evidence sanitizer fails closed on an unredacted coordinator field", () => {
+  assert.throws(
+    () =>
+      sanitizeEvidenceText(
+        `{"coordinator_token":[${COORDINATOR_TOKEN}]}`,
+      ),
+    /still contains recognizable coordinator token/,
+  );
+});
+
+test("evidence export preserves private raw input and writes a redacted sibling", () => {
+  const target = mkdtempSync(join(tmpdir(), "uas-skill-eval-"));
+  const input = join(target, "raw.jsonl");
+  const output = join(target, "redacted.jsonl");
+  const raw = JSON.stringify({ coordinator_token: COORDINATOR_TOKEN });
+  try {
+    writeFileSync(input, raw, "utf8");
+    const result = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          join(PACKAGE_ROOT, "scripts", "skill-eval.mjs"),
+          "export-evidence",
+          "--input",
+          input,
+          "--output",
+          output,
+        ],
+        { encoding: "utf8" },
+      ),
+    );
+    assert.equal(result.ok, true);
+    assert.equal(result.raw_preserved, true);
+    assert.equal(readFileSync(input, "utf8"), raw);
+    assert.equal(
+      JSON.parse(readFileSync(output, "utf8")).coordinator_token,
+      "[REDACTED]",
+    );
+  } finally {
+    rmSync(target, { recursive: true, force: true });
+  }
+});
+
 test("a complete live run record passes against the current behavior surface", () => {
   const record = passingRecord();
   assert.equal(record.schema_version, 2);
   const result = validateRunRecord(record, catalog);
   assert.equal(result.ok, true, JSON.stringify(result, null, 2));
   assert.deepEqual(result.summary, {
-    total: 27,
-    passed: 27,
+    total: 28,
+    passed: 28,
     failed: 0,
   });
   assert.equal(result.surface_hash, behaviorSurfaceHash());
@@ -484,6 +677,154 @@ test("false activation fails the negative scenario", () => {
   );
 });
 
+test("routing reliability is reported as k/N per harness and model", () => {
+  const first = passingRecord();
+  const second = passingRecord();
+  for (const item of second.cases) {
+    item.harness_session.id = `${item.harness_session.id}:second`;
+  }
+  const route = second.cases.find(
+    (item) => item.scenario_id === "flexible-direct-bypass",
+  );
+  route.observed.activated_skills =
+    route.observed.activated_skills.filter(
+      (skill) => skill !== "run-autonomous-delivery",
+    );
+  second.cases
+    .find((item) => item.scenario_id === "negative-explanation-only")
+    .observed.activated_skills.push("run-autonomous-delivery");
+
+  const result = summarizeRoutingRates([first, second], catalog);
+  assert.equal(result.ok, true);
+  assert.equal(result.groups.length, 1);
+  assert.equal(result.groups[0].run_records, 2);
+  assert.equal(result.groups[0].reliability_ready, true);
+  assert.equal(result.groups[0].evaluated_runs_passed, 1);
+  const directRoute = result.groups[0].routes.find(
+    (item) =>
+      item.scenario_id === "flexible-direct-bypass" &&
+      item.skill === "run-autonomous-delivery" &&
+      item.expected === "activate",
+  );
+  assert.deepEqual(directRoute, {
+    scenario_id: "flexible-direct-bypass",
+    skill: "run-autonomous-delivery",
+    expected: "activate",
+    matched: 1,
+    observed_activated: 1,
+    attempts: 2,
+    rate: "1/2",
+  });
+  const deliverySkill =
+    result.groups[0].required_activation_recall.find(
+      (item) => item.skill === "run-autonomous-delivery",
+    );
+  assert.ok(deliverySkill.opportunities > 2);
+  assert.match(deliverySkill.rate, /^\d+\/\d+$/);
+  const falseActivation =
+    result.groups[0].forbidden_activation_compliance.find(
+      (item) => item.skill === "run-autonomous-delivery",
+    );
+  assert.ok(
+    falseActivation.not_activated <
+      falseActivation.opportunities,
+  );
+  const negativeRoute = result.groups[0].routes.find(
+    (item) =>
+      item.scenario_id === "negative-explanation-only" &&
+      item.skill === "run-autonomous-delivery" &&
+      item.expected === "not-activate",
+  );
+  assert.equal(negativeRoute.matched, 1);
+  assert.equal(negativeRoute.observed_activated, 1);
+  assert.equal(negativeRoute.rate, "1/2");
+  assert.match(result.boundary, /do not authenticate/);
+
+  const incomplete = passingRecord();
+  incomplete.cases = incomplete.cases.slice(0, 1);
+  assert.equal(
+    summarizeRoutingRates([incomplete, second], catalog).ok,
+    false,
+  );
+
+  const duplicate = summarizeRoutingRates(
+    [first, structuredClone(first)],
+    catalog,
+  );
+  assert.equal(duplicate.ok, false);
+  assert.match(duplicate.errors.join("\n"), /reuses a harness session/);
+
+  for (const mutate of [
+    (record) => {
+      delete record.cases[0].observed.question_count;
+    },
+    (record) => {
+      record.cases[0].final_baseline_ancestor = false;
+    },
+    (record) => {
+      record.cases[0].final_project_state_sha256 =
+        `sha256:${"0".repeat(64)}`;
+    },
+  ]) {
+    const invalid = passingRecord();
+    const independent = passingRecord();
+    for (const item of independent.cases) {
+      item.harness_session.id =
+        `${item.harness_session.id}:independent`;
+    }
+    mutate(invalid);
+    const rejected = summarizeRoutingRates(
+      [invalid, independent],
+      catalog,
+    );
+    assert.equal(rejected.ok, false);
+    assert.match(
+      rejected.errors.join("\n"),
+      /lacks current structured evidence/,
+    );
+  }
+});
+
+test("routing-rate CLI output identifies its input records and invocation", () => {
+  const target = mkdtempSync(join(tmpdir(), "uas-routing-rate-"));
+  const firstPath = join(target, "first.json");
+  const secondPath = join(target, "second.json");
+  const first = passingRecord();
+  const second = passingRecord();
+  for (const item of second.cases) {
+    item.harness_session.id = `${item.harness_session.id}:second`;
+  }
+  try {
+    writeFileSync(firstPath, `${JSON.stringify(first)}\n`, "utf8");
+    writeFileSync(secondPath, `${JSON.stringify(second)}\n`, "utf8");
+    const result = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          join(PACKAGE_ROOT, "scripts", "skill-eval.mjs"),
+          "routing-rate",
+          "--input",
+          firstPath,
+          "--input",
+          secondPath,
+        ],
+        { encoding: "utf8" },
+      ),
+    );
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(result.command, "routing-rate");
+    assert.deepEqual(result.input_paths, [firstPath, secondPath]);
+    assert.equal(
+      result.invocation.command,
+      "node scripts/skill-eval.mjs routing-rate",
+    );
+    assert.deepEqual(result.invocation.input_paths, [firstPath, secondPath]);
+    assert.equal(result.groups[0].reliability_ready, true);
+  } finally {
+    rmSync(target, { recursive: true, force: true });
+  }
+});
+
 test("telemetry diagnosis requires explicit activation and rejects project writes", () => {
   const record = passingRecord();
   const telemetry = record.cases.find(
@@ -620,10 +961,6 @@ test("bounded DIRECT delivery requires implementation and verification evidence"
   const direct = record.cases.find(
     (item) => item.scenario_id === "flexible-direct-bypass",
   );
-  direct.observed.activated_skills =
-    direct.observed.activated_skills.filter(
-      (name) => name !== "build-vertical-slice",
-    );
   direct.observed.performed_actions =
     direct.observed.performed_actions.filter(
       (action) => action !== "run_project_tests",
@@ -634,7 +971,7 @@ test("bounded DIRECT delivery requires implementation and verification evidence"
     );
   const result = validateRunRecord(record, catalog);
   assert.equal(result.ok, false);
-  assert.match(
+  assert.doesNotMatch(
     JSON.stringify(result),
     /required skill did not activate: build-vertical-slice/,
   );
@@ -694,6 +1031,62 @@ test("simple onboarding separates recommendation from prior approval", () => {
   );
 });
 
+test("complete external brief audit stops DRAFT without an approval question", () => {
+  const complete = catalog.scenarios.find(
+    (scenario) => scenario.id === "flexible-external-complete-prd",
+  );
+  assert.equal(complete.expected.maximum_questions, 0);
+  assert.equal(complete.expected.maximum_questions_per_turn, 0);
+  assert.deepEqual(complete.expected.required_artifact_states, [
+    {
+      path: ".agent-stack/artifacts/BRIEF.md",
+      status: "DRAFT",
+      lock_state: "unlocked",
+    },
+  ]);
+  assert.ok(
+    complete.expected.required_outcomes.includes("no_residual_questions"),
+  );
+  assert.ok(
+    complete.expected.required_outputs.includes(
+      "complete_draft_brief_ready_for_approval",
+    ),
+  );
+
+  const record = passingRecord();
+  const observed = record.cases.find(
+    (item) => item.scenario_id === "flexible-external-complete-prd",
+  );
+  observed.observed.asked_clarifying_question = true;
+  observed.observed.question_count = 1;
+  observed.observed.max_questions_in_turn = 1;
+  const result = validateRunRecord(record, catalog);
+  assert.equal(result.ok, false);
+  assert.match(JSON.stringify(result), /a clarifying question was forbidden/);
+
+  const briefOnly = catalog.scenarios.find(
+    (scenario) => scenario.id === "flexible-brief-only",
+  );
+  assert.deepEqual(briefOnly.expected.required_artifact_states, [
+    {
+      path: ".agent-stack/artifacts/BRIEF.md",
+      status: "APPROVED",
+      lock_state: "unlocked",
+    },
+  ]);
+  assert.ok(
+    briefOnly.expected.required_outputs.includes("approved_working_brief"),
+  );
+
+  const promotion = catalog.scenarios.find(
+    (scenario) => scenario.id === "flexible-approved-promotion",
+  );
+  assert.ok(promotion.expected.must_activate.includes("shape-project"));
+  assert.ok(
+    promotion.expected.must_not_activate.includes("develop-project-brief"),
+  );
+});
+
 test("noncanonical artifact declarations are recorded as invalid", () => {
   const record = passingRecord();
   const promotion = record.cases.find(
@@ -714,6 +1107,28 @@ test("noncanonical artifact declarations are recorded as invalid", () => {
     JSON.stringify(result),
     /status must be DRAFT, APPROVED, ABSENT, or INVALID/,
   );
+});
+
+test("promoted contracts require locked decision and verification artifacts", () => {
+  for (const path of [
+    ".agent-stack/artifacts/DECISIONS.md",
+    ".agent-stack/artifacts/VERIFICATION.md",
+  ]) {
+    const record = passingRecord();
+    const promotion = record.cases.find(
+      (item) => item.scenario_id === "flexible-approved-promotion",
+    );
+    const artifact = promotion.observed.artifacts.find(
+      (candidate) => candidate.path === path,
+    );
+    artifact.lock_state = "unlocked";
+    const result = validateRunRecord(record, catalog);
+    assert.equal(result.ok, false);
+    assert.match(
+      JSON.stringify(result),
+      /expected APPROVED\/locked but observed APPROVED\/unlocked/,
+    );
+  }
 });
 
 test("any noncanonical artifact declaration fails without an expected state", () => {
@@ -757,10 +1172,30 @@ test("phase activation matches real workflow boundaries", () => {
     "develop-project-brief",
   ]);
   assert.ok(incomplete.expected.must_not_activate.includes("shape-project"));
+  assert.equal(
+    incomplete.expected.forbidden_actions.includes("write_project_files"),
+    false,
+  );
+  assert.ok(
+    incomplete.expected.forbidden_actions.includes("write_product_code"),
+  );
+  assert.deepEqual(incomplete.expected.required_artifact_states, [
+    {
+      path: ".agent-stack/artifacts/BRIEF.md",
+      status: "DRAFT",
+      lock_state: "unlocked",
+    },
+  ]);
+  assert.deepEqual(incomplete.expected.required_outputs, [
+    "rough_brief",
+    "one_consequential_question",
+  ]);
 
   const direct = catalog.scenarios.find(
     (scenario) => scenario.id === "direct-delivery",
   );
+  assert.ok(direct.expected.must_activate.includes("run-autonomous-delivery"));
+  assert.ok(direct.expected.must_not_activate.includes("develop-project-brief"));
   assert.ok(direct.expected.must_not_activate.includes("close-review-loop"));
   assert.equal(direct.expected.required_actions.includes("write_test"), false);
   assert.deepEqual(direct.expected.required_write_paths, ["src/session.mjs"]);
@@ -792,6 +1227,18 @@ test("phase activation matches real workflow boundaries", () => {
     "develop-project-brief",
   ]);
 
+  const briefOnly = catalog.scenarios.find(
+    (scenario) => scenario.id === "flexible-brief-only",
+  );
+  assert.deepEqual(briefOnly.expected.must_activate, [
+    "develop-project-brief",
+  ]);
+  assert.ok(
+    briefOnly.expected.must_not_activate.includes(
+      "run-autonomous-delivery",
+    ),
+  );
+
   const secretAudit = catalog.scenarios.find(
     (scenario) => scenario.id === "flexible-external-secret-redaction",
   );
@@ -801,6 +1248,21 @@ test("phase activation matches real workflow boundaries", () => {
   assert.ok(
     secretAudit.expected.must_not_activate.includes(
       "run-autonomous-delivery",
+    ),
+  );
+
+  const explanationOnly = catalog.scenarios.find(
+    (scenario) => scenario.id === "negative-explanation-only",
+  );
+  assert.deepEqual(explanationOnly.expected.must_activate, []);
+  assert.ok(
+    explanationOnly.expected.must_not_activate.includes(
+      "run-autonomous-delivery",
+    ),
+  );
+  assert.ok(
+    explanationOnly.expected.must_not_activate.includes(
+      "develop-project-brief",
     ),
   );
 

@@ -38,14 +38,17 @@ Use the first matching route:
    intent that needs development;
 4. DIRECT clear bounded testable work.
 
-Apply `$develop-project-brief` only for EXTERNAL or DISCOVER. Preserve supplied
-sources unchanged, persist only bounded redacted provenance, and reconcile
-source claims against repository reality. A supporting screenshot, log, or
-attachment does not turn otherwise clear bounded work into EXTERNAL, and clear
-bounded work remains DIRECT in a new or empty repository. DIRECT work keeps the
-proportionate micro-brief path. RESUME continues the first unmet condition
-without reopening closed product decisions; completed state and a fully
-satisfied lock do not hijack a new request.
+For end-to-end EXTERNAL or DISCOVER work, activate
+`$run-autonomous-delivery` first; its intake stage then activates
+`$develop-project-brief`. Activate `$develop-project-brief` directly only when
+the request is explicitly limited to brief refinement, source audit, or
+reconciliation. Preserve supplied sources unchanged, persist only bounded
+redacted provenance, and reconcile source claims against repository reality. A
+supporting screenshot, log, or attachment does not turn otherwise clear
+bounded work into EXTERNAL, and clear bounded work remains DIRECT in a new or
+empty repository. DIRECT work keeps the proportionate micro-brief path. RESUME
+continues the first unmet condition without reopening closed product decisions;
+completed state and a fully satisfied lock do not hijack a new request.
 
 ## Workflow Loading
 
@@ -55,9 +58,13 @@ Use one route-aware workflow contract across capable coding harnesses:
 - a request explicitly limited to brief refinement, source audit, or
   reconciliation loads `$develop-project-brief` directly and stops before
   delivery;
-- end-to-end delivery and RESUME load `$run-autonomous-delivery`;
-- entering implementation loads `$build-vertical-slice`;
-- entering verification loads `$verify-change`;
+- end-to-end delivery and RESUME load `$run-autonomous-delivery`; that
+  controller owns implementation and verification quality gates without
+  requiring nested native phase activations;
+- an explicitly phase-specific implementation request loads
+  `$build-vertical-slice` directly;
+- an explicitly phase-specific verification request loads `$verify-change`
+  directly;
 - `$close-review-loop` loads only for an existing pull request or an external
   provider or human review thread;
 - work readiness, evidence reports, and bounded campaign requests load
@@ -74,6 +81,19 @@ In behavioral evidence, `activated_skills` may name either a native activation
 or a hash-bound read of that installed skill. The trace must retain which mode
 occurred plus the path and hash for a file load; never call a file read a native
 activation.
+
+After an applicable skill is actually activated or hash-bound read, record the
+event with `node .agent-stack/bin/agent-stack.mjs evidence activate` as soon as
+the current session owns the checkout through `start`. Use the skill name,
+the exact installed `SKILL.md` path that was activated or read, `native` or
+`file-read` mode, current harness and model, one stable run ID, and the
+coordinator token. Use one stable event ID for the specific activation so a
+retry is idempotent while a later activation remains a separate event. Never
+write this receipt before activation, guess the skill path, or write without
+checkout ownership and repository-write authority. For a read-only request,
+retain the exposed trace outside project state and report that the receipt was
+not persisted. This is agent-recorded trace evidence, not independent proof
+that a harness tool call occurred.
 
 A question that asks the user to accept a recommendation ends the turn. Do not
 continue as though the recommendation approved itself. A prior explicit
@@ -170,7 +190,8 @@ recording progress, reconciling a configured work provider, or proving
 completion. `.agent-stack/work-items.json` is the portable normalized ledger.
 `.agent-stack/evidence-graph.json` indexes bounded references that connect
 intent, requirements, decisions, work, implementation, tests, review, and
-release.
+release. It also retains bounded agent-recorded skill activation receipts so
+routing can be inspected without parsing a raw transcript.
 
 Run `work validate` and `evidence validate` before relying on these files.
 Use only canonical statuses and graph relations. An external work-provider
@@ -222,6 +243,11 @@ integration, final verification, and cleanup.
   coordination cost, continue serially.
 - Treat every worker result as untrusted until the primary agent inspects and
   verifies it.
+- A separate reviewer or worker exists only after the adapter returns a
+  non-empty worker ID. Wait for that exact ID and retain the inspectable
+  returned result. A failed spawn, empty wait, missing result, or primary-agent
+  self-review cannot satisfy independent review. Preserve useful tested work,
+  but report the review as blocked and do not call the change PR-ready.
 
 ## Quality Contract
 

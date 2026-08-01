@@ -80,6 +80,7 @@ const closeReviewSkill = readFileSync(
   join(PACKAGE_ROOT, "skills/close-review-loop/SKILL.md"),
   "utf8",
 );
+const closeReviewDescription = frontmatterDescription(closeReviewSkill);
 const runDeliverySkill = readFileSync(
   join(PACKAGE_ROOT, "skills/run-autonomous-delivery/SKILL.md"),
   "utf8",
@@ -95,6 +96,17 @@ const developBriefSkill = readFileSync(
   join(PACKAGE_ROOT, "skills/develop-project-brief/SKILL.md"),
   "utf8",
 );
+function frontmatterDescription(source) {
+  const frontmatter = source.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  assert.ok(frontmatter, "skill must have YAML frontmatter");
+  const description = frontmatter[1]
+    .split(/\r?\n/)
+    .find((line) => line.startsWith("description: "));
+  assert.ok(description, "skill frontmatter must contain description");
+  return description.slice("description: ".length);
+}
+const runDeliveryDescription = frontmatterDescription(runDeliverySkill);
+const developBriefDescription = frontmatterDescription(developBriefSkill);
 const briefContract = readFileSync(
   join(
     PACKAGE_ROOT,
@@ -135,6 +147,17 @@ const verifyChangeSkill = readFileSync(
   join(PACKAGE_ROOT, "skills/verify-change/SKILL.md"),
   "utf8",
 );
+const coordinateDeliverySkill = readFileSync(
+  join(PACKAGE_ROOT, "skills/coordinate-parallel-delivery/SKILL.md"),
+  "utf8",
+);
+const delegationContract = readFileSync(
+  join(
+    PACKAGE_ROOT,
+    "skills/coordinate-parallel-delivery/references/delegation-contract.md",
+  ),
+  "utf8",
+);
 const setupProjectSkill = readFileSync(
   join(PACKAGE_ROOT, "skills/setup-autonomous-project/SKILL.md"),
   "utf8",
@@ -172,6 +195,10 @@ const handoffTemplate = readFileSync(
 );
 const projectAgents = readFileSync(
   join(PACKAGE_ROOT, "assets/project-template/AGENTS.md"),
+  "utf8",
+);
+const claudeAdapter = readFileSync(
+  join(PACKAGE_ROOT, "assets/project-template/CLAUDE.md"),
   "utf8",
 );
 const geminiAdapter = readFileSync(
@@ -398,6 +425,10 @@ test("installed doctor guidance is version-bound and directory metadata fits", (
 });
 
 test("review closure validates claims and has one disposition vocabulary", () => {
+  const decodedCloseReviewDescription = JSON.parse(closeReviewDescription);
+  assert.equal(typeof decodedCloseReviewDescription, "string");
+  assert.match(decodedCloseReviewDescription, /review thread: address/);
+
   const dispositionLine = reviewClosurePolicy.match(
     /^Disposition: (.+)$/m,
   );
@@ -476,6 +507,28 @@ test("flexible intake stays ordered, proportionate, and source preserving", () =
   assert.match(developBriefSkill, /references\/brief-contract\.md/);
   assert.match(developBriefSkill, /references\/intake-and-reconciliation\.md/);
   assert.match(
+    runDeliveryDescription,
+    /including vague greenfield ideas and elaborate supplied plans/,
+  );
+  assert.match(
+    runDeliveryDescription,
+    /activate develop-project-brief under this controller before shaping/,
+  );
+  assert.match(
+    developBriefDescription,
+    /For an end-to-end DISCOVER or EXTERNAL request, activate run-autonomous-delivery instead/,
+  );
+  assert.match(
+    developBriefDescription,
+    /Activate this directly only when the request is explicitly limited to brief refinement, source audit, or reconciliation/,
+  );
+  assert.match(runDeliveryDescription, /Do not activate for explanation-only/);
+  assert.match(
+    runDeliveryDescription,
+    /requests explicitly limited to brief refinement, source audit, or reconciliation/,
+  );
+  assert.match(developBriefDescription, /Do not activate for .*explanation-only/);
+  assert.match(
     developBriefSkill,
     /brief-only request may invoke this skill directly without starting the\s+delivery controller/,
   );
@@ -484,6 +537,34 @@ test("flexible intake stays ordered, proportionate, and source preserving", () =
     /RESUME and clear bounded DIRECT delivery do not create/,
   );
   assert.match(developBriefSkill, /preserve the source unchanged/);
+  assert.match(
+    developBriefSkill,
+    /explicitly requests an approved brief[\s\S]*counts as acceptance[\s\S]*produce the \*\*APPROVED-ONLY\*\* exit[\s\S]*do not ask for acceptance again/,
+  );
+  assert.match(
+    developBriefSkill,
+    /otherwise, for a request limited to source audit or producing a DRAFT or\s+working brief[\s\S]*do not ask for\s+acceptance/,
+  );
+  assert.match(
+    developBriefSkill,
+    /DRAFT ready for[\s\S]*later approval[\s\S]*pending optional approval is future work, not a blocker\s+or residual\s+question/i,
+  );
+  assert.match(
+    developBriefSkill,
+    /for end-to-end delivery[\s\S]*ask once for acceptance[\s\S]*end the turn/,
+  );
+  assert.match(
+    briefContract,
+    /explicit request from an authorized product owner for an approved brief[\s\S]*counts as acceptance[\s\S]*without asking for acceptance again/,
+  );
+  assert.match(
+    briefContract,
+    /Otherwise, a[\s\S]*gap-free request limited to source audit or producing a DRAFT or working brief[\s\S]*stop without an approval question/,
+  );
+  assert.match(
+    briefContract,
+    /Source\s+completeness alone never grants approval/,
+  );
   assert.match(intakeReconciliation, /already implemented/);
   assert.match(intakeReconciliation, /material conflict/);
   assert.match(
@@ -519,6 +600,23 @@ test("flexible intake stays ordered, proportionate, and source preserving", () =
 });
 
 test("workflow loading stays route-aware and provider-neutral", () => {
+  assert.match(claudeAdapter, /^@AGENTS\.md$/m);
+  assert.match(
+    claudeAdapter,
+    /native\s+`Skill`\s+tool to invoke `run-autonomous-delivery` before any other tool/i,
+  );
+  assert.match(
+    claudeAdapter,
+    /controller owns implementation and verification[\s\S]*(?:it )?does\s+not require nested native activation[\s\S]*`build-vertical-slice`[\s\S]*`verify-change`/i,
+  );
+  assert.doesNotMatch(
+    claudeAdapter,
+    /workflow enters implementation or verification[\s\S]*invoke[\s\S]*`build-vertical-slice`/i,
+  );
+  assert.match(
+    claudeAdapter,
+    /Reading this file or `AGENTS\.md` does not count as skill[\s\S]*activation/i,
+  );
   for (const source of [
     projectAgents,
     geminiAdapter,
@@ -534,13 +632,27 @@ test("workflow loading stays route-aware and provider-neutral", () => {
     assert.match(source, /develop-project-brief/);
   }
   for (const source of [projectAgents, runDeliverySkill, packageCliSource]) {
-    assert.match(source, /implementation.*build-vertical-slice/is);
-    assert.match(source, /verification.*verify-change/is);
+    assert.match(
+      source,
+      /explicitly\s+(?:phase-specific|limited\s+to)\s+implementation[\s\S]*build-vertical-slice/is,
+    );
+    assert.match(
+      source,
+      /explicitly\s+(?:phase-specific|limited\s+to)\s+verification[\s\S]*verify-change/is,
+    );
+    assert.match(
+      source,
+      /(?:(?:without\s+requiring)|(?:does\s+not\s+require))\s+(?:a\s+)?nested native[\s\S]*(?:build-vertical-slice|verify-change)|controller owns routine implementation and verification/is,
+    );
     assert.match(
       source,
       /close-review-loop.*existing pull request.*(?:provider|human).*review thread/is,
     );
   }
+  assert.match(
+    runDeliverySkill,
+    /focused checks[\s\S]*deterministic full gate[\s\S]*evidence matrix[\s\S]*binary readiness/i,
+  );
   assert.match(
     manageProjectWorkSkill,
     /provider-write readiness[\s\S]*diagramming[\s\S]*bounded campaign/i,
@@ -553,6 +665,35 @@ test("workflow loading stays route-aware and provider-neutral", () => {
     projectAgents,
     /can do neither safely[\s\S]*capability limitation[\s\S]*do not force/i,
   );
+});
+
+test("independent review fails closed without a real separate result", () => {
+  for (const source of [
+    projectAgents,
+    handoffTemplate,
+    runDeliverySkill,
+    verifyChangeSkill,
+    coordinateDeliverySkill,
+    delegationContract,
+  ]) {
+    assert.match(source, /separate reviewer|worker or thread ID/i);
+    assert.match(
+      source,
+      /returns?\s+an inspectable\s+result|returned result|worker result/i,
+    );
+    assert.match(source, /self-review/i);
+    assert.match(source, /blocked|incomplete/i);
+  }
+  for (const source of [
+    projectAgents,
+    handoffTemplate,
+    runDeliverySkill,
+    verifyChangeSkill,
+    coordinateDeliverySkill,
+    delegationContract,
+  ]) {
+    assert.doesNotMatch(source, /Ed25519|evaluation-authority|outer collector/i);
+  }
 });
 
 test("working brief and lock guidance preserve honest promotion boundaries", () => {
@@ -570,7 +711,7 @@ test("working brief and lock guidance preserve honest promotion boundaries", () 
   }
   assert.match(
     trustGuide,
-    /requires each selected artifact to\s+contain exactly one visible `Status: APPROVED`/,
+    /requires each selected artifact to contain\s+exactly one visible `Status: APPROVED` declaration/,
   );
   assert.match(trustGuide, /`Material open conflicts: NO` declaration/);
   assert.match(trustGuide, /unresolved\s+double-bracket placeholders/);
@@ -695,6 +836,59 @@ test("closed decisions remain canonical and are consumed downstream", () => {
   assert.match(closeReviewSkill, /closed decisions/);
 });
 
+test("promoted briefs lock every canonical contract while direct work stays proportionate", () => {
+  for (const artifact of [
+    "DELIVERY.md",
+    "ARCHITECTURE.md",
+    "SECURITY.md",
+    "VERIFICATION.md",
+    "DECISIONS.md",
+  ]) {
+    for (const source of [shapeProjectSkill, runDeliverySkill]) {
+      assert.match(
+        source,
+        new RegExp(
+          `--artifact \\.agent-stack/artifacts/${artifact.replace(".", "\\.")}`,
+        ),
+      );
+    }
+  }
+  assert.match(
+    shapeProjectSkill,
+    /lock\s+all five canonical promoted\s+contracts/i,
+  );
+  assert.match(shapeProjectSkill, /DIRECT T0\/T1/);
+});
+
+test("documented evaluator JSON commands suppress npm banners", () => {
+  assert.match(behavioralEvals, /npm run --silent eval:scaffold >/);
+  assert.match(
+    behavioralEvals,
+    /npm run --silent eval:fixture -- propose-baselines/,
+  );
+  assert.doesNotMatch(behavioralEvals, /npm run eval:scaffold >/);
+});
+
+test("later milestone roadmap remains detailed and explicitly deferred", () => {
+  const normalized = operatingManual.replace(/\s+/g, " ");
+  for (const marker of [
+    "DEFINITION_OF_DONE.md",
+    "simulated production behavior",
+    "guided no-coder acceptance walkthrough",
+    "post-merge launch-readiness path",
+    "filesystem and containment",
+    "hard token ceiling",
+    "community-skill static risk scanning",
+    "optional specialist packs",
+  ]) {
+    assert.match(normalized, new RegExp(marker));
+  }
+  assert.match(
+    normalized,
+    /Neither later milestone nor the deferred specialist scope is implemented/,
+  );
+});
+
 test("packed installs cover flexible intake and live evidence stays harness-scoped", () => {
   for (const packagedPath of [
     "assets/project-template/.agent-stack/artifacts/BRIEF.md",
@@ -718,7 +912,7 @@ test("packed installs cover flexible intake and live evidence stays harness-scop
   }
   assert.match(
     readme.replace(/\s+/g, " "),
-    /every other supported harness must be named as untested/,
+    /every untested scenario and harness must be named/,
   );
   assert.match(trustGuide, /must not\s+be generalized to another harness/);
 });
@@ -856,6 +1050,11 @@ test("package has no install hooks and guards publication with prepublishOnly", 
     true,
     "package files must include the private vulnerability reporting policy",
   );
+  assert.doesNotMatch(
+    readFileSync(join(PACKAGE_ROOT, "scripts", "packed-smoke.mjs"), "utf8"),
+    /["']exec["'][\s\S]{0,120}--package=/,
+    "packed smoke must execute the already-installed tarball instead of relying on npm exec syntax",
+  );
   assert.equal(packageData.files.includes("lib/"), true);
   assert.equal(packageData.files.includes("evals/"), true);
   assert.equal(
@@ -898,13 +1097,9 @@ test("release docs separate deterministic contracts from live model evidence", (
   assert.match(behavioralEvals, /`must_activate` is empty/);
   assert.match(behavioralEvals, /names every skill currently in the catalog/);
   assert.match(behavioralEvals, /surface.hash/i);
-  assert.match(releaseGuide, /real supported harness/);
+  assert.match(releaseGuide, /real\s+supported harness/);
   assert.equal(
-    [
-      ...releaseGuide.matchAll(
-        /no\s+accepted evaluated report exists or the behavior-surface hash\s+changed/g,
-      ),
-    ].length,
+    [...releaseGuide.matchAll(/behavior-surface hash changed/g)].length,
     2,
   );
   assert.match(

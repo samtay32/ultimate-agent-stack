@@ -27,6 +27,19 @@ Use DRAFT until the product owner accepts the brief for promotion. Use NO for
 material conflicts only when no unresolved contradiction or consequential
 decision can change the current delivery outcome or risk.
 
+### Readiness versus approval
+
+An explicit request from an authorized product owner for an approved brief
+counts as acceptance once consequential gaps are closed; produce the
+APPROVED-ONLY result without asking for acceptance again. Otherwise, a
+gap-free request limited to source audit or producing a DRAFT or working brief
+may finish with `Status: DRAFT` and `Material open conflicts: NO`. Complete
+every readiness item except product-owner approval, report the DRAFT as ready
+for later approval, and stop without an approval question. Pending optional
+approval is future work, not a blocker or residual question. Source
+completeness alone never grants approval, and a DRAFT cannot be promoted until
+the product owner explicitly accepts it.
+
 The CLI mechanically requires every selected lock artifact to contain exactly
 one visible `Status: APPROVED` and `Material open conflicts: NO` declaration.
 Missing, duplicate, unknown, DRAFT, or open-conflict declarations fail closed.

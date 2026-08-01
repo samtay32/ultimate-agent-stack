@@ -65,6 +65,12 @@ reopening a closed decision. A supporting screenshot, log, or attachment does
 not turn clear bounded work into EXTERNAL, and clear bounded work remains DIRECT
 in a new or empty repository.
 
+The end-to-end `run-autonomous-delivery` controller owns the implementation and
+verification gates represented by this flow. `build-vertical-slice` and
+`verify-change` remain available as direct entry points for requests explicitly
+limited to those phases; an otherwise correct controller run does not require
+nested native activation of either phase skill.
+
 ## Component Architecture
 
 ```mermaid
@@ -196,11 +202,13 @@ clear bounded change. It remains unlocked while the Project Steward audits or
 develops intent. Approval changes its working status but does not
 cryptographically authenticate the approver. `shape-project` promotes an
 approved brief into the canonical delivery, architecture, security, decision,
-and verification artifacts; only those final contracts enter the normal lock
-and implementation flow. Artifact declarations use only `DRAFT` or `APPROVED`;
-the protected CLI records lock state separately in `.agent-stack/state.json`.
-A lock refusal does not grant authority to rewrite the artifact's approval or
-conflict declarations.
+and verification artifacts. EXTERNAL or DISCOVER promotion explicitly locks
+all five of those canonical contracts while leaving the brief unlocked. A
+proportionate DIRECT T0/T1 change may retain the configured smaller lock
+selection. Artifact declarations use only `DRAFT` or `APPROVED`; the protected
+CLI records lock state separately in `.agent-stack/state.json`. A lock refusal
+does not grant authority to rewrite the artifact's approval or conflict
+declarations.
 
 ## Decision Semantics
 
@@ -252,9 +260,11 @@ Work tracking uses one normalized contract regardless of provider. The
 repository ledger contains bounded objectives, acceptance criteria, scope,
 dependencies, status, and external references. The evidence graph connects
 those items to intent, requirements, decisions, files, tests, commits, pull
-requests, review, release, checkpoints, and telemetry. It stores references and
-short redacted summaries, not copies of remote systems. The graph is derived
-evidence navigation; the referenced artifacts remain authoritative.
+requests, review, release, checkpoints, and telemetry. It also stores bounded
+agent-recorded skill activation entries bound to the installed skill path and
+hash. It stores references and short redacted summaries, not copies of remote
+systems. The graph is derived evidence navigation; referenced artifacts and
+native harness traces remain authoritative.
 
 `evidence report` derives a provider-neutral summary from those two validated
 files. JSON output contains only counts and bounded identifier samples. Mermaid

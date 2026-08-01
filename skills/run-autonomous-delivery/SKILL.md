@@ -1,6 +1,6 @@
 ---
 name: run-autonomous-delivery
-description: Orchestrate a software change request from raw intent through a verified pull request and review closure. Use explicitly for end-to-end autonomous delivery of a product, feature, bug fix, refactor, migration, or documentation change after the repository has the Ultimate Agent Stack. Do not activate for explanation-only questions or requests that explicitly forbid repository inspection and changes.
+description: Orchestrate a software request from raw intent through a verified pull request and review closure. Use for any end-to-end request to build, change, resume, or deliver software, including vague greenfield ideas and elaborate supplied plans; for DISCOVER or EXTERNAL intake, activate develop-project-brief under this controller before shaping. Do not activate for explanation-only questions, requests explicitly limited to brief refinement, source audit, or reconciliation, or requests that forbid repository inspection and changes.
 ---
 
 # Run Autonomous Delivery
@@ -78,23 +78,47 @@ Do not say "done" until all applicable conditions hold:
    Apply `$secure-launch` to classify exposure and derive only applicable
    launch gates. Discover answers from the repository and authoritative
    sources before asking. Read closed product decisions before proposing an
-   alternative. Lock with:
+   alternative. After EXTERNAL or DISCOVER promotion, lock all five canonical
+   contracts explicitly:
 
    ```bash
-   node .agent-stack/bin/agent-stack.mjs lock
+   node .agent-stack/bin/agent-stack.mjs lock \
+     --artifact .agent-stack/artifacts/DELIVERY.md \
+     --artifact .agent-stack/artifacts/ARCHITECTURE.md \
+     --artifact .agent-stack/artifacts/SECURITY.md \
+     --artifact .agent-stack/artifacts/VERIFICATION.md \
+     --artifact .agent-stack/artifacts/DECISIONS.md
    ```
+
+   For proportionate DIRECT T0/T1 work, the bare `lock` command keeps the
+   configured smaller artifact selection.
 
 4. **Choose the execution strategy.** Apply
    `$coordinate-parallel-delivery`. The primary agent decides whether work stays
    serial or uses bounded native subagents, owns every assignment and
    integration, and never makes the user manage workers.
 5. **Plan vertical slices.** Each slice must be user-observable or operationally demonstrable, independently verifiable, small enough for one focused context, and explicit about blockers.
-6. **Implement.** Apply `$build-vertical-slice` one slice at a time. Keep the repository runnable. Do not mix unrelated cleanup into the change.
-7. **Verify.** Apply `$verify-change`; run focused checks during development and the deterministic full gate before review.
+6. **Implement.** Own implementation in this controller one slice at a time.
+   Preserve the `$build-vertical-slice` quality contract: each slice is
+   demonstrable, focused checks pass, the repository remains runnable, and
+   docs or migrations stay current. End-to-end delivery does not require a
+   nested native activation of that phase skill. A request explicitly limited
+   to implementation may invoke `$build-vertical-slice` directly.
+7. **Verify.** Own verification in this controller. Run focused checks during
+   development and the deterministic full gate before review, and produce the
+   `$verify-change` evidence matrix with its binary readiness result.
+   End-to-end delivery does not require a nested native activation of that
+   phase skill. A request explicitly limited to verification may invoke
+   `$verify-change` directly.
 8. **Review adversarially.** Review two axes independently:
    - standards: correctness, security, reliability, performance, maintainability, operations;
    - intent: acceptance criteria, non-goals, UX, migrations, documentation, compatibility.
    This independent pre-PR review does not activate `$close-review-loop`.
+   It is complete only after a real separate reviewer returns an inspectable
+   result for the exact commit. Primary-agent self-review is not independent.
+   If reviewer dispatch or result collection fails, preserve the tested work,
+   keep review and PR readiness blocked, and report the limitation without
+   manufacturing approval evidence.
 9. **Open or update the PR.** Use a draft while material work remains. Include intent, decisions, test evidence, migration/rollback notes, screenshots or recordings when visual behavior changed, and known risks.
 10. **Close feedback.** Apply `$close-review-loop` with the configured review
     provider only for an existing pull request or an external provider or human

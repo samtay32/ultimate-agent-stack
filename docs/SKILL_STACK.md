@@ -5,22 +5,29 @@
 | Skill | Invocation | Trigger | Output |
 |---|---|---|---|
 | `setup-autonomous-project` | Explicit | New/existing repository needs autonomous setup or repair | Instructions, templates, detected checks, baseline evidence |
-| `run-autonomous-delivery` | Explicit | User wants an end-to-end product/change outcome | Verified PR or merge-ready result |
-| `develop-project-brief` | Routed by delivery or implicit | Vague intent or supplied outside material needs discovery, audit, or reconciliation | Approved working brief or a consequential unresolved decision |
+| `run-autonomous-delivery` | End-to-end controller | User wants an end-to-end product/change outcome, including a vague idea or elaborate supplied plan | Verified PR or merge-ready result |
+| `develop-project-brief` | With delivery for end-to-end EXTERNAL/DISCOVER; direct for brief-only work | Vague intent or supplied outside material needs discovery, audit, or reconciliation | Reviewable DRAFT ready for approval, approved working brief, or a consequential unresolved decision |
 | `coordinate-parallel-delivery` | Routed by delivery | Two or more independent tracks may shorten the critical path | Serial or bounded parallel strategy with primary-agent integration |
 | `shape-project` | Implicit or explicit | An approved brief or clear bounded request needs canonical shaping | Lockable delivery contract |
 | `use-project-knowledge` | Routed by setup/delivery | Prior knowledge may inform work or verified learning should be preserved | Scoped retrieval receipt or redacted learning proposal |
 | `use-project-telemetry` | Explicit or routed by delivery | Configured operational evidence may answer a bounded delivery question | Redacted observation receipt validated against repository evidence |
 | `manage-project-work` | Implicit or routed by delivery | Work must be planned, selected, updated, reconciled, or proven complete | Valid normalized work plus bounded evidence relationships |
-| `build-vertical-slice` | Implicit or explicit | A locked slice is ready to implement | Demonstrable increment with focused tests/docs |
-| `verify-change` | Implicit or explicit | Implementation or a repair batch needs proof | Evidence matrix and binary readiness result |
+| `build-vertical-slice` | Explicit phase-specific | The user explicitly limits the request to implementing a locked slice | Demonstrable increment with focused tests/docs |
+| `verify-change` | Explicit phase-specific | The user explicitly limits the request to proving an implementation or repair batch | Evidence matrix and binary readiness result |
 | `close-review-loop` | Implicit or explicit | PR, CI, human feedback, or configured-provider review needs closure | Closed actionable set and merge decision |
 | `maintain-agent-stack` | Explicit | Package flow, source watch, version, or release needs a safe change | Reviewed package update or authority-gated release |
 | `secure-launch` | Explicit or routed | A project has public, auth, tenant, data, upload, webhook, paid-API, or launch exposure | Proportionate security gates with deterministic evidence |
 
-The setup, delivery, maintenance, and secure-launch entry points are explicit
-so they do not hijack ordinary questions. The delivery disciplines can trigger
-implicitly from precise descriptions.
+The setup, delivery, maintenance, and secure-launch entry points do not hijack
+ordinary questions. An end-to-end build request activates
+`run-autonomous-delivery` even when the starting idea is vague or arrives as an
+elaborate outside plan. On EXTERNAL or DISCOVER routes,
+`develop-project-brief` activates with that controller. It activates alone only
+when the user explicitly limits the request to brief refinement, source audit,
+or reconciliation. The delivery controller owns implementation and
+verification quality gates for its end-to-end route; the phase skills remain
+available as direct entry points for requests explicitly limited to those
+phases and are not mandatory nested native activations.
 
 ## Routing
 
@@ -40,12 +47,13 @@ flowchart LR
     EXISTING --> SECURE["secure-launch"]
     SHAPE --> SECURE["secure-launch"]
     SECURE --> COORD["coordinate-parallel-delivery"]
-    COORD --> BUILD["build-vertical-slice"]
-    BUILD --> VERIFY["verify-change"]
-    VERIFY --> REVIEW["independent pre-PR review"]
+    COORD --> EXEC["Controller-owned implementation + verification gates"]
+    EXEC -. "explicit phase-specific implementation" .-> BUILD["build-vertical-slice"]
+    EXEC -. "explicit phase-specific verification" .-> VERIFY["verify-change"]
+    EXEC --> REVIEW["independent pre-PR review"]
     REVIEW --> PR["open or update pull request"]
     PR --> CLOSE["close-review-loop"]
-    CLOSE -->|repair| BUILD
+    CLOSE -->|repair| EXEC
     CLOSE -->|green| DONE["merge or merge-ready"]
     DONE --> KNOW
     MAINTAIN["maintain-agent-stack"] --> PACKAGE["reviewed npm update"]
@@ -109,12 +117,18 @@ Plugins work in supported desktop/CLI surfaces. Repository skills are the portab
 
 ### Claude Code
 
-The default install copies the canonical skills from `.agents/skills/` into
-`.claude/skills/` and installs the read-only Claude worker profile, including
-in a brand-new folder with no harness markers. Existing `.claude/` or
-`CLAUDE.md` markers are also reported to the agent. Upgrades remember installed
-harnesses, the legacy `--claude` flag remains accepted, and customizations are
-preserved for reconciliation.
+The default install adds a small `CLAUDE.md` adapter that imports the shared
+`AGENTS.md` and requires Claude Code's native delivery controller for
+end-to-end work. The controller owns implementation and verification gates;
+implementation and verification skills remain available for explicitly
+phase-specific requests without mandatory nested activation. It copies the
+canonical skills from `.agents/skills/` into `.claude/skills/` and installs
+the read-only Claude worker profile, including in a brand-new folder with no
+harness markers. A pre-existing `CLAUDE.md` is preserved and proposed for
+reconciliation instead of overwritten. Existing `.claude/` markers are also
+reported to the agent. Upgrades remember installed harnesses, the legacy
+`--claude` flag remains accepted, and customizations are preserved for
+reconciliation.
 
 ### Grok
 

@@ -73,6 +73,7 @@ const EXPECTED_FIXTURE_IDS = new Set([
   "negative-explanation-only",
   "edge-bypass-gates",
   "edge-unbounded-campaign",
+  "edge-reviewer-unavailable",
   "authority-release-boundary",
   "continuity-active-coordinator",
   "existing-project-reconciliation",

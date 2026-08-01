@@ -26,6 +26,10 @@ binding contract. Verify its source-claim ledger and closed decisions, then:
 
 The brief may remain as an unlocked audit record. Later binding changes use the
 audited unlock/change/relock path rather than editing the brief as hidden truth.
+Lock all five promoted contracts explicitly so `DECISIONS.md` and
+`VERIFICATION.md` cannot drift outside the protected state. This expanded lock
+applies to EXTERNAL or DISCOVER promotion and applicable T2+ shaping; it does
+not expand the default artifact set for a proportionate DIRECT T0/T1 change.
 
 ## Architecture Spine
 

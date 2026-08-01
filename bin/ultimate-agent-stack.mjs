@@ -40,10 +40,11 @@ const PACKAGE_JSON = existsSync(join(PACKAGE_ROOT, "package.json"))
   ? JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8"))
   : {
       name: "ultimate-agent-stack",
-      version: "0.8.0",
+      version: "0.9.0",
     };
 const PACKAGE_NAME = PACKAGE_JSON.name;
 const PACKAGE_VERSION = PACKAGE_JSON.version;
+const MINIMUM_NODE_MAJOR = 22;
 const CONFIG_SCHEMA_VERSION = 7;
 const WORK_LEDGER_PATH = ".agent-stack/work-items.json";
 const EVIDENCE_GRAPH_PATH = ".agent-stack/evidence-graph.json";
@@ -485,6 +486,7 @@ const EVIDENCE_RELATIONS = new Set([
   "depends_on",
   "supersedes",
 ]);
+const SKILL_ACTIVATION_MODES = new Set(["native", "file-read"]);
 const EXTERNAL_DATA_POLICIES = new Set([
   "local_only",
   "approved_providers",
@@ -519,6 +521,21 @@ class StackError extends Error {
     this.exitCode = exitCode;
     this.details = details;
   }
+}
+
+function assertSupportedNodeVersion(version = process.versions.node) {
+  const major = Number.parseInt(String(version).split(".")[0], 10);
+  if (!Number.isInteger(major) || major < MINIMUM_NODE_MAJOR) {
+    throw new StackError(
+      `Ultimate Agent Stack requires Node.js ${MINIMUM_NODE_MAJOR} or newer. Detected ${version}. Switch Node versions, then run the command again.`,
+      1,
+    );
+  }
+  return {
+    ok: true,
+    detected: version,
+    minimum_major: MINIMUM_NODE_MAJOR,
+  };
 }
 
 function utcTimestamp() {
@@ -2799,7 +2816,13 @@ function validateEvidenceGraph(graph) {
   rejectUnknownKeys(
     errors,
     graph,
-    new Set(["schema_version", "updated_at", "nodes", "edges"]),
+    new Set([
+      "schema_version",
+      "updated_at",
+      "nodes",
+      "edges",
+      "skill_activations",
+    ]),
     "evidence graph",
   );
   if (graph.schema_version !== 1) {
@@ -2813,6 +2836,112 @@ function validateEvidenceGraph(graph) {
   if (!Array.isArray(graph.edges) || graph.edges.length > 50_000) {
     errors.push("evidence graph edges must be an array with at most 50000 entries");
     return errors;
+  }
+  if (
+    graph.skill_activations !== undefined &&
+    (!Array.isArray(graph.skill_activations) ||
+      graph.skill_activations.length > 20_000)
+  ) {
+    errors.push(
+      "evidence graph skill_activations must be an array with at most 20000 entries",
+    );
+    return errors;
+  }
+  const activationIds = new Set();
+  const activationEventKeys = new Set();
+  for (const [index, activation] of (
+    graph.skill_activations ?? []
+  ).entries()) {
+    const label = `evidence graph skill_activations[${index}]`;
+    if (
+      !activation ||
+      typeof activation !== "object" ||
+      Array.isArray(activation)
+    ) {
+      errors.push(`${label} must be an object`);
+      continue;
+    }
+    rejectUnknownKeys(
+      errors,
+      activation,
+      new Set([
+        "id",
+        "skill",
+        "mode",
+        "harness",
+        "model",
+        "run_id",
+        "event_id",
+        "recorded_at",
+        "skill_path",
+        "skill_sha256",
+        "claim",
+      ]),
+      label,
+    );
+    if (!contractIdentifier(activation.id)) {
+      errors.push(`${label}.id must be a bounded lowercase identifier`);
+    } else if (activationIds.has(activation.id)) {
+      errors.push(
+        `evidence graph contains duplicate skill activation id: ${activation.id}`,
+      );
+    } else {
+      activationIds.add(activation.id);
+    }
+    if (!contractIdentifier(activation.skill)) {
+      errors.push(`${label}.skill must be a bounded lowercase identifier`);
+    }
+    if (!SKILL_ACTIVATION_MODES.has(activation.mode)) {
+      errors.push(`${label}.mode must be native or file-read`);
+    }
+    contractString(errors, activation.harness, `${label}.harness`, 120);
+    contractString(errors, activation.model, `${label}.model`, 120);
+    contractString(errors, activation.run_id, `${label}.run_id`, 200);
+    contractString(errors, activation.event_id, `${label}.event_id`, 200);
+    contractTimestamp(errors, activation.recorded_at, `${label}.recorded_at`);
+    if (activation.recorded_at === null) {
+      errors.push(`${label}.recorded_at must not be null`);
+    }
+    if (!contractProjectPath(activation.skill_path)) {
+      errors.push(`${label}.skill_path must be a bounded project-relative path`);
+    }
+    if (
+      typeof activation.skill_sha256 !== "string" ||
+      !/^[a-f0-9]{64}$/.test(activation.skill_sha256)
+    ) {
+      errors.push(`${label}.skill_sha256 must be a lowercase SHA-256 digest`);
+    }
+    if (activation.claim !== "agent-recorded") {
+      errors.push(`${label}.claim must equal agent-recorded`);
+    }
+    if (
+      [
+        activation.harness,
+        activation.model,
+        activation.run_id,
+        activation.event_id,
+      ].every(
+        (value) => typeof value === "string" && value.length > 0,
+      )
+    ) {
+      const eventKey = stableJson({
+        harness: activation.harness,
+        model: activation.model,
+        run_id: activation.run_id,
+        event_id: activation.event_id,
+      });
+      if (activationEventKeys.has(eventKey)) {
+        errors.push(
+          "evidence graph must not contain duplicate skill activation events",
+        );
+      }
+      activationEventKeys.add(eventKey);
+      const expectedId =
+        `skill-activation-${sha256(eventKey).slice(0, 20)}`;
+      if (activation.id !== expectedId) {
+        errors.push(`${label}.id must match its deterministic event identity`);
+      }
+    }
   }
   const nodeIds = new Set();
   graph.nodes.forEach((node, index) => {
@@ -3363,19 +3492,19 @@ function commandCampaignNext(target, options) {
       3,
     );
   }
-  const workValidation = commandWorkValidate(target);
-  const evidenceValidation = commandEvidenceValidate(target);
-  if (!workValidation.ok || !evidenceValidation.ok) {
+  const contracts = loadValidatedWorkEvidence(target);
+  if (!contracts.ok) {
     throw new StackError(
       "Campaign iteration refused because repository work or evidence is invalid.",
       3,
-      [...workValidation.errors, ...evidenceValidation.errors],
+      [
+        ...contracts.ledger.errors,
+        ...contracts.graph.errors,
+        ...contracts.linkageErrors,
+      ],
     );
   }
-  const ledger = readJson(
-    projectFile(target, WORK_LEDGER_PATH, "work ledger"),
-    "work ledger",
-  );
+  const ledger = contracts.ledger.value;
   const items = new Map(ledger.items.map((item) => [item.id, item]));
   if (campaign.active_work_item !== null) {
     const active = items.get(campaign.active_work_item);
@@ -3559,7 +3688,10 @@ function commandCampaignStop(target, options) {
 
 function validateRepositoryContract(target, path, validator, label) {
   try {
-    const value = readJson(projectFile(target, path, label), label);
+    const value = readJson(
+      projectFileWithoutSymlinkComponents(target, path, label),
+      label,
+    );
     const errors = validator(value);
     return {
       ok: errors.length === 0,
@@ -3640,7 +3772,165 @@ function commandEvidenceValidate(target) {
     edge_count: Array.isArray(snapshot.graph.value?.edges)
       ? snapshot.graph.value.edges.length
       : 0,
+    skill_activation_count: Array.isArray(
+      snapshot.graph.value?.skill_activations,
+    )
+      ? snapshot.graph.value.skill_activations.length
+      : 0,
     errors,
+  };
+}
+
+function installedSkillFile(target, skill, skillPath) {
+  if (!contractIdentifier(skill)) {
+    throw new StackError("--skill must be a canonical installed skill name");
+  }
+  const normalizedSkillPath =
+    typeof skillPath === "string"
+      ? skillPath
+          .replaceAll("\\", "/")
+          .replace(/\/{2,}/g, "/")
+          .replace(/^(?:\.\/)+/, "")
+      : skillPath;
+  const allowed = new Set([
+    `.agents/skills/${skill}/SKILL.md`,
+    `.claude/skills/${skill}/SKILL.md`,
+  ]);
+  if (!allowed.has(normalizedSkillPath)) {
+    throw new StackError(
+      "--skill-path must name the actual installed .agents or .claude SKILL.md for --skill",
+    );
+  }
+  const file = projectFileWithoutSymlinkComponents(
+    target,
+    normalizedSkillPath,
+    "installed skill",
+  );
+  if (!existsSync(file) || !statSync(file).isFile()) {
+    throw new StackError(
+      `Installed skill not found at ${normalizedSkillPath}. Run init or upgrade first.`,
+    );
+  }
+  return { path: normalizedSkillPath, file };
+}
+
+function commandEvidenceActivate(
+  target,
+  {
+    skill,
+    skillPath,
+    mode,
+    harness,
+    model,
+    runId,
+    eventId,
+    coordinatorToken,
+  },
+) {
+  requireCoordinator(target, coordinatorToken);
+  if (!SKILL_ACTIVATION_MODES.has(mode)) {
+    throw new StackError("--mode must be native or file-read");
+  }
+  for (const [name, value, maximum] of [
+    ["--harness", harness, 120],
+    ["--model", model, 120],
+    ["--run", runId, 200],
+    ["--event", eventId, 200],
+  ]) {
+    const errors = [];
+    contractString(errors, value, name, maximum);
+    if (errors.length > 0) {
+      throw new StackError(errors[0]);
+    }
+  }
+  const installed = installedSkillFile(target, skill, skillPath);
+  const graphFile = projectFileWithoutSymlinkComponents(
+    target,
+    EVIDENCE_GRAPH_PATH,
+    "evidence graph",
+  );
+  const graph = readJson(graphFile, "evidence graph");
+  const graphErrors = validateEvidenceGraph(graph);
+  if (graphErrors.length > 0) {
+    throw new StackError(
+      "Cannot record activation in an invalid evidence graph.",
+      2,
+      graphErrors,
+    );
+  }
+  graph.skill_activations ??= [];
+  const activationKey = stableJson({
+    harness,
+    model,
+    run_id: runId,
+    event_id: eventId,
+  });
+  const id = `skill-activation-${sha256(activationKey).slice(0, 20)}`;
+  const activationPayload = {
+    skill,
+    mode,
+    harness,
+    model,
+    run_id: runId,
+    event_id: eventId,
+    skill_path: installed.path,
+    skill_sha256: hashFile(installed.file),
+    claim: "agent-recorded",
+  };
+  const existing = graph.skill_activations.find(
+    (activation) => activation.id === id,
+  );
+  if (existing) {
+    const existingPayload = Object.fromEntries(
+      Object.keys(activationPayload).map((key) => [
+        key,
+        existing[key],
+      ]),
+    );
+    if (stableJson(existingPayload) !== stableJson(activationPayload)) {
+      throw new StackError(
+        "Activation event idempotency conflict: the same harness, model, run, and event ID was already recorded with different metadata.",
+      );
+    }
+    return {
+      ok: true,
+      recorded: false,
+      reason: "already-recorded",
+      result: "already-recorded",
+      command: "evidence activate",
+      path: EVIDENCE_GRAPH_PATH,
+      evidence_graph_path: EVIDENCE_GRAPH_PATH,
+      activation: existing,
+      boundary:
+        "Agent-recorded evidence is not independent proof of a harness tool call.",
+    };
+  }
+  const activation = {
+    id,
+    recorded_at: utcTimestamp(),
+    ...activationPayload,
+  };
+  graph.skill_activations.push(activation);
+  graph.updated_at = activation.recorded_at;
+  const updatedErrors = validateEvidenceGraph(graph);
+  if (updatedErrors.length > 0) {
+    throw new StackError(
+      "Refusing to write an invalid skill activation.",
+      2,
+      updatedErrors,
+    );
+  }
+  atomicJson(graphFile, graph);
+  return {
+    ok: true,
+    recorded: true,
+    result: "recorded",
+    command: "evidence activate",
+    path: EVIDENCE_GRAPH_PATH,
+    evidence_graph_path: EVIDENCE_GRAPH_PATH,
+    activation,
+    boundary:
+      "Agent-recorded evidence is not independent proof of a harness tool call.",
   };
 }
 
@@ -3662,6 +3952,17 @@ function evidenceReportData(ledger, graph) {
   const sourceProviders = new Map();
   const edgeRelations = new Map();
   const connected = new Set();
+  const activationSkills = new Map();
+  const activationModes = new Map();
+  const activationHarnessModels = new Map();
+  for (const activation of graph.skill_activations ?? []) {
+    incrementCount(activationSkills, activation.skill);
+    incrementCount(activationModes, activation.mode);
+    incrementCount(
+      activationHarnessModels,
+      `${activation.harness} / ${activation.model}`,
+    );
+  }
   for (const node of graph.nodes) {
     incrementCount(nodeKinds, node.kind);
     incrementCount(nodeStates, node.state);
@@ -3699,12 +4000,20 @@ function evidenceReportData(ledger, graph) {
       work_items: ledger.items.length,
       nodes: graph.nodes.length,
       edges: graph.edges.length,
+      skill_activations: (graph.skill_activations ?? []).length,
     },
     work_statuses: sortedCounts(workStatuses),
     node_kinds: sortedCounts(nodeKinds),
     node_states: sortedCounts(nodeStates),
     edge_relations: sortedCounts(edgeRelations),
     source_providers: sortedCounts(sourceProviders),
+    skill_activations: {
+      by_skill: sortedCounts(activationSkills),
+      by_mode: sortedCounts(activationModes),
+      by_harness_model: sortedCounts(activationHarnessModels),
+      boundary:
+        "Agent-recorded activations are trace evidence, not independent proof of harness tool calls.",
+    },
     coverage: {
       work_items_with_evidence: evidenceEligibleWork.filter(
         (item) => item.evidence_refs.length > 0,
@@ -5744,23 +6053,20 @@ function validatedLinearWriteContext(target, operation, options) {
       [readonlyIssue, writeIssue].filter(Boolean),
     );
   }
-  const workValidation = commandWorkValidate(target);
-  const evidenceValidation = commandEvidenceValidate(target);
-  if (!workValidation.ok || !evidenceValidation.ok) {
+  const contracts = loadValidatedWorkEvidence(target);
+  if (!contracts.ok) {
     throw new StackError(
       "Refusing Linear write until repository work and evidence validate.",
       3,
-      [...workValidation.errors, ...evidenceValidation.errors],
+      [
+        ...contracts.ledger.errors,
+        ...contracts.graph.errors,
+        ...contracts.linkageErrors,
+      ],
     );
   }
-  const ledger = readJson(
-    projectFile(target, WORK_LEDGER_PATH, "work ledger"),
-    "work ledger",
-  );
-  const graph = readJson(
-    projectFile(target, EVIDENCE_GRAPH_PATH, "evidence graph"),
-    "evidence graph",
-  );
+  const ledger = contracts.ledger.value;
+  const graph = contracts.graph.value;
   const item = ledger.items.find(
     (candidate) => candidate.id === options.workItemId,
   );
@@ -7895,22 +8201,40 @@ function commandVerify(target, failFast = false) {
     checks: [],
   };
   const actualChecksHash = currentChecksHash(config, target);
+  let blockedBy;
+  let nextSteps;
   if (config.onboarding.status !== "complete") {
+    blockedBy = "setup";
+    nextSteps = [
+      'node .agent-stack/bin/agent-stack.mjs configure --preset simple --reason "Approved the private repository-only setup"',
+      'node .agent-stack/bin/agent-stack.mjs approve-checks --reason "Inspected the configured project test commands"',
+      "node .agent-stack/bin/agent-stack.mjs verify",
+    ];
     errors.push(
-      "guided onboarding is incomplete; configure the approved project profile and providers",
+      "Setup is incomplete. Run configure --preset simple first, then inspect and approve the project checks.",
     );
-  }
-  if (
+  } else if (
     config.safety.approved_configuration_hash !== configurationHash(config)
   ) {
+    blockedBy = "configuration-approval";
+    nextSteps = [
+      "Review the configured provider, interaction, autonomy, and project-profile choices.",
+      "Run node .agent-stack/bin/agent-stack.mjs configure again with the approved choices and an approval reason.",
+      "Run node .agent-stack/bin/agent-stack.mjs verify again.",
+    ];
     errors.push(
       "provider, interaction, autonomy, or profile choices changed or were not approved",
     );
-  }
-  if (
+  } else if (
     config.safety.require_check_approval !== false &&
     config.safety.approved_checks_hash !== actualChecksHash
   ) {
+    blockedBy = "check-approval";
+    nextSteps = [
+      "Inspect the configured project test commands.",
+      'Run node .agent-stack/bin/agent-stack.mjs approve-checks --reason "Inspected the configured project test commands".',
+      "Run node .agent-stack/bin/agent-stack.mjs verify again.",
+    ];
     errors.push(
       "quality checks changed or were not reviewed; run approve-checks after inspecting them",
     );
@@ -7918,6 +8242,10 @@ function commandVerify(target, failFast = false) {
   if (errors.length > 0) {
     evidence.ok = false;
     evidence.configuration_errors = errors;
+    if (blockedBy) {
+      evidence.blocked_by = blockedBy;
+      evidence.next_steps = nextSteps;
+    }
   } else {
     for (const check of config.quality.checks) {
       const record = runCheck(target, check, config);
@@ -7955,6 +8283,12 @@ function commandVerify(target, failFast = false) {
       ...(record.reason ? { reason: record.reason } : {}),
     })),
     configuration_errors: evidence.configuration_errors,
+    ...(evidence.blocked_by
+      ? {
+          blocked_by: evidence.blocked_by,
+          next_steps: evidence.next_steps,
+        }
+      : {}),
   };
 }
 
@@ -8909,7 +9243,7 @@ function deliveryStartPrompt({
     `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, .agent-stack/config.json, .agent-stack/work-items.json, .agent-stack/evidence-graph.json, any valid .agent-stack/CHECKPOINT.md, and the installed skills. For end-to-end delivery or RESUME, use $run-autonomous-delivery for this request: ${request} For a request explicitly limited to brief refinement, source audit, or reconciliation, use $develop-project-brief directly and stop before delivery. For explanation-only work, use neither.`,
     continuity,
     `Inspect the project first. Apply $manage-project-work when shaping or selecting real work, checking provider-write readiness, reporting or diagramming work evidence, or handling a bounded campaign. Validate the configured ${workProvider} repository ledger and graph, select only bounded ready work, and keep completion tied to real evidence. The start command already tested the configured work provider. If it is unavailable or unhealthy, continue from the repository ledger and record synchronization as pending; never block safe local delivery or infer remote state. Apply $use-project-knowledge using the configured ${knowledgeProvider} provider at ${knowledgeScope} scope, with repository evidence as the source of truth and fallback. The start command already tested configured memory; if its result is unhealthy or the checkpoint mirror is stale, continue from the repository and repair the optional adapter without blocking delivery. The start command also tested configured telemetry identity and scope; if it is unavailable or unhealthy, use repository evidence and do not broaden provider scope. ${telemetryGuidance} Use $coordinate-parallel-delivery to manage independent subagent work when it is safe and useful; keep it serial otherwise. You are the one Project Steward and integration owner. Do not give the coordinator token to subagents, and do not make the user manage workers.`,
-    `Route intake in this order: RESUME for a valid non-complete checkpoint or active lock with an unmet done/evidence condition; EXTERNAL when substantial supplied material defines product intent or an existing plan; DISCOVER for vague, contradictory, exploratory, or greenfield product/system intent that needs development; DIRECT for a clear bounded testable request. Completed state does not hijack a new request. A supporting screenshot, log, or attachment does not turn bounded work into EXTERNAL, and clear bounded work remains DIRECT in a new or empty repository. Apply $develop-project-brief only for EXTERNAL or DISCOVER, or directly when the user explicitly limits the request to brief refinement, source audit, or reconciliation. DIRECT keeps the proportionate micro-brief path, and RESUME continues from the first unmet condition without reopening closed decisions. Entering implementation requires $build-vertical-slice. Entering verification requires $verify-change. Apply $close-review-loop only for an existing pull request or an external provider or human review thread. Research routine answers. Ask only consequential questions, one at a time. Each question must use plain language, recommend one safe choice, provide at most one genuinely useful safe alternative, explain the consequence, and allow "use the recommendation." A question that asks for acceptance ends the turn; do not continue as though the recommendation approved itself. Own all routine implementation and verification. Artifact status is only DRAFT or APPROVED, and lock state exists only in protected CLI state. A failed guard never authorizes changing prerequisites. Do not claim added, read-complete, reviewed, locked, or ready state without path and command/result evidence. Write a deterministic checkpoint after verified milestones and release the coordinator lease only at final handoff.`,
+    `Route intake in this order: RESUME for a valid non-complete checkpoint or active lock with an unmet done/evidence condition; EXTERNAL when substantial supplied material defines product intent or an existing plan; DISCOVER for vague, contradictory, exploratory, or greenfield product/system intent that needs development; DIRECT for a clear bounded testable request. Completed state does not hijack a new request. A supporting screenshot, log, or attachment does not turn bounded work into EXTERNAL, and clear bounded work remains DIRECT in a new or empty repository. Apply $develop-project-brief only for EXTERNAL or DISCOVER, or directly when the user explicitly limits the request to brief refinement, source audit, or reconciliation. DIRECT keeps the proportionate micro-brief path, and RESUME continues from the first unmet condition without reopening closed decisions. The controller owns routine implementation and verification without requiring nested native phase activations. A request explicitly limited to implementation may use $build-vertical-slice directly; a request explicitly limited to verification may use $verify-change directly. Apply $close-review-loop only for an existing pull request or an external provider or human review thread. Research routine answers. Ask only consequential questions, one at a time. Each question must use plain language, recommend one safe choice, provide at most one genuinely useful safe alternative, explain the consequence, and allow "use the recommendation." A question that asks for acceptance ends the turn; do not continue as though the recommendation approved itself. Own all routine implementation and verification. Artifact status is only DRAFT or APPROVED, and lock state exists only in protected CLI state. A failed guard never authorizes changing prerequisites. Do not claim added, read-complete, reviewed, locked, or ready state without path and command/result evidence. Write a deterministic checkpoint after verified milestones and release the coordinator lease only at final handoff.`,
   ].join("\n\n");
 }
 
@@ -9136,6 +9470,11 @@ Safe project setup:
   ultimate-agent-stack capabilities [--target DIR]
   ultimate-agent-stack work validate [--target DIR]
   ultimate-agent-stack evidence validate [--target DIR]
+  ultimate-agent-stack evidence activate --skill NAME
+    --skill-path PATH --mode native|file-read
+    --harness NAME --model NAME --run ID --event ID
+    --coordinator-token TOKEN
+    [--target DIR]
   ultimate-agent-stack evidence report [--format json|mermaid]
     [--max-nodes 1..500] [--output PATH] [--target DIR]
   ultimate-agent-stack receipts validate [--target DIR]
@@ -9245,23 +9584,53 @@ function execute(command, args) {
     }
     case "evidence": {
       const [subcommand, ...evidenceArgs] = args;
-      if (!["validate", "report"].includes(subcommand)) {
-        throw new StackError("evidence subcommand must be validate or report");
+      if (!["validate", "activate", "report"].includes(subcommand)) {
+        throw new StackError(
+          "evidence subcommand must be validate, activate, or report",
+        );
       }
       assertNoUnknownOptions(
         evidenceArgs,
         subcommand === "validate"
           ? ["--target"]
-          : ["--target", "--format", "--max-nodes", "--output"],
+          : subcommand === "activate"
+            ? [
+                "--target",
+                "--skill",
+                "--skill-path",
+                "--mode",
+                "--harness",
+                "--model",
+                "--run",
+                "--event",
+                "--coordinator-token",
+              ]
+            : ["--target", "--format", "--max-nodes", "--output"],
       );
       const target = resolveTarget(getOption(evidenceArgs, "--target", "."));
-      return subcommand === "validate"
-        ? commandEvidenceValidate(target)
-        : commandEvidenceReport(target, {
-            format: getOption(evidenceArgs, "--format", "json"),
-            maxNodes: getOption(evidenceArgs, "--max-nodes", "200"),
-            output: getOption(evidenceArgs, "--output"),
-          });
+      if (subcommand === "validate") {
+        return commandEvidenceValidate(target);
+      }
+      if (subcommand === "activate") {
+        return commandEvidenceActivate(target, {
+          skill: getOption(evidenceArgs, "--skill"),
+          skillPath: getOption(evidenceArgs, "--skill-path"),
+          mode: getOption(evidenceArgs, "--mode"),
+          harness: getOption(evidenceArgs, "--harness"),
+          model: getOption(evidenceArgs, "--model"),
+          runId: getOption(evidenceArgs, "--run"),
+          eventId: getOption(evidenceArgs, "--event"),
+          coordinatorToken: getOption(
+            evidenceArgs,
+            "--coordinator-token",
+          ),
+        });
+      }
+      return commandEvidenceReport(target, {
+        format: getOption(evidenceArgs, "--format", "json"),
+        maxNodes: getOption(evidenceArgs, "--max-nodes", "200"),
+        output: getOption(evidenceArgs, "--output"),
+      });
     }
     case "receipts": {
       const [subcommand, ...receiptArgs] = args;
@@ -9555,6 +9924,7 @@ function emit(result) {
 
 function main(argv = process.argv.slice(2)) {
   try {
+    assertSupportedNodeVersion();
     const [command, ...args] = argv;
     const result = execute(command, args);
     emit(result);
@@ -9598,6 +9968,7 @@ export {
   PACKAGE_NAME,
   PACKAGE_ROOT,
   PACKAGE_VERSION,
+  MINIMUM_NODE_MAJOR,
   PROJECT_CLI_PATH,
   PROVIDER_RECEIPTS_PATH,
   REVIEW_RECEIPT_PATH,
@@ -9607,6 +9978,7 @@ export {
   TELEMETRY_READONLY_PATH,
   WORK_LEDGER_PATH,
   checksHash,
+  assertSupportedNodeVersion,
   commandCheckpoint,
   commandCapabilities,
   commandCampaignNext,
@@ -9621,6 +9993,7 @@ export {
   commandDetect,
   commandDoctor,
   commandEvidenceValidate,
+  commandEvidenceActivate,
   commandEvidenceReport,
   commandLock,
   commandLinearHealth,
