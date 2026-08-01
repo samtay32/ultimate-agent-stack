@@ -41,20 +41,7 @@ const COORDINATOR_TOKEN_FIELD_NAMES = new Set([
   "coordinator_token",
   "coordinatorToken",
 ]);
-const SHELL_COORDINATOR_TOKEN_ARGUMENT =
-  /(--coordinator-token(?:=[ \t]*|[ \t]+))(?:(['"])(.*?)\2|([^\s'"`\\]+))/g;
-const ESCAPED_SHELL_COORDINATOR_TOKEN_ARGUMENT =
-  /(--coordinator-token(?:=[ \t]*|[ \t]+))(\\+)(['"])(.*?)\2\3/g;
-const JSON_COORDINATOR_TOKEN_ARGUMENT =
-  /(\\*"--coordinator-token\\*")(\\*[ \t]*,[ \t]*\\*")((?:\\\\.|[^"\\\\])*)(\\*")/g;
-const COORDINATOR_TOKEN_FIELD =
-  /(\\*"(?:coordinator_token|coordinatorToken)\\*"\\*[ \t]*:[ \t]*\\*")((?:\\\\.|[^"\\\\])*?)(\\*")/g;
-const INLINE_COORDINATOR_TOKEN_ARGUMENT =
-  /(--coordinator-token(?:=[ \t]*|[ \t]+)\\*["']?)([a-f0-9]{64})/gi;
-const INLINE_COORDINATOR_TOKEN_FIELD =
-  /(\\*"(?:coordinator_token|coordinatorToken)\\*"\\*[ \t]*:[ \t]*\\*["']?)([a-f0-9]{64})/gi;
-const ANY_COORDINATOR_TOKEN_FIELD_VALUE =
-  /(\\*"(?:coordinator_token|coordinatorToken)\\*"\\*[ \t]*:[^,\r\n}\]]*?)([a-f0-9]{64})(?=[,\r\n}\]"'])/gi;
+const COORDINATOR_OPTION = "--coordinator-token";
 const CURRENT_RUN_RECORD_SCHEMA_VERSION = 2;
 const SHA256_RECEIPT = /^sha256:[a-f0-9]{64}$/;
 const GIT_COMMIT_ID = /^[a-f0-9]{40}$/;
@@ -1428,7 +1415,20 @@ function decodeEvidenceString(value) {
     // Evidence may contain a partially escaped line from a failed tool call.
     // Decode the quote/backslash pairs that are relevant to token discovery,
     // while leaving the bytes being exported untouched.
-    return candidate.replace(/\\(["'\\])/g, "$1");
+    let decoded = "";
+    for (let index = 0; index < candidate.length; index += 1) {
+      if (
+        candidate[index] === "\\" &&
+        index + 1 < candidate.length &&
+        ["\\", '"', "'"].includes(candidate[index + 1])
+      ) {
+        decoded += candidate[index + 1];
+        index += 1;
+      } else {
+        decoded += candidate[index];
+      }
+    }
+    return decoded;
   }
 }
 
@@ -1439,25 +1439,316 @@ function rememberCoordinatorToken(discovered, value) {
   }
 }
 
-function replaceWithPattern(text, pattern, replacer) {
-  pattern.lastIndex = 0;
-  const replaced = text.replace(pattern, replacer);
-  pattern.lastIndex = 0;
-  return replaced;
+function isHexCharacter(value) {
+  return (
+    (value >= "0" && value <= "9") ||
+    (value >= "a" && value <= "f") ||
+    (value >= "A" && value <= "F")
+  );
 }
 
-function recursivelyRedactJson(value, discovered) {
+function isRecognizableTokenAt(text, start) {
+  if (start < 0 || start + 64 > text.length) {
+    return false;
+  }
+  for (let index = start; index < start + 64; index += 1) {
+    if (!isHexCharacter(text[index])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function countBackslashesBefore(text, index) {
+  let count = 0;
+  for (let cursor = index - 1; cursor >= 0 && text[cursor] === "\\"; cursor -= 1) {
+    count += 1;
+    if (count > 1_024) {
+      return count;
+    }
+  }
+  return count;
+}
+
+function readEscapedDelimiter(text, start, delimiter) {
+  let slashCount = 0;
+  let cursor = start;
+  while (cursor < text.length && text[cursor] === "\\") {
+    slashCount += 1;
+    cursor += 1;
+    if (slashCount > 1_024) {
+      return null;
+    }
+  }
+  return text[cursor] === delimiter
+    ? { quote: cursor, slashes: slashCount, delimiter }
+    : null;
+}
+
+function readEscapedQuote(text, start) {
+  return readEscapedDelimiter(text, start, '"');
+}
+
+function readShellDelimiter(text, start) {
+  let cursor = start;
+  while (cursor < text.length && text[cursor] === "\\") {
+    cursor += 1;
+  }
+  return ["'", '"'].includes(text[cursor])
+    ? readEscapedDelimiter(text, start, text[cursor])
+    : null;
+}
+
+function findEscapedQuoteEnd(
+  text,
+  openingQuote,
+  openingSlashes,
+  delimiter = '"',
+) {
+  let slashCount = 0;
+  for (let cursor = openingQuote + 1; cursor < text.length; cursor += 1) {
+    const character = text[cursor];
+    if (character === "\\") {
+      slashCount += 1;
+      continue;
+    }
+    if (character === delimiter && slashCount === openingSlashes) {
+      return cursor;
+    }
+    slashCount = 0;
+  }
+  return -1;
+}
+
+function skipHorizontalWhitespace(text, start) {
+  let cursor = start;
+  while (cursor < text.length && (text[cursor] === " " || text[cursor] === "\t")) {
+    cursor += 1;
+  }
+  return cursor;
+}
+
+function coordinatorFieldAt(text, start, name) {
+  if (!text.startsWith(name, start)) {
+    return null;
+  }
+  const keyQuote = start - 1 - countBackslashesBefore(text, start);
+  if (keyQuote < 0 || text[keyQuote] !== '"') {
+    return null;
+  }
+  const keyEnd = start + name.length;
+  const keyClosing = readEscapedQuote(text, keyEnd);
+  if (!keyClosing) {
+    return null;
+  }
+  let cursor = skipHorizontalWhitespace(text, keyClosing.quote + 1);
+  if (text[cursor] !== ":") {
+    return null;
+  }
+  cursor = skipHorizontalWhitespace(text, cursor + 1);
+  const valueOpening = readEscapedQuote(text, cursor);
+  if (!valueOpening) {
+    return {
+      valueStart: cursor,
+      valueEnd: -1,
+      end: cursor,
+    };
+  }
+  const valueEnd = findEscapedQuoteEnd(
+    text,
+    valueOpening.quote,
+    valueOpening.slashes,
+  );
+  return {
+    valueStart: valueOpening.quote + 1,
+    valueEnd,
+    suffixStart:
+      valueEnd === -1
+        ? text.length
+        : valueEnd - countBackslashesBefore(text, valueEnd),
+    end: valueEnd === -1 ? text.length : valueEnd + 1,
+  };
+}
+
+function coordinatorOptionAt(text, start) {
+  if (!text.startsWith(COORDINATOR_OPTION, start)) {
+    return null;
+  }
+  const optionEnd = start + COORDINATOR_OPTION.length;
+  if (
+    optionEnd < text.length &&
+    text[optionEnd] !== "=" &&
+    text[optionEnd] !== " " &&
+    text[optionEnd] !== "\t"
+  ) {
+    return null;
+  }
+  let cursor = optionEnd;
+  if (text[cursor] === "=") {
+    cursor = skipHorizontalWhitespace(text, cursor + 1);
+  } else {
+    cursor = skipHorizontalWhitespace(text, cursor);
+  }
+  if (cursor >= text.length) {
+    return null;
+  }
+  const opening = readShellDelimiter(text, cursor);
+  if (opening) {
+    const valueEnd = findEscapedQuoteEnd(
+      text,
+      opening.quote,
+      opening.slashes,
+      opening.delimiter,
+    );
+    return {
+      valueStart: opening.quote + 1,
+      valueEnd,
+      suffixStart:
+        valueEnd === -1
+          ? text.length
+          : valueEnd - countBackslashesBefore(text, valueEnd),
+      end: valueEnd === -1 ? text.length : valueEnd + 1,
+    };
+  }
+  let valueEnd = cursor;
+  while (
+    valueEnd < text.length &&
+    ![" ", "\t", "\r", "\n", "'", '"', "`", "\\"].includes(
+      text[valueEnd],
+    )
+  ) {
+    valueEnd += 1;
+  }
+  return { valueStart: cursor, valueEnd, end: valueEnd };
+}
+
+function jsonArrayOptionAt(text, start) {
+  if (!text.startsWith(COORDINATOR_OPTION, start)) {
+    return null;
+  }
+  const optionOpening = countBackslashesBefore(text, start);
+  const optionQuote = start - optionOpening - 1;
+  if (optionQuote < 0 || text[optionQuote] !== '"') {
+    return null;
+  }
+  const optionClosing = readEscapedQuote(text, start + COORDINATOR_OPTION.length);
+  if (!optionClosing) {
+    return null;
+  }
+  let cursor = skipHorizontalWhitespace(text, optionClosing.quote + 1);
+  if (text[cursor] !== ",") {
+    return null;
+  }
+  cursor = skipHorizontalWhitespace(text, cursor + 1);
+  const valueOpening = readEscapedQuote(text, cursor);
+  if (!valueOpening) {
+    return null;
+  }
+  const valueEnd = findEscapedQuoteEnd(
+    text,
+    valueOpening.quote,
+    valueOpening.slashes,
+  );
+  return {
+    valueStart: valueOpening.quote + 1,
+    valueEnd,
+    suffixStart:
+      valueEnd === -1
+        ? text.length
+        : valueEnd - countBackslashesBefore(text, valueEnd),
+    end: valueEnd === -1 ? text.length : valueEnd + 1,
+  };
+}
+
+function redactCoordinatorContexts(text, discovered) {
+  let output = "";
+  let copiedThrough = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    let field = null;
+    for (const name of COORDINATOR_TOKEN_FIELD_NAMES) {
+      field = coordinatorFieldAt(text, index, name);
+      if (field) {
+        break;
+      }
+    }
+    const context = field ?? jsonArrayOptionAt(text, index) ?? coordinatorOptionAt(text, index);
+    if (!context) {
+      continue;
+    }
+    if (context.valueEnd < context.valueStart) {
+      index = context.end - 1;
+      continue;
+    }
+    const value = text.slice(context.valueStart, context.valueEnd);
+    rememberCoordinatorToken(discovered, value);
+    output += text.slice(copiedThrough, context.valueStart);
+    output += EVIDENCE_REDACTION_MARKER;
+    copiedThrough = context.suffixStart ?? context.valueEnd;
+    index = context.end - 1;
+  }
+  return copiedThrough === 0
+    ? text
+    : `${output}${text.slice(copiedThrough)}`;
+}
+
+function replaceDiscoveredTokens(text, discovered) {
+  const tokens = new Set([...discovered].map((token) => token.toLowerCase()));
+  if (tokens.size === 0) {
+    return text;
+  }
+  let output = "";
+  let copiedThrough = 0;
+  for (let index = 0; index <= text.length - 64; index += 1) {
+    if (!isRecognizableTokenAt(text, index)) {
+      continue;
+    }
+    const token = text.slice(index, index + 64);
+    if (!tokens.has(token.toLowerCase())) {
+      continue;
+    }
+    output += text.slice(copiedThrough, index);
+    output += EVIDENCE_REDACTION_MARKER;
+    index += 63;
+    copiedThrough = index + 1;
+  }
+  return copiedThrough === 0
+    ? text
+    : `${output}${text.slice(copiedThrough)}`;
+}
+
+function tokenBeforeFieldDelimiter(text, start) {
+  for (let index = start; index <= text.length - 64; index += 1) {
+    if ([",", "}", "]", "\r", "\n"].includes(text[index])) {
+      return null;
+    }
+    if (isRecognizableTokenAt(text, index)) {
+      return text.slice(index, index + 64);
+    }
+  }
+  return null;
+}
+
+function recursivelyRedactJson(value, discovered, depth = 0) {
+  if (depth > 64) {
+    return { value, changed: false };
+  }
   if (typeof value === "string") {
     let nested;
     try {
       nested = JSON.parse(value);
     } catch {
-      return { value, changed: false };
+      const redacted = redactCoordinatorContexts(value, discovered);
+      return redacted === value
+        ? { value, changed: false }
+        : { value: redacted, changed: true };
     }
     if (!nested || typeof nested !== "object") {
-      return { value, changed: false };
+      const redacted = redactCoordinatorContexts(value, discovered);
+      return redacted === value
+        ? { value, changed: false }
+        : { value: redacted, changed: true };
     }
-    const result = recursivelyRedactJson(nested, discovered);
+    const result = recursivelyRedactJson(nested, discovered, depth + 1);
     return result.changed
       ? { value: JSON.stringify(result.value), changed: true }
       : { value, changed: false };
@@ -1485,7 +1776,7 @@ function recursivelyRedactJson(value, discovered) {
           continue;
         }
       }
-      const result = recursivelyRedactJson(item, discovered);
+      const result = recursivelyRedactJson(item, discovered, depth + 1);
       if (result.changed) {
         value[index] = result.value;
         changed = true;
@@ -1505,7 +1796,7 @@ function recursivelyRedactJson(value, discovered) {
         changed = true;
         continue;
       }
-      const result = recursivelyRedactJson(item, discovered);
+      const result = recursivelyRedactJson(item, discovered, depth + 1);
       if (result.changed) {
         value[key] = result.value;
         changed = true;
@@ -1517,7 +1808,7 @@ function recursivelyRedactJson(value, discovered) {
   return { value, changed: false };
 }
 
-function redactParseableJsonLines(text, discovered) {
+function redactEvidenceLines(text, discovered) {
   return text
     .split("\n")
     .map((line) => {
@@ -1527,7 +1818,8 @@ function redactParseableJsonLines(text, discovered) {
       try {
         parsed = JSON.parse(body);
       } catch {
-        return line;
+        const redacted = redactCoordinatorContexts(body, discovered);
+        return `${redacted}${hasCarriageReturn ? "\r" : ""}`;
       }
       const result = recursivelyRedactJson(parsed, discovered);
       if (!result.changed) {
@@ -1546,42 +1838,40 @@ function remainingCoordinatorTokens(text, discovered) {
       remaining.add(token);
     }
   };
-
-  replaceWithPattern(text, ESCAPED_SHELL_COORDINATOR_TOKEN_ARGUMENT, (_match, _prefix, _slashes, _quote, value) => {
-    inspect(value);
-    return _match;
-  });
-  replaceWithPattern(text, SHELL_COORDINATOR_TOKEN_ARGUMENT, (_match, _prefix, _quote, quoted, unquoted) => {
-    inspect(quoted ?? unquoted);
-    return _match;
-  });
-  replaceWithPattern(text, JSON_COORDINATOR_TOKEN_ARGUMENT, (_match, _prefix, _separator, value) => {
-    inspect(value);
-    return _match;
-  });
-  replaceWithPattern(text, INLINE_COORDINATOR_TOKEN_ARGUMENT, (_match, _prefix, token) => {
-    inspect(token);
-    return _match;
-  });
-  replaceWithPattern(text, COORDINATOR_TOKEN_FIELD, (_match, _prefix, value) => {
-    inspect(value);
-    return _match;
-  });
-  replaceWithPattern(text, INLINE_COORDINATOR_TOKEN_FIELD, (_match, _prefix, token) => {
-    inspect(token);
-    return _match;
-  });
-  replaceWithPattern(text, ANY_COORDINATOR_TOKEN_FIELD_VALUE, (_match, _prefix, token) => {
-    inspect(token);
-    return _match;
-  });
-  for (const token of discovered) {
-    if (text.includes(token)) {
-      remaining.add(token);
+  for (let index = 0; index < text.length; index += 1) {
+    let context = null;
+    for (const name of COORDINATOR_TOKEN_FIELD_NAMES) {
+      context = coordinatorFieldAt(text, index, name);
+      if (context) {
+        break;
+      }
     }
-    const upper = token.toUpperCase();
-    if (upper !== token && text.includes(upper)) {
-      remaining.add(upper);
+    context = context ?? jsonArrayOptionAt(text, index) ?? coordinatorOptionAt(text, index);
+    if (!context) {
+      continue;
+    }
+    if (context.valueEnd >= context.valueStart) {
+      inspect(text.slice(context.valueStart, context.valueEnd));
+      index = context.end - 1;
+    } else {
+      const token = tokenBeforeFieldDelimiter(text, context.valueStart);
+      if (token) {
+        remaining.add(token);
+      }
+      index = context.end - 1;
+    }
+  }
+  const knownTokens = new Set(
+    [...discovered].map((token) => token.toLowerCase()),
+  );
+  for (let index = 0; index <= text.length - 64; index += 1) {
+    if (!isRecognizableTokenAt(text, index)) {
+      continue;
+    }
+    const token = text.slice(index, index + 64);
+    if (knownTokens.has(token.toLowerCase())) {
+      remaining.add(token);
+      index += 63;
     }
   }
   return remaining;
@@ -1602,79 +1892,12 @@ function sanitizeEvidenceText(rawEvidence) {
   // Parse each JSONL line first. This gives escaped strings an exact JSON
   // boundary (including nested JSON strings) before textual fallback patterns
   // handle shell transcripts and malformed/non-JSON lines.
-  let redacted = redactParseableJsonLines(rawEvidence, discovered);
-
-  // Replace complete JSON fields first. The quote prefix/suffix accepts both
-  // ordinary JSON and any number of escape layers found in JSONL strings.
-  redacted = replaceWithPattern(
-    redacted,
-    COORDINATOR_TOKEN_FIELD,
-    (_match, prefix, value, suffix) => {
-      rememberCoordinatorToken(discovered, value);
-      return `${prefix}${EVIDENCE_REDACTION_MARKER}${suffix}`;
-    },
-  );
-
-  // Shell command arguments are redacted even when they are placeholders or
-  // non-hex values; a command line is still sensitive evidence.
-  redacted = replaceWithPattern(
-    redacted,
-    JSON_COORDINATOR_TOKEN_ARGUMENT,
-    (_match, prefix, separator, value, suffix) => {
-      rememberCoordinatorToken(discovered, value);
-      return `${prefix}${separator}${EVIDENCE_REDACTION_MARKER}${suffix}`;
-    },
-  );
-
-  redacted = replaceWithPattern(
-    redacted,
-    ESCAPED_SHELL_COORDINATOR_TOKEN_ARGUMENT,
-    (_match, prefix, slashes, quote, value) => {
-      rememberCoordinatorToken(discovered, value);
-      return `${prefix}${slashes}${quote}${EVIDENCE_REDACTION_MARKER}${slashes}${quote}`;
-    },
-  );
-
-  redacted = replaceWithPattern(
-    redacted,
-    SHELL_COORDINATOR_TOKEN_ARGUMENT,
-    (_match, prefix, quote, quoted, unquoted) => {
-      const value = quoted ?? unquoted;
-      rememberCoordinatorToken(discovered, value);
-      return `${prefix}${quote ? `${quote}${EVIDENCE_REDACTION_MARKER}${quote}` : EVIDENCE_REDACTION_MARKER}`;
-    },
-  );
-
-  // Fail-closed fallback for malformed quoting or an escaped command/field
-  // whose closing delimiter is missing. It only matches recognizable tokens,
-  // so ordinary SHA-256 hashes elsewhere remain intact.
-  redacted = replaceWithPattern(
-    redacted,
-    INLINE_COORDINATOR_TOKEN_FIELD,
-    (_match, prefix, token) => {
-      rememberCoordinatorToken(discovered, token);
-      return `${prefix}${EVIDENCE_REDACTION_MARKER}`;
-    },
-  );
-  redacted = replaceWithPattern(
-    redacted,
-    INLINE_COORDINATOR_TOKEN_ARGUMENT,
-    (_match, prefix, token) => {
-      rememberCoordinatorToken(discovered, token);
-      return `${prefix}${EVIDENCE_REDACTION_MARKER}`;
-    },
-  );
+  let redacted = redactEvidenceLines(rawEvidence, discovered);
 
   // A discovered bearer value can recur in a trace field, a nested JSONL
   // payload, or a repeated command. Replace every exact/case variant before
   // validating the exported bytes.
-  for (const token of discovered) {
-    redacted = replaceWithPattern(
-      redacted,
-      new RegExp(token, "gi"),
-      () => EVIDENCE_REDACTION_MARKER,
-    );
-  }
+  redacted = replaceDiscoveredTokens(redacted, discovered);
 
   const remaining = remainingCoordinatorTokens(redacted, discovered);
   if (remaining.size > 0) {

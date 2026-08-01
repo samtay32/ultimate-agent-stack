@@ -454,6 +454,11 @@ test("evidence sanitizer leaves ordinary hashes intact", () => {
   assert.equal(sanitizeEvidenceText(raw), raw);
 });
 
+test("evidence sanitizer handles long adversarial non-JSON input linearly", () => {
+  const raw = `${String.raw`\\"`.repeat(50_000)}${"x".repeat(100_000)}`;
+  assert.equal(sanitizeEvidenceText(raw), raw);
+});
+
 test("evidence sanitizer fails closed on an unredacted coordinator field", () => {
   assert.throws(
     () =>
