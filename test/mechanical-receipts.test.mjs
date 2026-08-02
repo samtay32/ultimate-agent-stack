@@ -796,16 +796,31 @@ test("hardened Git probes ignore ambient redirection and fsmonitor settings", ()
       "GIT_CONFIG_SYSTEM",
     ].map((name) => [name, process.env[name]]),
   );
-  const monitorDirectory = mkdtempSync(join(tmpdir(), "mechanical-fsmonitor-"));
+  const monitorDirectory = mkdtempSync(join(tmpdir(), "mechanical fsmonitor-"));
   const marker = join(monitorDirectory, "fsmonitor-ran");
-  const monitor = join(monitorDirectory, "fsmonitor");
+  const monitor = join(
+    monitorDirectory,
+    process.platform === "win32" ? "fsmonitor.cmd" : "fsmonitor",
+  );
   try {
-    writeFileSync(
-      monitor,
-      `#!/usr/bin/env node\nrequire("node:fs").writeFileSync(${JSON.stringify(marker)}, "ran\\n");\n`,
-    );
-    chmodSync(monitor, 0o700);
-    runGit(fixture.directory, ["config", "core.fsmonitor", monitor]);
+    const monitorSource = `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "ran\\n");\n`;
+    if (process.platform === "win32") {
+      writeFileSync(
+        join(monitorDirectory, "fsmonitor.cjs"),
+        monitorSource,
+      );
+      writeFileSync(
+        monitor,
+        `@echo off\r\n"${process.execPath}" "%~dp0fsmonitor.cjs" %*\r\n`,
+      );
+    } else {
+      writeFileSync(monitor, `#!/usr/bin/env node\n${monitorSource}`);
+      chmodSync(monitor, 0o700);
+    }
+    const quotedMonitor = monitor.replaceAll("'", "'\\''");
+    const configuredMonitor =
+      process.platform === "win32" ? `"${monitor}"` : `'${quotedMonitor}'`;
+    runGit(fixture.directory, ["config", "core.fsmonitor", configuredMonitor]);
     runGit(fixture.directory, ["status", "--porcelain=v1"]);
     assert.equal(existsSync(marker), true, "fixture must prove the configured monitor is executable");
     rmSync(marker);
