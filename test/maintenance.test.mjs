@@ -1009,13 +1009,16 @@ test("upstream watch scopes issue writes to its only writing job", () => {
     inspectStart,
     nextJobOffset === -1 ? undefined : inspectStart + 1 + nextJobOffset,
   );
-  assert.match(
-    inspectJob,
-    /^    permissions:\n      contents: read\n      issues: write\n    steps:$/m,
+  assert.match(inspectJob, /^\s+permissions:\s*$/m);
+  assert.match(inspectJob, /^\s+contents:\s*read\s*$/m);
+  assert.match(inspectJob, /^\s+issues:\s*write\s*$/m);
+  assert.equal(
+    [...upstreamWatchWorkflow.matchAll(/^\s+issues:\s*write\s*$/gm)].length,
+    1,
   );
   assert.match(
     inspectJob,
-    /^          ref: \$\{\{ github\.event\.repository\.default_branch \}\}$/m,
+    /^\s+ref:\s*\$\{\{\s*github\.event\.repository\.default_branch\s*\}\}\s*$/m,
   );
 });
 
