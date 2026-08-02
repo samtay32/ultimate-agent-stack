@@ -946,6 +946,73 @@ test("review evidence derives blocked and conflicting outcomes without treating 
   assert.match(JSON.stringify(result), /review_unavailable_receipts.*claim/);
 });
 
+test("blocked expectations require valid durable blocking evidence", () => {
+  const blockedScenario = catalog.scenarios.find(
+    (item) => item.id === "edge-reviewer-unavailable",
+  );
+
+  const absent = passingRecord();
+  const absentCase = absent.cases.find(
+    (item) => item.scenario_id === blockedScenario.id,
+  );
+  absentCase.observed.review_receipts = [];
+  absentCase.observed.review_unavailable_receipts = [];
+  absentCase.observed.review_result_artifacts = [];
+  absentCase.observed.review_status = {
+    independent_reviewed: false,
+    review_gate_ready: false,
+    status: "blocked",
+  };
+  let result = evaluateRecord(absent, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /expected blocked review outcome was not observed/,
+  );
+
+  const unavailable = passingRecord();
+  result = evaluateRecord(unavailable, catalog);
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(
+    result.cases.find((item) => item.scenario_id === blockedScenario.id).review
+      .status,
+    "blocked",
+  );
+
+  const changes = passingRecord();
+  const changesCase = changes.cases.find(
+    (item) => item.scenario_id === blockedScenario.id,
+  );
+  const changesEvidence = reviewEvidence(
+    blockedScenario,
+    changesCase.final_git_head,
+    { result: "changes-requested", reviewerId: "blocked-reviewer" },
+  );
+  changesCase.observed.review_receipts = [changesEvidence.receipt];
+  changesCase.observed.review_unavailable_receipts = [];
+  changesCase.observed.review_result_artifacts = [changesEvidence.artifact];
+  changesCase.observed.review_status = {
+    independent_reviewed: false,
+    review_gate_ready: false,
+    status: "blocked",
+  };
+  result = evaluateRecord(changes, catalog);
+  assert.equal(result.ok, true, JSON.stringify(result));
+
+  const malformed = passingRecord();
+  const malformedCase = malformed.cases.find(
+    (item) => item.scenario_id === blockedScenario.id,
+  );
+  malformedCase.observed.review_unavailable_receipts[0].claim =
+    "unsupported-claim";
+  result = evaluateRecord(malformed, catalog);
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /review_unavailable_receipts.*claim.*expected blocked review outcome was not observed/s,
+  );
+});
+
 test("review and unavailable receipt bounds fail structurally before outcome derivation", () => {
   for (const mutate of [
     (receipt) => {

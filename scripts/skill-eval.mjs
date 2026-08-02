@@ -930,7 +930,7 @@ function validateReviewEvidence(
     } else {
       findings.push("required passed review outcome was not observed");
     }
-  } else if (expected === "blocked" && reviewStatus !== "blocked") {
+  } else if (expected === "blocked" && !hasBlockingOutcome) {
     findings.push("expected blocked review outcome was not observed");
   }
   if (
