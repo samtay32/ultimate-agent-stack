@@ -34,7 +34,7 @@
   ],
   "scripts": {
     "test": "node --test",
-    "test:coverage": "node --experimental-test-coverage --test-coverage-include=bin/**/*.mjs --test-coverage-include=lib/**/*.mjs --test-coverage-include=scripts/**/*.mjs --test-coverage-lines=75 --test-coverage-branches=70 --test-coverage-functions=85 --test",
+    "test:coverage": "node --experimental-test-coverage --test-coverage-include=\"bin/**/*.mjs\" --test-coverage-include=\"lib/**/*.mjs\" --test-coverage-include=\"scripts/**/*.mjs\" --test-coverage-lines=75 --test-coverage-branches=70 --test-coverage-functions=85 --test",
     "lint": "node --check bin/ultimate-agent-stack.mjs && node --check lib/portable-process-source.mjs && node --check lib/portable-process.mjs && node --check scripts/check-portable-bundle.mjs && node --check scripts/upstream-issue.mjs && node --check scripts/release-preflight.mjs && node --check scripts/packed-smoke.mjs && node --check scripts/review-receipt.mjs && node --check scripts/github-release-sync.mjs && node --check scripts/gbrain-project.mjs && node --check scripts/linear-readonly.mjs && node --check scripts/linear-write.mjs && node --check scripts/telemetry-readonly.mjs && node --check scripts/skill-eval.mjs && node --check scripts/skill-fixture.mjs && npm run lint:markdown",
     "lint:markdown": "markdownlint-cli2 \"**/*.md\"",
     "build:portable": "node scripts/check-portable-bundle.mjs --write",

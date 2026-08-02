@@ -997,11 +997,25 @@ test("CI covers minimum Node and Windows before the required verify job", () => 
 
 test("upstream watch scopes issue writes to its only writing job", () => {
   assert.match(upstreamWatchWorkflow, /^permissions: \{\}$/m);
-  assert.match(upstreamWatchWorkflow, /concurrency:/);
-  assert.match(upstreamWatchWorkflow, /group: upstream-watch/);
   assert.match(
     upstreamWatchWorkflow,
-    /inspect:[\s\S]*?permissions:\s+contents: read\s+issues: write/,
+    /concurrency:\s+group: upstream-watch\s+cancel-in-progress: false/,
+  );
+  const inspectStart = upstreamWatchWorkflow.indexOf("  inspect:\n");
+  assert.notEqual(inspectStart, -1);
+  const inspectRemainder = upstreamWatchWorkflow.slice(inspectStart + 1);
+  const nextJobOffset = inspectRemainder.search(/^  [A-Za-z0-9_-]+:\n/m);
+  const inspectJob = upstreamWatchWorkflow.slice(
+    inspectStart,
+    nextJobOffset === -1 ? undefined : inspectStart + 1 + nextJobOffset,
+  );
+  assert.match(
+    inspectJob,
+    /^    permissions:\n      contents: read\n      issues: write\n    steps:$/m,
+  );
+  assert.match(
+    inspectJob,
+    /^          ref: \$\{\{ github\.event\.repository\.default_branch \}\}$/m,
   );
 });
 

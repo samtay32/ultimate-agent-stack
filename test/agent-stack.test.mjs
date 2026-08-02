@@ -4570,6 +4570,12 @@ test("inline evaluation checks are rejected in favor of reviewed files", () => {
     ["python3", "-cprint('ok')"],
     ["ruby", "-e", "puts 'ok'"],
     ["perl", "-Esay 1"],
+    ["python3.12.exe", "-c", "print('ok')"],
+    ["node22", "--eval=process.exit(0)"],
+    ["ruby3.3", "-e", "puts 'ok'"],
+    ["php8.4", "-r", "echo 'ok';"],
+    ["perl5.40", "-Esay 1"],
+    ["deno2", "eval", "console.log('ok')"],
   ]) {
     const config = safeConfig();
     config.quality.checks = [

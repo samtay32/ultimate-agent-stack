@@ -256,6 +256,14 @@ const INLINE_EVALUATION_ARGUMENTS = new Map([
   ["python3", new Set(["-c"])],
   ["ruby", new Set(["-e"])],
 ]);
+const VERSIONED_INLINE_EVALUATION_ARGUMENTS = [
+  [/^deno\d+(?:\.\d+)*$/u, INLINE_EVALUATION_ARGUMENTS.get("deno")],
+  [/^node\d+(?:\.\d+)*$/u, INLINE_EVALUATION_ARGUMENTS.get("node")],
+  [/^perl\d+(?:\.\d+)*$/u, INLINE_EVALUATION_ARGUMENTS.get("perl")],
+  [/^php\d+(?:\.\d+)*$/u, INLINE_EVALUATION_ARGUMENTS.get("php")],
+  [/^python\d+(?:\.\d+)*$/u, INLINE_EVALUATION_ARGUMENTS.get("python")],
+  [/^ruby\d+(?:\.\d+)*$/u, INLINE_EVALUATION_ARGUMENTS.get("ruby")],
+];
 const GIT_INSPECTION_SUBCOMMANDS = new Set([
   "diff",
   "log",
@@ -1680,6 +1688,16 @@ function canonicalExecutableName(value) {
     .replace(/\.(?:bat|cmd|com|exe)$/u, "");
 }
 
+function inlineEvaluationArgumentsForExecutable(executable) {
+  const exact = INLINE_EVALUATION_ARGUMENTS.get(executable);
+  if (exact) {
+    return exact;
+  }
+  return VERSIONED_INLINE_EVALUATION_ARGUMENTS.find(([pattern]) =>
+    pattern.test(executable),
+  )?.[1];
+}
+
 function validateCommand(check, index, config, target = undefined) {
   const errors = [];
   if (!check || typeof check !== "object" || Array.isArray(check)) {
@@ -1732,7 +1750,8 @@ function validateCommand(check, index, config, target = undefined) {
       `quality.checks[${index}] uses forbidden shell, command wrapper, network client, or destructive executable: ${executable}`,
     );
   }
-  const inlineEvaluationArguments = INLINE_EVALUATION_ARGUMENTS.get(executable);
+  const inlineEvaluationArguments =
+    inlineEvaluationArgumentsForExecutable(executable);
   if (
     inlineEvaluationArguments &&
     check.argv
