@@ -5,13 +5,18 @@ on:
     - cron: "17 13 * * 1"
   workflow_dispatch:
 
-permissions:
-  contents: read
-  issues: write
+permissions: {}
+
+concurrency:
+  group: upstream-watch
+  cancel-in-progress: false
 
 jobs:
   inspect:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
       - name: Check out source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2

@@ -986,10 +986,22 @@ test("CI covers minimum Node and Windows before the required verify job", () => 
   assert.equal([...ciWorkflow.matchAll(/node: 26\b/g)].length, 1);
   assert.doesNotMatch(ciWorkflow, /20\.12/);
   assert.match(ciWorkflow, /os: windows-latest/);
+  assert.match(ciWorkflow, /concurrency:/);
+  assert.match(ciWorkflow, /cancel-in-progress: true/);
   assert.match(ciWorkflow, /verify:\s+needs: compatibility/);
   assert.ok(
     [...ciWorkflow.matchAll(/run: npm run release:check/g)].length >= 2,
     "both compatibility and required verify must run the release gate",
+  );
+});
+
+test("upstream watch scopes issue writes to its only writing job", () => {
+  assert.match(upstreamWatchWorkflow, /^permissions: \{\}$/m);
+  assert.match(upstreamWatchWorkflow, /concurrency:/);
+  assert.match(upstreamWatchWorkflow, /group: upstream-watch/);
+  assert.match(
+    upstreamWatchWorkflow,
+    /inspect:[\s\S]*?permissions:\s+contents: read\s+issues: write/,
   );
 });
 
@@ -1079,9 +1091,28 @@ test("package has no install hooks and guards publication with prepublishOnly", 
   assert.equal(packageData.devDependencies?.["cross-spawn"], "7.0.6");
   assert.equal(packageData.devDependencies?.esbuild, "0.28.1");
   assert.equal(
+    packageData.devDependencies?.["markdownlint-cli2"],
+    "0.23.2",
+  );
+  assert.equal(
     packageLockData.packages?.[""]?.devDependencies?.["cross-spawn"],
     "7.0.6",
   );
+  assert.equal(
+    packageLockData.packages?.[""]?.devDependencies?.["markdownlint-cli2"],
+    "0.23.2",
+  );
+  assert.match(packageData.scripts?.lint, /lint:markdown/);
+  assert.match(packageData.scripts?.["test:coverage"], /test-coverage-lines=75/);
+  assert.match(
+    packageData.scripts?.["test:coverage"],
+    /test-coverage-branches=70/,
+  );
+  assert.match(
+    packageData.scripts?.["test:coverage"],
+    /test-coverage-functions=85/,
+  );
+  assert.match(packageData.scripts?.["release:check"], /test:coverage/);
   assert.match(packageData.scripts?.["release:check"], /check:portable/);
 });
 
@@ -1239,7 +1270,7 @@ test("work and evidence contracts remain portable and provider-neutral", () => {
 });
 
 test("npm staging and GitHub release permissions remain separated", () => {
-  assert.doesNotMatch(publishWorkflow, /^permissions:/m);
+  assert.match(publishWorkflow, /^permissions: \{\}$/m);
   assert.match(publishWorkflow, /publish:\s+environment: npm/);
   assert.match(
     publishWorkflow,
@@ -1266,7 +1297,7 @@ test("npm staging and GitHub release permissions remain separated", () => {
 test("release synchronization runs trusted code and retains human npm approval", () => {
   assert.match(releaseSyncWorkflow, /schedule:/);
   assert.match(releaseSyncWorkflow, /workflow_dispatch:/);
-  assert.doesNotMatch(releaseSyncWorkflow, /^permissions:/m);
+  assert.match(releaseSyncWorkflow, /^permissions: \{\}$/m);
   assert.match(
     releaseSyncWorkflow,
     /jobs:\s+sync:[\s\S]*?permissions:\s+contents: write[^\n]*/,

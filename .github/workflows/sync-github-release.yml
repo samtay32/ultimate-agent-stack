@@ -5,6 +5,8 @@ on:
     - cron: "23 * * * *"
   workflow_dispatch:
 
+permissions: {}
+
 concurrency:
   group: github-release-sync
   cancel-in-progress: false

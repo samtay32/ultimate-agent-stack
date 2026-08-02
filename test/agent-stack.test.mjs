@@ -28,6 +28,7 @@ import {
   CORE_POLICY_PATH,
   EVIDENCE_GRAPH_PATH,
   INSTALLATION_PATH,
+  PACKAGE_VERSION,
   PROJECT_CLI_PATH,
   PROVIDER_RECEIPTS_PATH,
   REVIEW_RECEIPT_PATH,
@@ -36,6 +37,8 @@ import {
   TELEMETRY_READONLY_PATH,
   WORK_LEDGER_PATH,
   assertSupportedNodeVersion,
+  atomicText,
+  canonicalExecutableName,
   checksHash,
   commandCheckpoint,
   commandCapabilities,
@@ -72,6 +75,7 @@ import {
   defaultConfig,
   detectProject,
   execute,
+  hardenCheckEnvironment,
   installOrUpgrade,
   loadInstallation,
   normalizeWindowsExtensions,
@@ -122,6 +126,34 @@ test("agent-facing setup examples use concise install output", () => {
     operatingManual,
     /ultimate-agent-stack@latest upgrade --concise/,
   );
+});
+
+test("legacy Claude setup flag is accepted silently but not advertised", () => {
+  assert.doesNotMatch(execute("help", []).help, /--claude/);
+  const fixture = temporaryProject();
+  try {
+    const result = execute("init", [
+      "--target",
+      fixture.directory,
+      "--claude",
+      "--concise",
+    ]);
+    assert.equal(result.ok, true);
+    assert.equal(
+      existsSync(
+        join(
+          fixture.directory,
+          ".claude",
+          "skills",
+          "run-autonomous-delivery",
+          "SKILL.md",
+        ),
+      ),
+      true,
+    );
+  } finally {
+    fixture.cleanup();
+  }
 });
 
 test("CLI enforces the declared Node 22 minimum", () => {
@@ -176,6 +208,28 @@ test("portable text hashes accept only line-ending differences", () => {
     portableTextSha256("one\ntwo\n"),
     portableTextSha256("one\nchanged\n"),
   );
+});
+
+test("atomic text writes replace files and clean temporary files after failure", () => {
+  const fixture = temporaryProject();
+  try {
+    const file = join(fixture.directory, "state.json");
+    atomicText(file, "first\n");
+    atomicText(file, "second\n");
+    assert.equal(readFileSync(file, "utf8"), "second\n");
+
+    const blocked = join(fixture.directory, "blocked");
+    mkdirSync(blocked);
+    assert.throws(() => atomicText(blocked, "cannot replace a directory\n"));
+    assert.deepEqual(
+      readdirSync(fixture.directory).filter((entry) =>
+        entry.startsWith(".blocked."),
+      ),
+      [],
+    );
+  } finally {
+    fixture.cleanup();
+  }
 });
 
 function safeParallelPolicy(overrides = {}) {
@@ -1709,7 +1763,7 @@ test("init and upgrade preserve detailed JSON with opt-in concise summaries", ()
       path: "AGENTS.md",
       status: "preserved-existing",
       requires_action: true,
-      proposal: ".agent-stack/update-proposals/0.9.1/AGENTS.md",
+      proposal: `.agent-stack/update-proposals/${PACKAGE_VERSION}/AGENTS.md`,
     });
     assert.ok(
       conciseUpgrade.stdout.length < 4_096,
@@ -4401,6 +4455,110 @@ test("shell and destructive quality checks are rejected", () => {
   ];
 
   assert.match(validateConfig(config).join("\n"), /forbidden shell/);
+});
+
+test("quality command policy normalizes Windows executable suffixes", () => {
+  for (const [value, expected] of [
+    ["bash.exe", "bash"],
+    ["C:\\Program Files\\Git\\bin\\git.exe", "git"],
+    ["npm.CMD", "npm"],
+    ["python.com", "python"],
+    ["tool", "tool"],
+  ]) {
+    assert.equal(canonicalExecutableName(value), expected);
+  }
+
+  for (const { argv, expected } of [
+    {
+      argv: ["bash.exe", "-c", "rm -rf ."],
+      expected: /forbidden shell/,
+    },
+    {
+      argv: ["git.exe", "clean", "-fdx"],
+      expected: /non-read-only git command: clean/,
+    },
+    {
+      argv: ["npm.cmd", "publish"],
+      expected: /package-manager command must be run or test/,
+    },
+    {
+      argv: ["python.exe", "-c", "print('unsafe')"],
+      expected: /uses inline code evaluation/,
+    },
+    {
+      argv: ["terraform.exe", "apply"],
+      expected: /terraform command must be fmt or validate/,
+    },
+    {
+      argv: ["docker.exe", "run", "image"],
+      expected: /docker quality command must be compose config/,
+    },
+  ]) {
+    const config = safeConfig();
+    config.quality.checks = [
+      {
+        id: "windows-policy",
+        argv,
+        required: true,
+        timeout_seconds: 30,
+      },
+    ];
+    assert.match(
+      validateConfig(config).join("\n"),
+      expected,
+      `expected ${argv.join(" ")} to be rejected by ${expected}`,
+    );
+  }
+
+  const gitConfig = safeConfig();
+  gitConfig.quality.checks = [
+    {
+      id: "windows-git-inspection",
+      argv: ["git.exe", "status", "--porcelain=v1"],
+      required: true,
+      timeout_seconds: 30,
+    },
+  ];
+  assert.deepEqual(validateConfig(gitConfig), []);
+  assert.equal(
+    hardenCheckEnvironment(gitConfig.quality.checks[0], {}).GIT_CONFIG_NOSYSTEM,
+    "1",
+  );
+});
+
+test("indirect launchers and alternate shells cannot wrap quality checks", () => {
+  for (const argv of [
+    ["env", "bash", "-c", "rm -rf ."],
+    ["dash", "-c", "rm -rf ."],
+    ["ksh", "-c", "rm -rf ."],
+    ["csh", "-c", "rm -rf ."],
+    ["fish", "-c", "rm -rf ."],
+    ["busybox", "sh", "-c", "rm -rf ."],
+    ["awk", "BEGIN { system(\"rm -rf .\") }"],
+    ["find", ".", "-exec", "rm", "{}", ";"],
+    ["xargs", "rm", "-rf"],
+    ["npx", "unsafe-package"],
+    ["curl", "https://example.invalid/script"],
+    ["nc", "example.invalid", "80"],
+    ["ssh", "example.invalid", "rm -rf project"],
+    ["chmod", "-R", "777", "."],
+    ["ansible-playbook", "deploy.yml"],
+  ]) {
+    const config = safeConfig();
+    config.quality.checks = [
+      {
+        id: "indirect-launcher",
+        argv,
+        required: true,
+        timeout_seconds: 30,
+      },
+    ];
+    assert.match(
+      validateConfig(config).join("\n"),
+      /forbidden shell, command wrapper, network client, or destructive executable/,
+      `expected ${argv.join(" ")} to be rejected`,
+    );
+  }
 });
 
 test("inline evaluation checks are rejected in favor of reviewed files", () => {

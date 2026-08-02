@@ -8,6 +8,8 @@ on:
         required: true
         type: string
 
+permissions: {}
+
 concurrency:
   group: npm-publish
   cancel-in-progress: false

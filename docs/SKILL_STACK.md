@@ -126,8 +126,9 @@ canonical skills from `.agents/skills/` into `.claude/skills/` and installs
 the read-only Claude worker profile, including in a brand-new folder with no
 harness markers. A pre-existing `CLAUDE.md` is preserved and proposed for
 reconciliation instead of overwritten. Existing `.claude/` markers are also
-reported to the agent. Upgrades remember installed harnesses, the legacy
-`--claude` flag remains accepted, and customizations are preserved for
+reported to the agent. Upgrades remember installed harnesses. The legacy
+`--claude` flag remains silently accepted for pre-1.0 command compatibility but
+does not change the universal adapter install. Customizations are preserved for
 reconciliation.
 
 ### Grok
