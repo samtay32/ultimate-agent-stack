@@ -67,12 +67,18 @@ Every scenario defines:
 Activation and review claims are structured rather than free-form. Each live
 case records an exact `run_id`, durable `activation_receipts`, and a derived
 `activation_status`; `activated_skills` must exactly equal the skills derived
-from valid receipt content. Cases that require local review also record
-`review_receipts` or `review_unavailable_receipts` plus a derived
-`review_status`. Direct delivery and the flexible direct bypass require a
-passed receipt whose commit equals the exact final head. The reviewer-unavailable
-edge case must remain blocked. These records claim only `agent-recorded` and do
-not authenticate a harness tool call or external review provider.
+from valid receipt content. Every observed case includes a bounded
+`review_result_artifacts` snapshot array; cases that record local review also
+record `review_receipts` or `review_unavailable_receipts` and a derived
+`review_status`. Each
+snapshot contains exactly the project-relative `path` and exact UTF-8
+`content` copied from that case's reviewer-result file, including any final
+newline. There is exactly one snapshot for every review receipt result file;
+paths are unique and contents are bounded at 4 MiB. Direct delivery and the
+flexible direct bypass require a passed receipt whose commit equals the exact
+final head. The reviewer-unavailable edge case must remain blocked. These
+records claim only `agent-recorded` and do not authenticate a harness tool call
+or external review provider.
 
 The CLI `evidence activation-status` and `review status` results include stable
 project-relative `evidence_graph_path`, review receipt and unavailable
@@ -86,8 +92,8 @@ security control. A run collector records `question_count`,
 observable outputs, and source-claim dispositions from inspectable traces and
 fixture snapshots. The evaluator validates those records; it does not observe
 the broader project filesystem or authenticate the collector on its own. It
-does mechanically inspect only the referenced reviewer-result artifacts under
-the explicit evidence root described above.
+mechanically checks the exact self-contained reviewer-result snapshots recorded
+inside each case.
 
 The negative case makes false activation a first-class failure. Adding more
 positive examples cannot compensate for an agent starting work when it should
@@ -304,17 +310,17 @@ Then evaluate it:
 
 ```bash
 npm run eval:behavior -- \
-  --input /safe/temporary/path/uas-run.json \
-  --evidence-root /safe/temporary/path/evaluated-project
+  --input /safe/temporary/path/uas-run.json
 ```
 
-`--evidence-root` is required whenever evaluating a run record. It must name
-the deterministic project/evidence root that contains the project-relative
-`.agent-stack/runs/` paths referenced by reviewer receipts. The evaluator
-confines each result artifact under that root, rejects traversal, symlinks,
-non-files, missing/unreadable or oversized files, hashes the exact bytes, and
-validates the structured reviewer-result artifact before deriving a review
-outcome. There is no implicit current-working-directory fallback.
+The evaluator requires every case to contain its bounded
+`review_result_artifacts` array. Each entry must contain only a safe
+project-relative `.agent-stack/runs/...json` `path` and the exact UTF-8 JSON
+`content` copied from that case's reviewer-result file. It rejects missing,
+duplicate, unreferenced, non-string, empty, oversized, malformed,
+hash-mismatched, or field-mismatched snapshots before deriving a review
+outcome. The snapshot boundary is self-contained per disposable case, so no
+filesystem root or cross-record artifact directory is needed.
 
 Do not turn one run into a reliability claim. Once two or more current run
 records exist, aggregate the observations by harness and model:
@@ -322,8 +328,7 @@ records exist, aggregate the observations by harness and model:
 ```bash
 npm run eval:routing -- \
   --input /safe/temporary/path/run-1.json \
-  --input /safe/temporary/path/run-2.json \
-  --evidence-root /safe/temporary/path/evaluated-project
+  --input /safe/temporary/path/run-2.json
 ```
 
 The report requires at least two complete records with non-overlapping session
@@ -337,9 +342,10 @@ authenticate a collector's truthfulness.
 
 New scaffolds use run-record schema version 3, which requires
 `source_claim_dispositions` and the other expanded observation fields in every
-case. Schema-version-1 records described the smaller pre-flexible-intake
-contract and are rejected; generate a fresh scaffold and rerun the current
-behavior surface instead of silently interpreting absent evidence as success.
+case. Schema-version-1 and schema-version-2 records described smaller
+pre-current contracts and are rejected; generate a fresh schema-version-3
+scaffold and rerun the current behavior surface instead of silently
+interpreting absent evidence as success.
 
 The evaluator fails when a required scenario is missing, a forbidden skill
 activates, a required skill does not activate, a question rule is violated, a

@@ -3,7 +3,6 @@
 import { createHash } from "node:crypto";
 import {
   existsSync,
-  lstatSync,
   readFileSync,
   readdirSync,
   realpathSync,
@@ -13,7 +12,6 @@ import {
 import {
   dirname,
   extname,
-  isAbsolute,
   join,
   relative,
   resolve,
@@ -103,6 +101,7 @@ const REVIEW_RESULT_FILE_MAX_CHARS = 512;
 const REVIEW_REASON_MAX_CHARS = 200;
 const REVIEW_DETAILS_MAX_CHARS = 2_000;
 const MAX_REVIEW_RESULT_FILE_BYTES = 4 * 1024 * 1024;
+const MAX_REVIEW_RESULT_ARTIFACTS = 128;
 const LIVE_PROMPT_MAX_BYTES = 2 * 1024;
 
 function readJson(path) {
@@ -367,113 +366,87 @@ function reviewerResultPath(value) {
   );
 }
 
-function resolveEvidenceRoot(value) {
-  if (!isNonEmptyString(value)) {
-    return {
-      root: null,
-      error: "an explicit --evidence-root is required to verify reviewer result artifacts",
-    };
+function validateReviewResultArtifacts(value, findings) {
+  if (!Array.isArray(value)) {
+    findings.push("review_result_artifacts must be an array");
+    return { entries: [], byPath: new Map(), invalidCount: 1 };
   }
-  const candidate = resolve(value);
-  try {
-    if (lstatSync(candidate).isSymbolicLink() || !statSync(candidate).isDirectory()) {
-      return {
-        root: null,
-        error: "evidence root must be a real directory",
-      };
-    }
-    return { root: realpathSync(candidate), error: null };
-  } catch (error) {
-    return {
-      root: null,
-      error: `evidence root is unavailable: ${error.message}`,
-    };
+  if (value.length > MAX_REVIEW_RESULT_ARTIFACTS) {
+    findings.push(
+      `review_result_artifacts must contain at most ${MAX_REVIEW_RESULT_ARTIFACTS} artifacts`,
+    );
+    return { entries: [], byPath: new Map(), invalidCount: 1, overflow: true };
   }
-}
-
-function reviewerResultArtifactErrors(receipt, evidenceRoot, location) {
-  const errors = [];
-  const fail = (message) => `${location}.result_file ${message}`;
-  const resolvedRoot = resolveEvidenceRoot(evidenceRoot);
-  if (resolvedRoot.error) {
-    return [fail(resolvedRoot.error)];
-  }
-  const relativePath = receipt.result_file.replaceAll("/", sep);
-  const resultFile = resolve(resolvedRoot.root, relativePath);
-  const relation = relative(resolvedRoot.root, resultFile);
-  if (
-    relation.length === 0 ||
-    relation === ".." ||
-    relation.startsWith(`..${sep}`) ||
-    isAbsolute(relation)
-  ) {
-    return [fail("result_file escapes the evidence root")];
-  }
-  let cursor = resolvedRoot.root;
-  for (const component of relation.split(sep).filter(Boolean)) {
-    cursor = join(cursor, component);
-    try {
-      if (existsSync(cursor) && lstatSync(cursor).isSymbolicLink()) {
-        return [fail("result_file crosses a symlinked path component")];
+  const entries = [];
+  const byPath = new Map();
+  let invalidCount = 0;
+  for (const [index, snapshot] of value.entries()) {
+    const location = `review_result_artifacts[${index}]`;
+    const errors = [];
+    const issue = (message) => errors.push(`${location} ${message}`);
+    let parsed;
+    if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+      issue("must be an object");
+    } else {
+      for (const key of Object.keys(snapshot)) {
+        if (key !== "path" && key !== "content") {
+          issue(`contains unsupported field ${key}`);
+        }
       }
-    } catch (error) {
-      return [fail(`result_file cannot be inspected: ${error.message}`)];
+      for (const key of ["path", "content"]) {
+        if (!Object.hasOwn(snapshot, key)) {
+          issue(`${key} is required`);
+        }
+      }
+      if (!reviewerResultPath(snapshot.path)) {
+        issue("path must be a safe JSON reviewer-result path under .agent-stack/runs/");
+      }
+      if (typeof snapshot.content !== "string") {
+        issue("content must be a string");
+      } else {
+        const bytes = Buffer.from(snapshot.content, "utf8");
+        if (bytes.length === 0) {
+          issue("content must be non-empty");
+        }
+        if (bytes.length > MAX_REVIEW_RESULT_FILE_BYTES) {
+          issue(
+            `content exceeds the ${MAX_REVIEW_RESULT_FILE_BYTES}-byte limit`,
+          );
+        }
+        if (errors.length === 0) {
+          try {
+            parsed = JSON.parse(snapshot.content);
+          } catch (error) {
+            issue(`content contains invalid JSON: ${error.message}`);
+          }
+        }
+      }
     }
+    const entry = {
+      index,
+      path: snapshot?.path,
+      content: snapshot?.content,
+      parsed,
+      errors,
+      valid: errors.length === 0,
+    };
+    if (reviewerResultPath(entry.path)) {
+      const pathEntries = byPath.get(entry.path) ?? [];
+      if (pathEntries.length > 0) {
+        issue(`duplicates artifact path ${entry.path}`);
+        entry.valid = false;
+        invalidCount += 1;
+      }
+      pathEntries.push(entry);
+      byPath.set(entry.path, pathEntries);
+    }
+    if (errors.length > 0) {
+      findings.push(...errors);
+      invalidCount += 1;
+    }
+    entries.push(entry);
   }
-  if (!existsSync(resultFile)) {
-    return [fail("result_file artifact is missing under the evidence root")];
-  }
-  let stats;
-  try {
-    stats = lstatSync(resultFile);
-  } catch (error) {
-    return [fail(`result_file cannot be inspected: ${error.message}`)];
-  }
-  if (stats.isSymbolicLink()) {
-    return [fail("result_file must be a regular non-symlink file")];
-  }
-  if (!stats.isFile()) {
-    return [fail("result_file must be a regular file")];
-  }
-  if (stats.size === 0) {
-    errors.push("result_file artifact must be non-empty");
-  }
-  if (stats.size > MAX_REVIEW_RESULT_FILE_BYTES) {
-    errors.push(
-      `result_file artifact exceeds the ${MAX_REVIEW_RESULT_FILE_BYTES}-byte limit`,
-    );
-  }
-  if (errors.length > 0) {
-    return errors.map(fail);
-  }
-  let bytes;
-  try {
-    bytes = readFileSync(resultFile);
-  } catch (error) {
-    return [fail(`result_file artifact is unreadable: ${error.message}`)];
-  }
-  const actualHash = `sha256:${digest(bytes)}`;
-  if (actualHash !== receipt.result_file_sha256) {
-    errors.push("result_file artifact hash does not match the receipt");
-  }
-  let artifact;
-  try {
-    artifact = JSON.parse(bytes.toString("utf8"));
-  } catch (error) {
-    errors.push(`result_file artifact contains invalid JSON: ${error.message}`);
-  }
-  if (artifact !== undefined) {
-    errors.push(
-      ...validateReviewerResultArtifact(artifact, {
-        run_id: receipt.run_id,
-        git_commit: receipt.git_commit,
-        reviewer_kind: receipt.reviewer_kind,
-        reviewer_id: receipt.reviewer_id,
-        result: receipt.result,
-      }),
-    );
-  }
-  return errors.map((error) => `${location}.result_file ${error}`);
+  return { entries, byPath, invalidCount, overflow: false };
 }
 
 function validateActivationReceipts(receipts, observedRunId, skills, findings) {
@@ -599,19 +572,68 @@ function validateReviewEvidence(
   item,
   expectedReview,
   findings,
-  { evidenceRoot } = {},
 ) {
   const receipts = observed.review_receipts;
   const unavailableReceipts = observed.review_unavailable_receipts;
+  const artifacts = observed.review_result_artifacts;
+  const reviewArrayOverflow = [];
   if (!Array.isArray(receipts)) {
     findings.push("review_receipts must be an array");
+  } else if (receipts.length > MAX_REVIEW_RESULT_ARTIFACTS) {
+    reviewArrayOverflow.push("review_receipts");
   }
   if (!Array.isArray(unavailableReceipts)) {
     findings.push("review_unavailable_receipts must be an array");
+  } else if (unavailableReceipts.length > MAX_REVIEW_RESULT_ARTIFACTS) {
+    reviewArrayOverflow.push("review_unavailable_receipts");
   }
+  if (!Array.isArray(artifacts)) {
+    findings.push("review_result_artifacts must be an array");
+  } else if (artifacts.length > MAX_REVIEW_RESULT_ARTIFACTS) {
+    reviewArrayOverflow.push("review_result_artifacts");
+  }
+  if (reviewArrayOverflow.length > 0) {
+    for (const name of reviewArrayOverflow) {
+      findings.push(
+        `${name} must contain at most ${MAX_REVIEW_RESULT_ARTIFACTS} items`,
+      );
+    }
+    const derived = {
+      independent_reviewed: false,
+      review_gate_ready: false,
+      status: "blocked",
+    };
+    const status = observed.review_status;
+    if (expectedReview === "not-required") {
+      findings.push("review outcome was blocked for a not-required scenario");
+    } else if (expectedReview === "passed") {
+      findings.push("review outcome was blocked");
+    }
+    if (
+      status &&
+      (status.independent_reviewed !== derived.independent_reviewed ||
+        status.review_gate_ready !== derived.review_gate_ready ||
+        status.status !== derived.status ||
+        Object.hasOwn(status, "pr_ready"))
+    ) {
+      findings.push("review_status must agree with receipt-derived review readiness");
+    }
+    return {
+      validReviews: [],
+      validChangesRequested: [],
+      validUnavailable: [],
+      derived,
+    };
+  }
+  const artifactData = Array.isArray(artifacts)
+    ? validateReviewResultArtifacts(artifacts, findings)
+    : { entries: [], byPath: new Map(), invalidCount: 1 };
   const validReviews = [];
   const validChangesRequested = [];
-  let invalidReviewCount = 0;
+  let invalidReviewCount =
+    artifactData.invalidCount + (Array.isArray(receipts) ? 0 : 1);
+  const referencedArtifactPaths = new Set();
+  const receiptPaths = new Set();
   for (const [index, receipt] of asArray(receipts).entries()) {
     const location = `review_receipts[${index}]`;
     const receiptErrors = [];
@@ -734,12 +756,40 @@ function validateReviewEvidence(
       issue(`${location}.claim must equal agent-recorded`);
     }
     if (receiptErrors.length === 0) {
-      for (const error of reviewerResultArtifactErrors(
-        receipt,
-        evidenceRoot,
-        location,
-      )) {
-        issue(error);
+      if (receiptPaths.has(receipt.result_file)) {
+        issue(`${location}.result_file is referenced by multiple review receipts`);
+      }
+      receiptPaths.add(receipt.result_file);
+      const snapshots = artifactData.byPath.get(receipt.result_file) ?? [];
+      if (snapshots.length !== 1) {
+        issue(
+          `${location}.result_file must have exactly one matching review_result_artifacts entry`,
+        );
+      } else {
+        const snapshot = snapshots[0];
+        referencedArtifactPaths.add(snapshot.path);
+        if (!snapshot.valid) {
+          issue(
+            `review_result_artifacts[${snapshot.index}] is structurally invalid`,
+          );
+        } else {
+          const bytes = Buffer.from(snapshot.content, "utf8");
+          const actualHash = `sha256:${digest(bytes)}`;
+          if (actualHash !== receipt.result_file_sha256) {
+            issue(
+              `${location}.result_file_sha256 must match review_result_artifacts[${snapshot.index}] content`,
+            );
+          }
+          for (const error of validateReviewerResultArtifact(snapshot.parsed, {
+            run_id: receipt.run_id,
+            git_commit: receipt.git_commit,
+            reviewer_kind: receipt.reviewer_kind,
+            reviewer_id: receipt.reviewer_id,
+            result: receipt.result,
+          })) {
+            issue(`review_result_artifacts[${snapshot.index}] ${error}`);
+          }
+        }
       }
     }
     if (receiptErrors.length === 0) {
@@ -753,7 +803,7 @@ function validateReviewEvidence(
     }
   }
   const validUnavailable = [];
-  let invalidUnavailableCount = 0;
+  let invalidUnavailableCount = Array.isArray(unavailableReceipts) ? 0 : 1;
   for (const [index, receipt] of asArray(unavailableReceipts).entries()) {
     const location = `review_unavailable_receipts[${index}]`;
     const receiptErrors = [];
@@ -835,6 +885,17 @@ function validateReviewEvidence(
       invalidUnavailableCount += 1;
     }
   }
+  for (const entry of artifactData.entries) {
+    if (
+      reviewerResultPath(entry.path) &&
+      !referencedArtifactPaths.has(entry.path)
+    ) {
+      findings.push(
+        `review_result_artifacts[${entry.index}].path is unreferenced by review_receipts`,
+      );
+      invalidReviewCount += 1;
+    }
+  }
   const expected = expectedReview;
   if (!REVIEW_EXPECTATIONS.has(expected)) {
     findings.push("expected review expectation must be not-required, passed, or blocked");
@@ -846,58 +907,38 @@ function validateReviewEvidence(
   const hasBlockingOutcome =
     validChangesRequested.length > 0 || validUnavailable.length > 0;
   const hasInvalidOutcome = invalidReviewCount > 0 || invalidUnavailableCount > 0;
-  const passes = validReviews.length > 0 && !hasBlockingOutcome && !hasInvalidOutcome;
-  const blockedNotRequired =
-    expectedReview === "not-required" && (hasBlockingOutcome || hasInvalidOutcome);
-  let derived;
-  if (expected === "not-required") {
-    if (hasBlockingOutcome || hasInvalidOutcome) {
-      findings.push("review outcome was blocked for a not-required scenario");
-      derived = {
-        independent_reviewed: false,
-        review_gate_ready: false,
-        status: "blocked",
-      };
+  if (validReviews.length > 0 && hasBlockingOutcome) {
+    findings.push("review evidence contains conflicting outcomes");
+  }
+  const reviewStatus = hasBlockingOutcome || hasInvalidOutcome
+    ? "blocked"
+    : validReviews.length > 0
+      ? "passed"
+      : expected === "not-required"
+        ? "not-required"
+        : "blocked";
+  const derived = {
+    independent_reviewed: reviewStatus === "passed",
+    review_gate_ready: reviewStatus === "passed",
+    status: reviewStatus,
+  };
+  if (expected === "not-required" && reviewStatus === "blocked") {
+    findings.push("review outcome was blocked for a not-required scenario");
+  } else if (expected === "passed" && reviewStatus !== "passed") {
+    if (reviewStatus === "blocked") {
+      findings.push("review outcome was blocked");
     } else {
-      derived = {
-        independent_reviewed: false,
-        review_gate_ready: false,
-        status: "not-required",
-      };
+      findings.push("required passed review outcome was not observed");
     }
-  } else if (expected === "passed") {
-    if (!passes) {
-      if (hasBlockingOutcome) {
-        findings.push("review outcome was blocked");
-      } else if (!hasInvalidOutcome) {
-        findings.push("required passed review outcome was not observed");
-      }
-    }
-    derived = {
-      independent_reviewed: passes,
-      review_gate_ready: passes,
-      status: passes ? "passed" : "blocked",
-    };
-  } else {
-    if (!hasBlockingOutcome && !hasInvalidOutcome) {
-      findings.push("expected blocked review outcome was not observed");
-    }
-    if (hasBlockingOutcome && validReviews.length > 0) {
-      findings.push("review evidence contains conflicting outcomes");
-    }
-    derived = {
-      independent_reviewed: false,
-      review_gate_ready: false,
-      status: "blocked",
-    };
+  } else if (expected === "blocked" && reviewStatus !== "blocked") {
+    findings.push("expected blocked review outcome was not observed");
   }
   if (
     status &&
     (status.independent_reviewed !== derived.independent_reviewed ||
       status.review_gate_ready !== derived.review_gate_ready ||
       status.status !== derived.status ||
-      Object.hasOwn(status, "pr_ready")) &&
-    !blockedNotRequired
+      Object.hasOwn(status, "pr_ready"))
   ) {
     findings.push("review_status must agree with receipt-derived review readiness");
   }
@@ -1289,7 +1330,6 @@ function validateScenarioCatalog(catalog = readJson(SCENARIOS_FILE)) {
 function validateRunRecord(
   record,
   catalog = readJson(SCENARIOS_FILE),
-  options = {},
 ) {
   const contract = validateScenarioCatalog(catalog);
   const skills = skillCatalog();
@@ -1548,6 +1588,9 @@ function validateRunRecord(
             findings.push(`${field} must be a unique string array`);
           }
         }
+        if (!Array.isArray(observed.review_result_artifacts)) {
+          findings.push("review_result_artifacts must be an array");
+        }
         if (typeof observed.asked_clarifying_question !== "boolean") {
           findings.push("asked_clarifying_question must be boolean");
         }
@@ -1661,7 +1704,6 @@ function validateRunRecord(
           item,
           scenario?.expected?.review,
           findings,
-          options,
         ).derived;
         for (const name of reportedActivated) {
           if (!skills.has(name)) {
@@ -1927,6 +1969,7 @@ function buildScaffold(catalog = readJson(SCENARIOS_FILE)) {
         source_claim_dispositions: [],
         review_receipts: [],
         review_unavailable_receipts: [],
+        review_result_artifacts: [],
         review_status: {
           independent_reviewed: false,
           review_gate_ready: false,
@@ -1944,7 +1987,6 @@ function buildScaffold(catalog = readJson(SCENARIOS_FILE)) {
 function summarizeRoutingRates(
   records,
   catalog = readJson(SCENARIOS_FILE),
-  options = {},
 ) {
   const scenarios = new Map(
     asArray(catalog?.scenarios).map((scenario) => [scenario.id, scenario]),
@@ -2011,7 +2053,7 @@ function summarizeRoutingRates(
       );
       continue;
     }
-    const evaluation = validateRunRecord(record, catalog, options);
+    const evaluation = validateRunRecord(record, catalog);
     const structuralFindings = evaluation.cases.flatMap((item) =>
       item.findings
         .filter((finding) => !behavioralFinding(finding))
@@ -2813,17 +2855,10 @@ function main(args = process.argv.slice(2)) {
   }
   if (command === "evaluate") {
     const input = argumentValue(args, "--input");
-    const evidenceRoot = argumentValue(args, "--evidence-root");
     if (!input || !existsSync(resolve(input)) || !statSync(resolve(input)).isFile()) {
       throw new Error("evaluate requires --input pointing to a run-record file");
     }
-    const resolvedEvidenceRoot = resolveEvidenceRoot(evidenceRoot);
-    if (resolvedEvidenceRoot.error) {
-      throw new Error(`evaluate ${resolvedEvidenceRoot.error}`);
-    }
-    const result = validateRunRecord(readJson(resolve(input)), undefined, {
-      evidenceRoot: resolvedEvidenceRoot.root,
-    });
+    const result = validateRunRecord(readJson(resolve(input)));
     print(result);
     if (!result.ok) {
       process.exitCode = 2;
@@ -2832,7 +2867,6 @@ function main(args = process.argv.slice(2)) {
   }
   if (command === "routing-rate") {
     const inputs = argumentValues(args, "--input");
-    const evidenceRoot = argumentValue(args, "--evidence-root");
     if (
       inputs.length === 0 ||
       inputs.some(
@@ -2844,15 +2878,9 @@ function main(args = process.argv.slice(2)) {
         "routing-rate requires one or more --input run-record files",
       );
     }
-    const resolvedEvidenceRoot = resolveEvidenceRoot(evidenceRoot);
-    if (resolvedEvidenceRoot.error) {
-      throw new Error(`routing-rate ${resolvedEvidenceRoot.error}`);
-    }
     const inputPaths = inputs.map((input) => resolve(input));
     const result = summarizeRoutingRates(
       inputPaths.map((inputPath) => readJson(inputPath)),
-      undefined,
-      { evidenceRoot: resolvedEvidenceRoot.root },
     );
     print({
       ...result,
@@ -2869,7 +2897,7 @@ function main(args = process.argv.slice(2)) {
     return;
   }
   throw new Error(
-    "usage: skill-eval.mjs contracts | surface-hash | scaffold | export-evidence --input FILE --output FILE | evaluate --input FILE --evidence-root ROOT | routing-rate --input FILE [--input FILE ...] --evidence-root ROOT",
+    "usage: skill-eval.mjs contracts | surface-hash | scaffold | export-evidence --input FILE --output FILE | evaluate --input FILE | routing-rate --input FILE [--input FILE ...]",
   );
 }
 
