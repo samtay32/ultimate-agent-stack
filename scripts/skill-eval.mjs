@@ -3,16 +3,28 @@
 import { createHash } from "node:crypto";
 import {
   existsSync,
+  lstatSync,
   readFileSync,
   readdirSync,
   realpathSync,
   statSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, extname, join, relative, resolve, sep } from "node:path";
+import {
+  dirname,
+  extname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { startPromptPolicySurface } from "../bin/ultimate-agent-stack.mjs";
+import {
+  startPromptPolicySurface,
+  validateReviewerResultArtifact,
+} from "../bin/ultimate-agent-stack.mjs";
 import {
   EVALUATION_SCRUBBED_CREDENTIAL_ENVIRONMENT,
   LIVE_LINEAR_SANDBOX_OPT_IN,
@@ -90,6 +102,7 @@ const REVIEW_ID_MAX_CHARS = 256;
 const REVIEW_RESULT_FILE_MAX_CHARS = 512;
 const REVIEW_REASON_MAX_CHARS = 200;
 const REVIEW_DETAILS_MAX_CHARS = 2_000;
+const MAX_REVIEW_RESULT_FILE_BYTES = 4 * 1024 * 1024;
 const LIVE_PROMPT_MAX_BYTES = 2 * 1024;
 
 function readJson(path) {
@@ -354,6 +367,115 @@ function reviewerResultPath(value) {
   );
 }
 
+function resolveEvidenceRoot(value) {
+  if (!isNonEmptyString(value)) {
+    return {
+      root: null,
+      error: "an explicit --evidence-root is required to verify reviewer result artifacts",
+    };
+  }
+  const candidate = resolve(value);
+  try {
+    if (lstatSync(candidate).isSymbolicLink() || !statSync(candidate).isDirectory()) {
+      return {
+        root: null,
+        error: "evidence root must be a real directory",
+      };
+    }
+    return { root: realpathSync(candidate), error: null };
+  } catch (error) {
+    return {
+      root: null,
+      error: `evidence root is unavailable: ${error.message}`,
+    };
+  }
+}
+
+function reviewerResultArtifactErrors(receipt, evidenceRoot, location) {
+  const errors = [];
+  const fail = (message) => `${location}.result_file ${message}`;
+  const resolvedRoot = resolveEvidenceRoot(evidenceRoot);
+  if (resolvedRoot.error) {
+    return [fail(resolvedRoot.error)];
+  }
+  const relativePath = receipt.result_file.replaceAll("/", sep);
+  const resultFile = resolve(resolvedRoot.root, relativePath);
+  const relation = relative(resolvedRoot.root, resultFile);
+  if (
+    relation.length === 0 ||
+    relation === ".." ||
+    relation.startsWith(`..${sep}`) ||
+    isAbsolute(relation)
+  ) {
+    return [fail("result_file escapes the evidence root")];
+  }
+  let cursor = resolvedRoot.root;
+  for (const component of relation.split(sep).filter(Boolean)) {
+    cursor = join(cursor, component);
+    try {
+      if (existsSync(cursor) && lstatSync(cursor).isSymbolicLink()) {
+        return [fail("result_file crosses a symlinked path component")];
+      }
+    } catch (error) {
+      return [fail(`result_file cannot be inspected: ${error.message}`)];
+    }
+  }
+  if (!existsSync(resultFile)) {
+    return [fail("result_file artifact is missing under the evidence root")];
+  }
+  let stats;
+  try {
+    stats = lstatSync(resultFile);
+  } catch (error) {
+    return [fail(`result_file cannot be inspected: ${error.message}`)];
+  }
+  if (stats.isSymbolicLink()) {
+    return [fail("result_file must be a regular non-symlink file")];
+  }
+  if (!stats.isFile()) {
+    return [fail("result_file must be a regular file")];
+  }
+  if (stats.size === 0) {
+    errors.push("result_file artifact must be non-empty");
+  }
+  if (stats.size > MAX_REVIEW_RESULT_FILE_BYTES) {
+    errors.push(
+      `result_file artifact exceeds the ${MAX_REVIEW_RESULT_FILE_BYTES}-byte limit`,
+    );
+  }
+  if (errors.length > 0) {
+    return errors.map(fail);
+  }
+  let bytes;
+  try {
+    bytes = readFileSync(resultFile);
+  } catch (error) {
+    return [fail(`result_file artifact is unreadable: ${error.message}`)];
+  }
+  const actualHash = `sha256:${digest(bytes)}`;
+  if (actualHash !== receipt.result_file_sha256) {
+    errors.push("result_file artifact hash does not match the receipt");
+  }
+  let artifact;
+  try {
+    artifact = JSON.parse(bytes.toString("utf8"));
+  } catch (error) {
+    errors.push(`result_file artifact contains invalid JSON: ${error.message}`);
+  }
+  if (artifact !== undefined) {
+    errors.push(
+      ...validateReviewerResultArtifact(artifact, {
+        run_id: receipt.run_id,
+        git_commit: receipt.git_commit,
+        reviewer_kind: receipt.reviewer_kind,
+        reviewer_id: receipt.reviewer_id,
+        result: receipt.result,
+      }),
+    );
+  }
+  return errors.map((error) => `${location}.result_file ${error}`);
+}
+
 function validateActivationReceipts(receipts, observedRunId, skills, findings) {
   if (!Array.isArray(receipts)) {
     findings.push("activation_receipts must be an array");
@@ -361,6 +483,7 @@ function validateActivationReceipts(receipts, observedRunId, skills, findings) {
   }
   if (receipts.length > 128) {
     findings.push("activation_receipts must contain at most 128 receipts");
+    return [];
   }
   const seen = new Set();
   const derived = new Set();
@@ -471,7 +594,13 @@ function validateActivationReceipts(receipts, observedRunId, skills, findings) {
   return [...derived].sort();
 }
 
-function validateReviewEvidence(observed, item, expectedReview, findings) {
+function validateReviewEvidence(
+  observed,
+  item,
+  expectedReview,
+  findings,
+  { evidenceRoot } = {},
+) {
   const receipts = observed.review_receipts;
   const unavailableReceipts = observed.review_unavailable_receipts;
   if (!Array.isArray(receipts)) {
@@ -605,6 +734,15 @@ function validateReviewEvidence(observed, item, expectedReview, findings) {
       issue(`${location}.claim must equal agent-recorded`);
     }
     if (receiptErrors.length === 0) {
+      for (const error of reviewerResultArtifactErrors(
+        receipt,
+        evidenceRoot,
+        location,
+      )) {
+        issue(error);
+      }
+    }
+    if (receiptErrors.length === 0) {
       if (receipt.result === "passed") {
         validReviews.push(receipt);
       } else {
@@ -709,13 +847,24 @@ function validateReviewEvidence(observed, item, expectedReview, findings) {
     validChangesRequested.length > 0 || validUnavailable.length > 0;
   const hasInvalidOutcome = invalidReviewCount > 0 || invalidUnavailableCount > 0;
   const passes = validReviews.length > 0 && !hasBlockingOutcome && !hasInvalidOutcome;
+  const blockedNotRequired =
+    expectedReview === "not-required" && (hasBlockingOutcome || hasInvalidOutcome);
   let derived;
   if (expected === "not-required") {
-    derived = {
-      independent_reviewed: false,
-      review_gate_ready: false,
-      status: "not-required",
-    };
+    if (hasBlockingOutcome || hasInvalidOutcome) {
+      findings.push("review outcome was blocked for a not-required scenario");
+      derived = {
+        independent_reviewed: false,
+        review_gate_ready: false,
+        status: "blocked",
+      };
+    } else {
+      derived = {
+        independent_reviewed: false,
+        review_gate_ready: false,
+        status: "not-required",
+      };
+    }
   } else if (expected === "passed") {
     if (!passes) {
       if (hasBlockingOutcome) {
@@ -747,7 +896,8 @@ function validateReviewEvidence(observed, item, expectedReview, findings) {
     (status.independent_reviewed !== derived.independent_reviewed ||
       status.review_gate_ready !== derived.review_gate_ready ||
       status.status !== derived.status ||
-      Object.hasOwn(status, "pr_ready"))
+      Object.hasOwn(status, "pr_ready")) &&
+    !blockedNotRequired
   ) {
     findings.push("review_status must agree with receipt-derived review readiness");
   }
@@ -1136,7 +1286,11 @@ function validateScenarioCatalog(catalog = readJson(SCENARIOS_FILE)) {
   };
 }
 
-function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
+function validateRunRecord(
+  record,
+  catalog = readJson(SCENARIOS_FILE),
+  options = {},
+) {
   const contract = validateScenarioCatalog(catalog);
   const skills = skillCatalog();
   const errors = [...contract.errors];
@@ -1194,6 +1348,7 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
   for (const scenario of scenarios) {
     const item = caseMap.get(scenario.id);
     const findings = [];
+    let reviewDerived = null;
     if (!item) {
       findings.push("missing run result");
     } else {
@@ -1501,12 +1656,13 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
             findings.push("activation_status.status must reflect receipt-derived activation");
           }
         }
-        validateReviewEvidence(
+        reviewDerived = validateReviewEvidence(
           observed,
           item,
           scenario?.expected?.review,
           findings,
-        );
+          options,
+        ).derived;
         for (const name of reportedActivated) {
           if (!skills.has(name)) {
             findings.push(`unknown skill was reported as active: ${name}`);
@@ -1672,6 +1828,7 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
       ok: findings.length === 0,
       findings,
       evidence_source: item?.evidence?.source ?? null,
+      review: reviewDerived,
     });
   }
   for (const scenarioId of caseMap.keys()) {
@@ -1787,6 +1944,7 @@ function buildScaffold(catalog = readJson(SCENARIOS_FILE)) {
 function summarizeRoutingRates(
   records,
   catalog = readJson(SCENARIOS_FILE),
+  options = {},
 ) {
   const scenarios = new Map(
     asArray(catalog?.scenarios).map((scenario) => [scenario.id, scenario]),
@@ -1813,6 +1971,7 @@ function summarizeRoutingRates(
       /^required source claim was not accounted for:/,
       /^required passed review outcome was not observed$/,
       /^review outcome was blocked$/,
+      /^review outcome was blocked for a not-required scenario$/,
       /^expected blocked review outcome was not observed$/,
       /^review evidence contains conflicting outcomes$/,
     ].some((pattern) => pattern.test(finding));
@@ -1852,7 +2011,7 @@ function summarizeRoutingRates(
       );
       continue;
     }
-    const evaluation = validateRunRecord(record, catalog);
+    const evaluation = validateRunRecord(record, catalog, options);
     const structuralFindings = evaluation.cases.flatMap((item) =>
       item.findings
         .filter((finding) => !behavioralFinding(finding))
@@ -1903,6 +2062,9 @@ function summarizeRoutingRates(
     if (evaluation.ok) {
       group.evaluated_runs_passed += 1;
     }
+    const evaluatedCases = new Map(
+      evaluation.cases.map((item) => [item.scenario_id, item]),
+    );
     for (const item of record.cases) {
       const scenario = scenarios.get(item?.scenario_id);
       const activationReceiptOutcome =
@@ -1921,7 +2083,10 @@ function summarizeRoutingRates(
       activationOutcome.observed += 1;
       activationOutcome.attempts += 1;
       group.activationReceiptOutcomes.set(activationOutcomeKey, activationOutcome);
-      const reviewOutcome = item.observed.review_status?.status ?? "missing";
+      const reviewOutcome =
+        evaluatedCases.get(item?.scenario_id)?.review?.status ??
+        item.observed.review_status?.status ??
+        "missing";
       const reviewOutcomeKey = `${scenario.id}\0${reviewOutcome}`;
       const reviewOutcomeCount = group.reviewOutcomes.get(reviewOutcomeKey) ?? {
         scenario_id: scenario.id,
@@ -2648,10 +2813,17 @@ function main(args = process.argv.slice(2)) {
   }
   if (command === "evaluate") {
     const input = argumentValue(args, "--input");
+    const evidenceRoot = argumentValue(args, "--evidence-root");
     if (!input || !existsSync(resolve(input)) || !statSync(resolve(input)).isFile()) {
       throw new Error("evaluate requires --input pointing to a run-record file");
     }
-    const result = validateRunRecord(readJson(resolve(input)));
+    const resolvedEvidenceRoot = resolveEvidenceRoot(evidenceRoot);
+    if (resolvedEvidenceRoot.error) {
+      throw new Error(`evaluate ${resolvedEvidenceRoot.error}`);
+    }
+    const result = validateRunRecord(readJson(resolve(input)), undefined, {
+      evidenceRoot: resolvedEvidenceRoot.root,
+    });
     print(result);
     if (!result.ok) {
       process.exitCode = 2;
@@ -2660,6 +2832,7 @@ function main(args = process.argv.slice(2)) {
   }
   if (command === "routing-rate") {
     const inputs = argumentValues(args, "--input");
+    const evidenceRoot = argumentValue(args, "--evidence-root");
     if (
       inputs.length === 0 ||
       inputs.some(
@@ -2671,9 +2844,15 @@ function main(args = process.argv.slice(2)) {
         "routing-rate requires one or more --input run-record files",
       );
     }
+    const resolvedEvidenceRoot = resolveEvidenceRoot(evidenceRoot);
+    if (resolvedEvidenceRoot.error) {
+      throw new Error(`routing-rate ${resolvedEvidenceRoot.error}`);
+    }
     const inputPaths = inputs.map((input) => resolve(input));
     const result = summarizeRoutingRates(
       inputPaths.map((inputPath) => readJson(inputPath)),
+      undefined,
+      { evidenceRoot: resolvedEvidenceRoot.root },
     );
     print({
       ...result,
@@ -2690,7 +2869,7 @@ function main(args = process.argv.slice(2)) {
     return;
   }
   throw new Error(
-    "usage: skill-eval.mjs contracts | surface-hash | scaffold | export-evidence --input FILE --output FILE | evaluate --input FILE | routing-rate --input FILE [--input FILE ...]",
+    "usage: skill-eval.mjs contracts | surface-hash | scaffold | export-evidence --input FILE --output FILE | evaluate --input FILE --evidence-root ROOT | routing-rate --input FILE [--input FILE ...] --evidence-root ROOT",
   );
 }
 

@@ -74,12 +74,20 @@ passed receipt whose commit equals the exact final head. The reviewer-unavailabl
 edge case must remain blocked. These records claim only `agent-recorded` and do
 not authenticate a harness tool call or external review provider.
 
+The CLI `evidence activation-status` and `review status` results include stable
+project-relative `evidence_graph_path`, review receipt and unavailable
+directory fields, plus bounded evaluated receipt/result paths. These paths are
+references for inspection only; they never expose machine-specific absolute
+paths or expand the agent-recorded identity boundary.
+
 The additive evidence fields do not turn model behavior into a deterministic
 security control. A run collector records `question_count`,
 `max_questions_in_turn`, `question_tags`, `written_paths`, artifact states,
 observable outputs, and source-claim dispositions from inspectable traces and
 fixture snapshots. The evaluator validates those records; it does not observe
-the filesystem or authenticate the collector on its own.
+the broader project filesystem or authenticate the collector on its own. It
+does mechanically inspect only the referenced reviewer-result artifacts under
+the explicit evidence root described above.
 
 The negative case makes false activation a first-class failure. Adding more
 positive examples cannot compensate for an agent starting work when it should
@@ -295,8 +303,18 @@ sufficient. Record:
 Then evaluate it:
 
 ```bash
-npm run eval:behavior -- --input /safe/temporary/path/uas-run.json
+npm run eval:behavior -- \
+  --input /safe/temporary/path/uas-run.json \
+  --evidence-root /safe/temporary/path/evaluated-project
 ```
+
+`--evidence-root` is required whenever evaluating a run record. It must name
+the deterministic project/evidence root that contains the project-relative
+`.agent-stack/runs/` paths referenced by reviewer receipts. The evaluator
+confines each result artifact under that root, rejects traversal, symlinks,
+non-files, missing/unreadable or oversized files, hashes the exact bytes, and
+validates the structured reviewer-result artifact before deriving a review
+outcome. There is no implicit current-working-directory fallback.
 
 Do not turn one run into a reliability claim. Once two or more current run
 records exist, aggregate the observations by harness and model:
@@ -304,7 +322,8 @@ records exist, aggregate the observations by harness and model:
 ```bash
 npm run eval:routing -- \
   --input /safe/temporary/path/run-1.json \
-  --input /safe/temporary/path/run-2.json
+  --input /safe/temporary/path/run-2.json \
+  --evidence-root /safe/temporary/path/evaluated-project
 ```
 
 The report requires at least two complete records with non-overlapping session

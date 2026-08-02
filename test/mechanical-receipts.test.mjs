@@ -177,6 +177,13 @@ test("activation-status derives exact-run activated skills from receipts", () =>
     assert.deepEqual(status.activated_skills, ["run-autonomous-delivery"]);
     assert.deepEqual(status.missing_skills, []);
     assert.equal(status.receipts.length, 1);
+    assert.equal(status.evidence_graph_path, ".agent-stack/evidence-graph.json");
+    assert.equal(status.review_receipts_directory, ".agent-stack/review-receipts");
+    assert.equal(status.review_unavailable_directory, ".agent-stack/review-unavailable");
+    assert.deepEqual(status.evaluated_receipt_paths, [
+      ".agent-stack/evidence-graph.json",
+    ]);
+    assert.deepEqual(status.evaluated_result_paths, []);
     assert.match(status.boundary, /not independent proof/);
 
     const otherRun = commandEvidenceActivationStatus(fixture.directory, {
@@ -186,6 +193,9 @@ test("activation-status derives exact-run activated skills from receipts", () =>
     assert.equal(otherRun.ok, false);
     assert.deepEqual(otherRun.activated_skills, []);
     assert.deepEqual(otherRun.missing_skills, ["run-autonomous-delivery"]);
+    assert.equal(otherRun.evidence_graph_path, ".agent-stack/evidence-graph.json");
+    assert.equal(otherRun.review_receipts_directory, ".agent-stack/review-receipts");
+    assert.equal(otherRun.review_unavailable_directory, ".agent-stack/review-unavailable");
   } finally {
     fixture.cleanup();
   }
@@ -244,6 +254,11 @@ test("review record emits a deterministic exact-head local receipt", () => {
     assert.equal(status.independent_reviewed, true);
     assert.equal(status.review_gate_ready, true);
     assert.equal(status.receipts.length, 1);
+    assert.equal(status.evidence_graph_path, ".agent-stack/evidence-graph.json");
+    assert.equal(status.review_receipts_directory, ".agent-stack/review-receipts");
+    assert.equal(status.review_unavailable_directory, ".agent-stack/review-unavailable");
+    assert.deepEqual(status.evaluated_receipt_paths, [result.path]);
+    assert.deepEqual(status.evaluated_result_paths, [result.receipt.result_file]);
   } finally {
     fixture.cleanup();
   }
@@ -256,6 +271,11 @@ test("missing review evidence remains blocked", () => {
     assert.equal(status.independent_reviewed, false);
     assert.equal(status.review_gate_ready, false);
     assert.match(status.reasons.join(" "), /no review receipt/);
+    assert.equal(status.evidence_graph_path, ".agent-stack/evidence-graph.json");
+    assert.equal(status.review_receipts_directory, ".agent-stack/review-receipts");
+    assert.equal(status.review_unavailable_directory, ".agent-stack/review-unavailable");
+    assert.deepEqual(status.evaluated_receipt_paths, []);
+    assert.deepEqual(status.evaluated_result_paths, []);
   } finally {
     fixture.cleanup();
   }
@@ -438,6 +458,49 @@ test("structured reviewer fields are cross-checked before a receipt is written",
     );
   } finally {
     fixture.cleanup();
+  }
+});
+
+test("non-array reviewer findings fail closed through record and status", () => {
+  for (const findings of ["not-an-array", { issue: "not-an-array" }]) {
+    const recordFixture = createFixture();
+    try {
+      const artifact = JSON.parse(readFileSync(recordFixture.resultFile, "utf8"));
+      artifact.findings = findings;
+      writeFileSync(recordFixture.resultFile, JSON.stringify(artifact) + "\n");
+      assert.throws(
+        () =>
+          commandReviewRecord(recordFixture.directory, {
+            runId: recordFixture.runId,
+            reviewerKind: "independent-reviewer",
+            reviewerId: "reviewer@example.test",
+            result: "passed",
+            resultFile: ".agent-stack/runs/reviews/independent-review.json",
+            coordinatorToken: recordFixture.token,
+          }),
+        (error) =>
+          error.details?.some((detail) => /findings must be an array/.test(detail)) ===
+          true,
+      );
+    } finally {
+      recordFixture.cleanup();
+    }
+
+    const statusFixture = createFixture();
+    try {
+      recordPassed(statusFixture);
+      const artifact = JSON.parse(readFileSync(statusFixture.resultFile, "utf8"));
+      artifact.findings = findings;
+      writeFileSync(statusFixture.resultFile, JSON.stringify(artifact) + "\n");
+      const status = commandReviewStatus(
+        statusFixture.directory,
+        statusFixture.runId,
+      );
+      assert.equal(status.review_gate_ready, false);
+      assert.match(status.invalid_receipts.join(" "), /findings must be an array/);
+    } finally {
+      statusFixture.cleanup();
+    }
   }
 });
 

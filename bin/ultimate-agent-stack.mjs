@@ -104,6 +104,7 @@ const MAX_REVIEW_RESULT_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_REVIEW_SUMMARY_CHARS = 2_000;
 const MAX_REVIEW_FINDINGS = 64;
 const MAX_REVIEW_FINDING_CHARS = 1_000;
+const MAX_STATUS_EVIDENCE_PATHS = 128;
 const GIT_OBJECT_ID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 const GIT_OBJECT_FORMATS = new Set(["sha1", "sha256"]);
 
@@ -4179,12 +4180,14 @@ function validateReviewerResultArtifact(artifact, expected = {}) {
     maximumItems: MAX_REVIEW_FINDINGS,
     maximumLength: MAX_REVIEW_FINDING_CHARS,
   });
-  for (const [index, finding] of (artifact.findings ?? []).entries()) {
-    if (typeof finding === "string" && finding.trim().length === 0) {
-      errors.push(`reviewer result artifact findings[${index}] must be non-empty`);
-    }
-    if (typeof finding === "string" && /[\r\n\0]/.test(finding)) {
-      errors.push(`reviewer result artifact findings[${index}] must be single-line`);
+  if (Array.isArray(artifact.findings)) {
+    for (const [index, finding] of artifact.findings.entries()) {
+      if (typeof finding === "string" && finding.trim().length === 0) {
+        errors.push(`reviewer result artifact findings[${index}] must be non-empty`);
+      }
+      if (typeof finding === "string" && /[\r\n\0]/.test(finding)) {
+        errors.push(`reviewer result artifact findings[${index}] must be single-line`);
+      }
     }
   }
   if (
@@ -4507,6 +4510,32 @@ function reviewReceiptCurrentErrors(target, receipt, git) {
   return errors;
 }
 
+function statusEvidencePaths({
+  evaluatedReceiptPaths = [],
+  evaluatedResultPaths = [],
+} = {}) {
+  const bounded = (values) => {
+    const unique = [...new Set(values)].filter(
+      (value) => typeof value === "string" && value.length > 0,
+    );
+    return {
+      values: unique.slice(0, MAX_STATUS_EVIDENCE_PATHS),
+      truncated: unique.length > MAX_STATUS_EVIDENCE_PATHS,
+    };
+  };
+  const receipts = bounded(evaluatedReceiptPaths);
+  const results = bounded(evaluatedResultPaths);
+  return {
+    evidence_graph_path: EVIDENCE_GRAPH_PATH,
+    review_receipts_directory: REVIEW_RECEIPTS_PATH,
+    review_unavailable_directory: REVIEW_UNAVAILABLE_PATH,
+    evaluated_receipt_paths: receipts.values,
+    evaluated_receipt_paths_truncated: receipts.truncated,
+    evaluated_result_paths: results.values,
+    evaluated_result_paths_truncated: results.truncated,
+  };
+}
+
 function requireRunId(runId, label = "--run") {
   return boundedReceiptText(runId, label, 200);
 }
@@ -4561,6 +4590,7 @@ function activationStatusForRun(target, runId, requiredSkills = []) {
     return {
       ok: false,
       command: "evidence activation-status",
+      ...statusEvidencePaths({ evaluatedReceiptPaths: [EVIDENCE_GRAPH_PATH] }),
       run_id: normalizedRunId,
       required_skills: required,
       activated_skills: [],
@@ -4577,6 +4607,7 @@ function activationStatusForRun(target, runId, requiredSkills = []) {
     return {
       ok: false,
       command: "evidence activation-status",
+      ...statusEvidencePaths({ evaluatedReceiptPaths: [EVIDENCE_GRAPH_PATH] }),
       run_id: normalizedRunId,
       required_skills: required,
       activated_skills: [],
@@ -4595,6 +4626,7 @@ function activationStatusForRun(target, runId, requiredSkills = []) {
     return {
       ok: false,
       command: "evidence activation-status",
+      ...statusEvidencePaths({ evaluatedReceiptPaths: [EVIDENCE_GRAPH_PATH] }),
       run_id: normalizedRunId,
       required_skills: required,
       activated_skills: [],
@@ -4625,6 +4657,7 @@ function activationStatusForRun(target, runId, requiredSkills = []) {
   return {
     ok: missing.length === 0 && receiptErrors.length === 0,
     command: "evidence activation-status",
+    ...statusEvidencePaths({ evaluatedReceiptPaths: [EVIDENCE_GRAPH_PATH] }),
     run_id: normalizedRunId,
     required_skills: required,
     activated_skills: activated,
@@ -4846,10 +4879,12 @@ function commandReviewStatus(target, runId) {
   ];
   const currentErrors = [];
   const validReceipts = [];
+  const evaluatedResultPaths = [];
   for (const entry of selectedEntries) {
     if (entry.errors.length > 0) {
       continue;
     }
+    evaluatedResultPaths.push(entry.receipt.result_file);
     const errors = reviewReceiptCurrentErrors(target, entry.receipt, git);
     if (errors.length > 0) {
       invalidReceipts.push(...errors.map((error) => `${entry.path}: ${error}`));
@@ -4883,6 +4918,13 @@ function commandReviewStatus(target, runId) {
   return {
     ok: independentReviewed,
     command: "review status",
+    ...statusEvidencePaths({
+      evaluatedReceiptPaths: [
+        ...reviewDirectory.entries.map((entry) => entry.path),
+        ...unavailableDirectory.entries.map((entry) => entry.path),
+      ],
+      evaluatedResultPaths,
+    }),
     run_id: normalizedRunId,
     git: git
       ? { head: git.head, object_format: git.object_format, clean: git.clean }
@@ -11280,6 +11322,7 @@ export {
   commandReviewRecord,
   commandReviewUnavailable,
   commandReviewStatus,
+  validateReviewerResultArtifact,
   commandLock,
   commandLinearHealth,
   commandLinearEvidenceComment,

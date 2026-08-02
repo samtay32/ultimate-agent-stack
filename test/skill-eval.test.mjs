@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  existsSync,
   mkdtempSync,
+  mkdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -36,6 +39,10 @@ const catalog = JSON.parse(
 );
 const COORDINATOR_TOKEN = "0123456789abcdef".repeat(4);
 const NORMAL_HASH = "fedcba9876543210".repeat(4);
+const TEST_EVIDENCE_ROOT = mkdtempSync(join(tmpdir(), "uas-evaluator-evidence-"));
+process.on("exit", () => {
+  rmSync(TEST_EVIDENCE_ROOT, { recursive: true, force: true });
+});
 
 function stableJson(value) {
   if (Array.isArray(value)) {
@@ -97,14 +104,72 @@ function reviewReceipt(
     reviewer_id: reviewerId,
     result,
     result_file: `.agent-stack/runs/reviews/${scenario.id}-${result}.json`,
-    result_file_sha256: `sha256:${"b".repeat(64)}`,
+    result_file_sha256: "",
     recorded_at: "2026-01-01T00:00:00Z",
     claim: "agent-recorded",
   };
+  const artifact = {
+    schema_version: 1,
+    run_id: receipt.run_id,
+    git_commit: receipt.git_commit,
+    reviewer_kind: receipt.reviewer_kind,
+    reviewer_id: receipt.reviewer_id,
+    result: receipt.result,
+    summary: "The bounded reviewer result is structurally inspectable.",
+    findings:
+      receipt.result === "passed" ? [] : ["A bounded change is required."],
+    reviewed_at: "2026-01-01T00:00:00Z",
+  };
+  const artifactBytes = Buffer.from(`${JSON.stringify(artifact)}\n`);
+  const artifactPath = join(TEST_EVIDENCE_ROOT, receipt.result_file);
+  mkdirSync(join(TEST_EVIDENCE_ROOT, ".agent-stack", "runs", "reviews"), {
+    recursive: true,
+  });
+  writeFileSync(artifactPath, artifactBytes);
+  receipt.result_file_sha256 = `sha256:${createHash("sha256")
+    .update(artifactBytes)
+    .digest("hex")}`;
   const body = { ...receipt };
   delete body.receipt_id;
   receipt.receipt_id = sha256(body);
   return receipt;
+}
+
+function evaluateRecord(record, catalogValue = catalog, options = {}) {
+  return validateRunRecord(record, catalogValue, {
+    evidenceRoot: TEST_EVIDENCE_ROOT,
+    ...options,
+  });
+}
+
+function evaluateRoutingRates(records, catalogValue = catalog, options = {}) {
+  return summarizeRoutingRates(records, catalogValue, {
+    evidenceRoot: TEST_EVIDENCE_ROOT,
+    ...options,
+  });
+}
+
+function rewriteReviewerResultArtifact(
+  receipt,
+  mutate,
+  { raw, refreshReceipt = true } = {},
+) {
+  const artifactPath = join(TEST_EVIDENCE_ROOT, receipt.result_file);
+  const bytes = raw ?? (() => {
+    const artifact = JSON.parse(readFileSync(artifactPath, "utf8"));
+    mutate(artifact);
+    return Buffer.from(`${JSON.stringify(artifact)}\n`);
+  })();
+  writeFileSync(artifactPath, bytes);
+  if (!refreshReceipt) {
+    return;
+  }
+  receipt.result_file_sha256 = `sha256:${createHash("sha256")
+    .update(bytes)
+    .digest("hex")}`;
+  const body = { ...receipt };
+  delete body.receipt_id;
+  receipt.receipt_id = sha256(body);
 }
 
 function unavailableReviewReceipt(scenario) {
@@ -637,7 +702,7 @@ test("evidence export preserves private raw input and writes a redacted sibling"
 test("a complete live run record passes against the current behavior surface", () => {
   const record = passingRecord();
   assert.equal(record.schema_version, 3);
-  const result = validateRunRecord(record, catalog);
+  const result = evaluateRecord(record, catalog);
   assert.equal(result.ok, true);
   assert.deepEqual(result.summary, {
     total: 28,
@@ -654,7 +719,7 @@ test("a complete live run record passes against the current behavior surface", (
 test("run-record schema 3 requires claim dispositions and rejects stale schemas", () => {
   const current = passingRecord();
   delete current.cases[0].observed.source_claim_dispositions;
-  let result = validateRunRecord(current, catalog);
+  let result = evaluateRecord(current, catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
@@ -664,7 +729,7 @@ test("run-record schema 3 requires claim dispositions and rejects stale schemas"
   for (const staleVersion of [1, 2]) {
     const stale = passingRecord();
     stale.schema_version = staleVersion;
-    result = validateRunRecord(stale, catalog);
+    result = evaluateRecord(stale, catalog);
     assert.equal(result.ok, false);
     assert.match(
       result.errors.join("\n"),
@@ -680,7 +745,7 @@ test("live run cases are bound to the exact canonical fixture", () => {
       (item) => item.scenario_id === "direct-delivery",
     );
     direct.fixture_receipt = fixtureValue;
-    const result = validateRunRecord(record, catalog);
+    const result = evaluateRecord(record, catalog);
     assert.equal(result.ok, false);
     assert.match(
       JSON.stringify(result),
@@ -692,7 +757,7 @@ test("live run cases are bound to the exact canonical fixture", () => {
 test("live run cases retain materialization, provider, and external-input receipts", () => {
   const missingMaterialization = passingRecord();
   delete missingMaterialization.cases[0].materialization_receipt;
-  let result = validateRunRecord(missingMaterialization, catalog);
+  let result = evaluateRecord(missingMaterialization, catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
@@ -702,7 +767,7 @@ test("live run cases retain materialization, provider, and external-input receip
   const invalidState = passingRecord();
   invalidState.cases[0].materialized_project_tree_sha256 =
     `sha256:${"0".repeat(64)}`;
-  result = validateRunRecord(invalidState, catalog);
+  result = evaluateRecord(invalidState, catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
@@ -724,7 +789,7 @@ test("live run cases retain materialization, provider, and external-input receip
     gitHead: wrongBaseline.git_head,
     projectTreeSha256: wrongBaseline.project_tree_sha256,
   });
-  result = validateRunRecord(reassignedFixture, catalog);
+  result = evaluateRecord(reassignedFixture, catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
@@ -733,7 +798,7 @@ test("live run cases retain materialization, provider, and external-input receip
 
   const detachedFinal = passingRecord();
   detachedFinal.cases[0].final_baseline_ancestor = false;
-  result = validateRunRecord(detachedFinal, catalog);
+  result = evaluateRecord(detachedFinal, catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
@@ -743,7 +808,7 @@ test("live run cases retain materialization, provider, and external-input receip
   const ambientCredentials = passingRecord();
   ambientCredentials.cases[0].harness_session.execution_boundary
     .external_provider_credentials = "inherited";
-  result = validateRunRecord(ambientCredentials, catalog);
+  result = evaluateRecord(ambientCredentials, catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
@@ -753,7 +818,7 @@ test("live run cases retain materialization, provider, and external-input receip
   const wrongMount = passingRecord();
   wrongMount.cases[0].harness_session.execution_boundary
     .isolated_package_surface_hash = `sha256:${"0".repeat(64)}`;
-  result = validateRunRecord(wrongMount, catalog);
+  result = evaluateRecord(wrongMount, catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
@@ -763,7 +828,7 @@ test("live run cases retain materialization, provider, and external-input receip
   const reusedSession = passingRecord();
   reusedSession.cases[1].harness_session.id =
     reusedSession.cases[0].harness_session.id;
-  result = validateRunRecord(reusedSession, catalog);
+  result = evaluateRecord(reusedSession, catalog);
   assert.equal(result.ok, false);
   assert.match(
     result.errors.join("\n"),
@@ -775,7 +840,7 @@ test("live run cases retain materialization, provider, and external-input receip
     (item) => item.scenario_id === "direct-receipted-linear-write",
   );
   linear.provider_authority.mode = "live-write";
-  result = validateRunRecord(missingProviderAuthority, catalog);
+  result = evaluateRecord(missingProviderAuthority, catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
@@ -787,7 +852,7 @@ test("live run cases retain materialization, provider, and external-input receip
     (item) => item.scenario_id === "flexible-external-secret-redaction",
   );
   secret.external_inputs = [];
-  result = validateRunRecord(missingExternalInput, catalog);
+  result = evaluateRecord(missingExternalInput, catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
@@ -801,7 +866,7 @@ test("false activation fails the negative scenario", () => {
     (item) => item.scenario_id === "negative-explanation-only",
   );
   negative.observed.activated_skills.push("run-autonomous-delivery");
-  const result = validateRunRecord(record, catalog);
+  const result = evaluateRecord(record, catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
@@ -830,7 +895,7 @@ test("activation receipts require a canonical installed hash and content receipt
       (item) => item.scenario_id === "direct-delivery",
     );
     mutate(direct.observed.activation_receipts[0]);
-    const result = validateRunRecord(record, catalog);
+    const result = evaluateRecord(record, catalog);
     assert.equal(result.ok, false);
     assert.match(
       JSON.stringify(result),
@@ -853,7 +918,7 @@ test("review evidence derives blocked and conflicting outcomes without treating 
       reviewerId: "second-reviewer",
     }),
   );
-  let result = validateRunRecord(changes, catalog);
+  let result = evaluateRecord(changes, catalog);
   assert.equal(result.ok, false);
   assert.match(JSON.stringify(result), /review outcome was blocked/);
 
@@ -864,7 +929,7 @@ test("review evidence derives blocked and conflicting outcomes without treating 
   unavailableDirect.observed.review_unavailable_receipts = [
     unavailableReviewReceipt(scenario),
   ];
-  result = validateRunRecord(unavailable, catalog);
+  result = evaluateRecord(unavailable, catalog);
   assert.equal(result.ok, false);
   assert.match(JSON.stringify(result), /review outcome was blocked/);
 
@@ -875,7 +940,7 @@ test("review evidence derives blocked and conflicting outcomes without treating 
   const invalidUnavailable = unavailableReviewReceipt(scenario);
   invalidUnavailable.claim = "unsupported-claim";
   tamperedDirect.observed.review_unavailable_receipts = [invalidUnavailable];
-  result = validateRunRecord(tampered, catalog);
+  result = evaluateRecord(tampered, catalog);
   assert.equal(result.ok, false);
   assert.match(JSON.stringify(result), /review_unavailable_receipts.*claim/);
 });
@@ -897,7 +962,7 @@ test("review and unavailable receipt bounds fail structurally before outcome der
       (item) => item.scenario_id === "direct-delivery",
     );
     mutate(direct.observed.review_receipts[0]);
-    const result = validateRunRecord(record, catalog);
+    const result = evaluateRecord(record, catalog);
     assert.equal(result.ok, false);
     assert.match(
       JSON.stringify(result),
@@ -921,12 +986,240 @@ test("review and unavailable receipt bounds fail structurally before outcome der
       (item) => item.scenario_id === "edge-reviewer-unavailable",
     );
     mutate(blocked.observed.review_unavailable_receipts[0]);
-    const result = validateRunRecord(record, catalog);
+    const result = evaluateRecord(record, catalog);
     assert.equal(result.ok, false);
     assert.match(
       JSON.stringify(result),
       /review_unavailable_receipts.*(?:UTC timestamp|single-line string of at most)/,
     );
+  }
+});
+
+test("reviewer-result artifacts are required to be exact bounded evidence", () => {
+  assert.equal(evaluateRecord(passingRecord(), catalog).ok, true);
+  const cases = [
+    {
+      name: "altered bytes",
+      mutate: (receipt) => rewriteReviewerResultArtifact(
+        receipt,
+        (artifact) => {
+          artifact.summary = "altered after the receipt was recorded";
+        },
+        { refreshReceipt: false },
+      ),
+      finding: /result_file artifact hash does not match/,
+    },
+    {
+      name: "missing file",
+      mutate: (receipt) => rmSync(join(TEST_EVIDENCE_ROOT, receipt.result_file)),
+      finding: /result_file artifact is missing/,
+    },
+    {
+      name: "malformed JSON",
+      mutate: (receipt) => rewriteReviewerResultArtifact(receipt, null, {
+        raw: Buffer.from("{not-json\n"),
+      }),
+      finding: /result_file artifact contains invalid JSON/,
+    },
+    {
+      name: "wrong run",
+      mutate: (receipt) => rewriteReviewerResultArtifact(
+        receipt,
+        (artifact) => {
+          artifact.run_id = "wrong-run";
+        },
+      ),
+      finding: /artifact run_id does not match/,
+    },
+    {
+      name: "wrong commit",
+      mutate: (receipt) => rewriteReviewerResultArtifact(
+        receipt,
+        (artifact) => {
+          artifact.git_commit = "f".repeat(40);
+        },
+      ),
+      finding: /artifact git_commit does not match/,
+    },
+    {
+      name: "wrong reviewer",
+      mutate: (receipt) => rewriteReviewerResultArtifact(
+        receipt,
+        (artifact) => {
+          artifact.reviewer_id = "wrong-reviewer";
+        },
+      ),
+      finding: /artifact reviewer_id does not match/,
+    },
+    {
+      name: "wrong result",
+      mutate: (receipt) => rewriteReviewerResultArtifact(
+        receipt,
+        (artifact) => {
+          artifact.result = "changes-requested";
+          artifact.findings = ["The result was changed after recording."];
+        },
+      ),
+      finding: /artifact result does not match/,
+    },
+    {
+      name: "traversal",
+      mutate: (receipt) => {
+        receipt.result_file = "../outside.json";
+        const body = { ...receipt };
+        delete body.receipt_id;
+        receipt.receipt_id = sha256(body);
+      },
+      finding: /result_file must be a JSON reviewer-result artifact/,
+    },
+    {
+      name: "symlink",
+      mutate: (receipt) => {
+        const link = join(
+          TEST_EVIDENCE_ROOT,
+          ".agent-stack",
+          "runs",
+          "reviews",
+          "symlink.json",
+        );
+        symlinkSync(
+          join(TEST_EVIDENCE_ROOT, ".agent-stack", "runs", "reviews", "direct-delivery-passed.json"),
+          link,
+        );
+        receipt.result_file = ".agent-stack/runs/reviews/symlink.json";
+        receipt.result_file_sha256 = `sha256:${createHash("sha256")
+          .update(readFileSync(
+            join(TEST_EVIDENCE_ROOT, ".agent-stack", "runs", "reviews", "direct-delivery-passed.json"),
+          ))
+          .digest("hex")}`;
+        const body = { ...receipt };
+        delete body.receipt_id;
+        receipt.receipt_id = sha256(body);
+      },
+      finding: /crosses a symlinked path component|non-symlink/,
+    },
+    {
+      name: "oversized",
+      mutate: (receipt) => rewriteReviewerResultArtifact(
+        receipt,
+        null,
+        { raw: Buffer.alloc(4 * 1024 * 1024 + 1, 0x61) },
+      ),
+      finding: /exceeds the 4194304-byte limit/,
+    },
+  ];
+  for (const testCase of cases) {
+    const record = passingRecord();
+    const direct = record.cases.find(
+      (item) => item.scenario_id === "direct-delivery",
+    );
+    const receipt = direct.observed.review_receipts[0];
+    testCase.mutate(receipt);
+    const result = evaluateRecord(record, catalog);
+    assert.equal(result.ok, false, testCase.name);
+    assert.match(JSON.stringify(result), testCase.finding, testCase.name);
+    const symlink = join(
+      TEST_EVIDENCE_ROOT,
+      ".agent-stack",
+      "runs",
+      "reviews",
+      "symlink.json",
+    );
+    if (existsSync(symlink)) {
+      rmSync(symlink);
+    }
+  }
+});
+
+test("not-required review expectations cannot hide blocking evidence", () => {
+  const record = passingRecord();
+  const scenario = catalog.scenarios.find(
+    (item) => item.expected.review === "not-required",
+  );
+  const target = record.cases.find(
+    (item) => item.scenario_id === scenario.id,
+  );
+  target.observed.review_receipts = [
+    reviewReceipt(scenario, target.final_git_head, {
+      result: "changes-requested",
+      reviewerId: "unexpected-reviewer",
+    }),
+  ];
+  const hidden = evaluateRecord(record, catalog);
+  assert.equal(hidden.ok, false);
+  assert.equal(
+    hidden.cases.find((item) => item.scenario_id === scenario.id).review.status,
+    "blocked",
+  );
+  assert.match(
+    JSON.stringify(hidden),
+    /review outcome was blocked for a not-required scenario/,
+  );
+
+  const second = passingRecord();
+  for (const item of second.cases) {
+    item.harness_session.id = `${item.harness_session.id}:second`;
+  }
+  const rates = evaluateRoutingRates([record, second], catalog);
+  assert.equal(rates.ok, true, JSON.stringify(rates));
+  assert.ok(
+    rates.groups[0].review_outcomes.some(
+      (item) => item.scenario_id === scenario.id && item.outcome === "blocked",
+    ),
+  );
+});
+
+test("activation receipt bounds stop before deriving or inspecting receipts", () => {
+  const record = passingRecord();
+  const scenario = catalog.scenarios.find((item) => item.id === "direct-delivery");
+  const target = record.cases.find((item) => item.scenario_id === scenario.id);
+  target.observed.activation_receipts = Array.from(
+    { length: 129 },
+    () => structuredClone(target.observed.activation_receipts[0]),
+  );
+  const result = evaluateRecord(record, catalog);
+  assert.equal(result.ok, false);
+  const findings = result.cases.find((item) => item.scenario_id === scenario.id).findings;
+  assert.ok(findings.includes("activation_receipts must contain at most 128 receipts"));
+  assert.ok(
+    !findings.some((finding) => finding.includes("canonical installed skill path")),
+  );
+});
+
+test("evaluate CLI verifies reviewer artifacts under an explicit evidence root", () => {
+  const target = mkdtempSync(join(tmpdir(), "uas-evaluate-cli-"));
+  const input = join(target, "run.json");
+  try {
+    writeFileSync(input, `${JSON.stringify(passingRecord())}\n`);
+    const result = spawnSync(
+      process.execPath,
+      [
+        join(PACKAGE_ROOT, "scripts", "skill-eval.mjs"),
+        "evaluate",
+        "--input",
+        input,
+        "--evidence-root",
+        TEST_EVIDENCE_ROOT,
+      ],
+      { encoding: "utf8" },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).ok, true);
+
+    const missingRoot = spawnSync(
+      process.execPath,
+      [
+        join(PACKAGE_ROOT, "scripts", "skill-eval.mjs"),
+        "evaluate",
+        "--input",
+        input,
+      ],
+      { encoding: "utf8" },
+    );
+    assert.notEqual(missingRoot.status, 0);
+    assert.match(missingRoot.stderr, /explicit --evidence-root/);
+  } finally {
+    rmSync(target, { recursive: true, force: true });
   }
 });
 
@@ -975,7 +1268,7 @@ test("routing reliability is reported as k/N per harness and model", () => {
     status: "satisfied",
   };
 
-  const result = summarizeRoutingRates([first, second], catalog);
+  const result = evaluateRoutingRates([first, second], catalog);
   assert.equal(result.ok, true);
   assert.equal(result.groups.length, 1);
   assert.equal(result.groups[0].run_records, 2);
@@ -1035,11 +1328,11 @@ test("routing reliability is reported as k/N per harness and model", () => {
   const incomplete = passingRecord();
   incomplete.cases = incomplete.cases.slice(0, 1);
   assert.equal(
-    summarizeRoutingRates([incomplete, second], catalog).ok,
+    evaluateRoutingRates([incomplete, second], catalog).ok,
     false,
   );
 
-  const duplicate = summarizeRoutingRates(
+  const duplicate = evaluateRoutingRates(
     [first, structuredClone(first)],
     catalog,
   );
@@ -1065,7 +1358,7 @@ test("routing reliability is reported as k/N per harness and model", () => {
         `${item.harness_session.id}:independent`;
     }
     mutate(invalid);
-    const rejected = summarizeRoutingRates(
+    const rejected = evaluateRoutingRates(
       [invalid, independent],
       catalog,
     );
@@ -1099,6 +1392,8 @@ test("routing-rate CLI output identifies its input records and invocation", () =
           firstPath,
           "--input",
           secondPath,
+          "--evidence-root",
+          TEST_EVIDENCE_ROOT,
         ],
         { encoding: "utf8" },
       ),
@@ -1158,10 +1453,10 @@ test("telemetry diagnosis requires explicit activation and rejects project write
       status: "not-required",
     },
   };
-  assert.equal(validateRunRecord(record, catalog).ok, true);
+  assert.equal(evaluateRecord(record, catalog).ok, true);
 
   telemetry.observed.performed_actions = ["write_project_files"];
-  const writeResult = validateRunRecord(record, catalog);
+  const writeResult = evaluateRecord(record, catalog);
   assert.equal(writeResult.ok, false);
   assert.match(
     JSON.stringify(writeResult),
@@ -1178,7 +1473,7 @@ test("telemetry diagnosis requires explicit activation and rejects project write
     missing_skills: ["use-project-telemetry"],
     status: "blocked",
   };
-  const activationResult = validateRunRecord(record, catalog);
+  const activationResult = evaluateRecord(record, catalog);
   assert.equal(activationResult.ok, false);
   assert.match(
     JSON.stringify(activationResult),
@@ -1193,7 +1488,7 @@ test("work management requires activation and preserves provider authority", () 
   unauthorizedWrite.cases
     .find((item) => item.scenario_id === workScenarioId)
     .observed.performed_actions.push("mutate_external_work_provider");
-  let result = validateRunRecord(unauthorizedWrite, catalog);
+  let result = evaluateRecord(unauthorizedWrite, catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
@@ -1218,7 +1513,7 @@ test("work management requires activation and preserves provider authority", () 
     missing_skills: ["manage-project-work"],
     status: "blocked",
   };
-  result = validateRunRecord(missingActivation, catalog);
+  result = evaluateRecord(missingActivation, catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
@@ -1229,7 +1524,7 @@ test("work management requires activation and preserves provider authority", () 
 test("an unrecognized activated skill cannot be hidden in a run record", () => {
   const record = passingRecord();
   record.cases[0].observed.activated_skills.push("invented-skill");
-  const result = validateRunRecord(record, catalog);
+  const result = evaluateRecord(record, catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
@@ -1243,7 +1538,7 @@ test("incomplete intent fails when the agent does not ask a question", () => {
     (item) => item.scenario_id === "incomplete-product-idea",
   );
   incomplete.observed.asked_clarifying_question = false;
-  const result = validateRunRecord(record, catalog);
+  const result = evaluateRecord(record, catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
@@ -1258,7 +1553,7 @@ test("flexible intake enforces one-question bounds and rejects provider-tour que
   );
   discovery.observed.max_questions_in_turn = 2;
   discovery.observed.question_tags.push("provider_tour");
-  const result = validateRunRecord(record, catalog);
+  const result = evaluateRecord(record, catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
@@ -1277,7 +1572,7 @@ test("router boundary cases fail on brief false activation or completed-work res
   );
   direct.observed.activated_skills.push("develop-project-brief");
   direct.observed.performed_actions.push("resume_completed_work");
-  const result = validateRunRecord(record, catalog);
+  const result = evaluateRecord(record, catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
@@ -1302,7 +1597,7 @@ test("bounded DIRECT delivery requires implementation and verification evidence"
     direct.observed.written_paths.filter(
       (path) => path !== "src/status.mjs",
     );
-  const result = validateRunRecord(record, catalog);
+  const result = evaluateRecord(record, catalog);
   assert.equal(result.ok, false);
   assert.doesNotMatch(
     JSON.stringify(result),
@@ -1324,7 +1619,7 @@ test("explicit advanced-provider setup rejects the combined simple confirmation"
     (item) => item.scenario_id === "indirect-setup",
   );
   setup.observed.question_tags.push("combined_simple_setup_confirmation");
-  const result = validateRunRecord(record, catalog);
+  const result = evaluateRecord(record, catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
@@ -1338,7 +1633,7 @@ test("simple onboarding separates recommendation from prior approval", () => {
     (item) => item.scenario_id === "flexible-simple-onboarding",
   );
   recommendation.observed.performed_actions.push("record_simple_preset");
-  let result = validateRunRecord(continued, catalog);
+  let result = evaluateRecord(continued, catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
@@ -1355,7 +1650,7 @@ test("simple onboarding separates recommendation from prior approval", () => {
   approved.observed.question_tags.push(
     "combined_simple_setup_confirmation",
   );
-  result = validateRunRecord(reasked, catalog);
+  result = evaluateRecord(reasked, catalog);
   assert.equal(result.ok, false);
   assert.match(JSON.stringify(result), /a clarifying question was forbidden/);
   assert.match(
@@ -1393,7 +1688,7 @@ test("complete external brief audit stops DRAFT without an approval question", (
   observed.observed.asked_clarifying_question = true;
   observed.observed.question_count = 1;
   observed.observed.max_questions_in_turn = 1;
-  const result = validateRunRecord(record, catalog);
+  const result = evaluateRecord(record, catalog);
   assert.equal(result.ok, false);
   assert.match(JSON.stringify(result), /a clarifying question was forbidden/);
 
@@ -1430,7 +1725,7 @@ test("noncanonical artifact declarations are recorded as invalid", () => {
       artifact.path === ".agent-stack/artifacts/DELIVERY.md",
   );
   delivery.status = "INVALID";
-  const result = validateRunRecord(record, catalog);
+  const result = evaluateRecord(record, catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
@@ -1455,7 +1750,7 @@ test("promoted contracts require locked decision and verification artifacts", ()
       (candidate) => candidate.path === path,
     );
     artifact.lock_state = "unlocked";
-    const result = validateRunRecord(record, catalog);
+    const result = evaluateRecord(record, catalog);
     assert.equal(result.ok, false);
     assert.match(
       JSON.stringify(result),
@@ -1474,7 +1769,7 @@ test("any noncanonical artifact declaration fails without an expected state", ()
     status: "INVALID",
     lock_state: "unlocked",
   });
-  const result = validateRunRecord(record, catalog);
+  const result = evaluateRecord(record, catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
@@ -1623,7 +1918,7 @@ test("flexible intake evaluates prohibited writes, artifact state, and observabl
     reconciliation.observed.observable_outputs.filter(
       (output) => output !== "material_conflict_report",
     );
-  const result = validateRunRecord(record, catalog);
+  const result = evaluateRecord(record, catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
@@ -1645,7 +1940,7 @@ test("external intake requires one valid disposition for every load-bearing sour
     (item) => item.scenario_id === "flexible-external-detailed-prd",
   );
   detailed.observed.source_claim_dispositions.pop();
-  let result = validateRunRecord(missing, catalog);
+  let result = evaluateRecord(missing, catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
@@ -1660,7 +1955,7 @@ test("external intake requires one valid disposition for every load-bearing sour
     id: "SRC-1",
     disposition: "invented",
   });
-  result = validateRunRecord(duplicated, catalog);
+  result = evaluateRecord(duplicated, catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
@@ -1727,7 +2022,7 @@ test("performed authority and continuity violations fail evaluation", () => {
   record.cases
     .find((item) => item.scenario_id === "continuity-active-coordinator")
     .observed.performed_actions.push("write_project_files");
-  const result = validateRunRecord(record, catalog);
+  const result = evaluateRecord(record, catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
@@ -1743,7 +2038,7 @@ test("stale or incomplete run evidence fails closed", () => {
   const record = passingRecord();
   record.surface_hash = `sha256:${"0".repeat(64)}`;
   record.cases.pop();
-  const result = validateRunRecord(record, catalog);
+  const result = evaluateRecord(record, catalog);
   assert.equal(result.ok, false);
   assert.match(JSON.stringify(result), /surface_hash must equal/);
   assert.match(JSON.stringify(result), /missing run result/);
@@ -1752,7 +2047,7 @@ test("stale or incomplete run evidence fails closed", () => {
 test("duplicate and unknown run scenarios fail closed", () => {
   const duplicated = passingRecord();
   duplicated.cases.push(structuredClone(duplicated.cases[0]));
-  let result = validateRunRecord(duplicated, catalog);
+  let result = evaluateRecord(duplicated, catalog);
   assert.equal(result.ok, false);
   assert.match(
     result.errors.join("\n"),
@@ -1773,7 +2068,7 @@ test("duplicate and unknown run scenarios fail closed", () => {
       source: "test-run:not-a-real-scenario",
     },
   });
-  result = validateRunRecord(unknown, catalog);
+  result = evaluateRecord(unknown, catalog);
   assert.equal(result.ok, false);
   assert.match(
     result.errors.join("\n"),
@@ -1784,7 +2079,7 @@ test("duplicate and unknown run scenarios fail closed", () => {
 test("malformed run arrays fail closed with structured findings", () => {
   const malformedCases = passingRecord();
   malformedCases.cases = {};
-  let result = validateRunRecord(malformedCases, catalog);
+  let result = evaluateRecord(malformedCases, catalog);
   assert.equal(result.ok, false);
   assert.match(result.errors.join("\n"), /run record cases must be an array/);
 
@@ -1793,7 +2088,7 @@ test("malformed run arrays fail closed with structured findings", () => {
   malformedObserved.cases[0].observed.performed_actions = {};
   malformedObserved.cases[0].observed.outcome_tags = {};
   malformedObserved.cases[0].observed.max_questions_in_turn = 1;
-  result = validateRunRecord(malformedObserved, catalog);
+  result = evaluateRecord(malformedObserved, catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
@@ -1816,7 +2111,7 @@ test("malformed run arrays fail closed with structured findings", () => {
   hiddenQuestionBurst.cases[0].observed.asked_clarifying_question = true;
   hiddenQuestionBurst.cases[0].observed.question_count = 1;
   hiddenQuestionBurst.cases[0].observed.max_questions_in_turn = 0;
-  result = validateRunRecord(hiddenQuestionBurst, catalog);
+  result = evaluateRecord(hiddenQuestionBurst, catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
@@ -1827,7 +2122,7 @@ test("malformed run arrays fail closed with structured findings", () => {
 test("malformed scenario expectations fail closed without throwing", () => {
   const malformedCatalog = structuredClone(catalog);
   malformedCatalog.scenarios[0].expected = null;
-  const result = validateRunRecord(passingRecord(), malformedCatalog);
+  const result = evaluateRecord(passingRecord(), malformedCatalog);
   assert.equal(result.ok, false);
   assert.match(
     result.errors.join("\n"),
@@ -1836,7 +2131,7 @@ test("malformed scenario expectations fail closed without throwing", () => {
 });
 
 test("the generated scaffold is not accepted as live evidence", () => {
-  const result = validateRunRecord(buildScaffold(catalog), catalog);
+  const result = evaluateRecord(buildScaffold(catalog), catalog);
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
