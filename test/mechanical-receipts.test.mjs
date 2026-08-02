@@ -524,6 +524,101 @@ test("invalid same-run unavailable evidence is aggregated with other review evid
   }
 });
 
+test("receipt validation errors remain global when a receipt run id is altered", () => {
+  const fixture = createFixture();
+  const writeArtifact = (fileName, runId, reviewerId, result) => {
+    const head = runGit(fixture.directory, ["rev-parse", "HEAD"]);
+    writeFileSync(
+      join(
+        fixture.directory,
+        ".agent-stack",
+        "runs",
+        "reviews",
+        fileName,
+      ),
+      JSON.stringify({
+        schema_version: 1,
+        run_id: runId,
+        git_commit: head,
+        reviewer_kind: "independent-reviewer",
+        reviewer_id: reviewerId,
+        result,
+        summary: "The bounded review artifact is structurally inspectable.",
+        findings: result === "passed" ? [] : ["A bounded change is required."],
+        reviewed_at: "2026-01-01T00:00:00Z",
+      }) + "\n",
+    );
+  };
+  try {
+    recordPassed(fixture);
+    writeArtifact(
+      "other-run.json",
+      "other-run",
+      "other-reviewer@example.test",
+      "passed",
+    );
+    commandReviewRecord(fixture.directory, {
+      runId: "other-run",
+      reviewerKind: "independent-reviewer",
+      reviewerId: "other-reviewer@example.test",
+      result: "passed",
+      resultFile: ".agent-stack/runs/reviews/other-run.json",
+      coordinatorToken: fixture.token,
+    });
+    assert.equal(commandReviewStatus(fixture.directory, fixture.runId).review_gate_ready, true);
+
+    writeArtifact(
+      "altered-run.json",
+      fixture.runId,
+      "altered-reviewer@example.test",
+      "changes-requested",
+    );
+    const altered = commandReviewRecord(fixture.directory, {
+      runId: fixture.runId,
+      reviewerKind: "independent-reviewer",
+      reviewerId: "altered-reviewer@example.test",
+      result: "changes-requested",
+      resultFile: ".agent-stack/runs/reviews/altered-run.json",
+      coordinatorToken: fixture.token,
+    });
+    const alteredPath = join(fixture.directory, altered.path);
+    const alteredReceipt = JSON.parse(readFileSync(alteredPath, "utf8"));
+    alteredReceipt.run_id = "other-run";
+    writeFileSync(alteredPath, JSON.stringify(alteredReceipt) + "\n");
+    const reviewStatus = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(reviewStatus.review_gate_ready, false);
+    assert.match(reviewStatus.invalid_receipts.join(" "), /canonical content hash/);
+  } finally {
+    fixture.cleanup();
+  }
+
+  const unavailableFixture = createFixture();
+  try {
+    recordPassed(unavailableFixture);
+    const unavailable = commandReviewUnavailable(unavailableFixture.directory, {
+      runId: unavailableFixture.runId,
+      reason: "reviewer-timeout",
+      details: "The independent reviewer did not return a bounded result.",
+      coordinatorToken: unavailableFixture.token,
+    });
+    const unavailablePath = join(unavailableFixture.directory, unavailable.path);
+    const receipt = JSON.parse(readFileSync(unavailablePath, "utf8"));
+    receipt.run_id = "other-run";
+    writeFileSync(unavailablePath, JSON.stringify(receipt) + "\n");
+    const unavailableStatus = commandReviewStatus(
+      unavailableFixture.directory,
+      unavailableFixture.runId,
+    );
+    assert.equal(unavailableStatus.review_gate_ready, false);
+    assert.match(
+      unavailableStatus.invalid_receipts.join(" "),
+      /canonical content hash/,
+    );
+  } finally {
+    unavailableFixture.cleanup();
+  }
+});
+
 test("hardened Git probes ignore ambient redirection and fsmonitor settings", () => {
   const fixture = createFixture();
   const head = runGit(fixture.directory, ["rev-parse", "HEAD"]);

@@ -880,6 +880,56 @@ test("review evidence derives blocked and conflicting outcomes without treating 
   assert.match(JSON.stringify(result), /review_unavailable_receipts.*claim/);
 });
 
+test("review and unavailable receipt bounds fail structurally before outcome derivation", () => {
+  for (const mutate of [
+    (receipt) => {
+      receipt.reviewer_kind = "k".repeat(121);
+    },
+    (receipt) => {
+      receipt.reviewer_id = "r".repeat(257);
+    },
+    (receipt) => {
+      receipt.result_file = `.agent-stack/runs/${"r".repeat(600)}.json`;
+    },
+  ]) {
+    const record = passingRecord();
+    const direct = record.cases.find(
+      (item) => item.scenario_id === "direct-delivery",
+    );
+    mutate(direct.observed.review_receipts[0]);
+    const result = validateRunRecord(record, catalog);
+    assert.equal(result.ok, false);
+    assert.match(
+      JSON.stringify(result),
+      /review_receipts.*(?:single-line string of at most|result_file)/,
+    );
+  }
+
+  for (const mutate of [
+    (receipt) => {
+      receipt.recorded_at = "not-a-timestamp";
+    },
+    (receipt) => {
+      receipt.reason = "r".repeat(201);
+    },
+    (receipt) => {
+      receipt.details = "line one\nline two";
+    },
+  ]) {
+    const record = passingRecord();
+    const blocked = record.cases.find(
+      (item) => item.scenario_id === "edge-reviewer-unavailable",
+    );
+    mutate(blocked.observed.review_unavailable_receipts[0]);
+    const result = validateRunRecord(record, catalog);
+    assert.equal(result.ok, false);
+    assert.match(
+      JSON.stringify(result),
+      /review_unavailable_receipts.*(?:UTC timestamp|single-line string of at most)/,
+    );
+  }
+});
+
 test("routing reliability is reported as k/N per harness and model", () => {
   const first = passingRecord();
   const second = passingRecord();

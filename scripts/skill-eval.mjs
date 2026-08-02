@@ -83,6 +83,13 @@ const REVIEW_RECEIPT_ID = /^[a-f0-9]{64}$/;
 const REVIEW_UNAVAILABLE_STATUS = "unavailable";
 const REVIEW_RESULTS = new Set(["passed", "changes-requested"]);
 const REVIEW_EXPECTATIONS = new Set(["not-required", "passed", "blocked"]);
+const REVIEW_RUN_ID_MAX_CHARS = 200;
+const REVIEW_COORDINATOR_ID_MAX_CHARS = 120;
+const REVIEW_KIND_MAX_CHARS = 120;
+const REVIEW_ID_MAX_CHARS = 256;
+const REVIEW_RESULT_FILE_MAX_CHARS = 512;
+const REVIEW_REASON_MAX_CHARS = 200;
+const REVIEW_DETAILS_MAX_CHARS = 2_000;
 const LIVE_PROMPT_MAX_BYTES = 2 * 1024;
 
 function readJson(path) {
@@ -320,9 +327,27 @@ function gitObjectFormatForId(value) {
   return null;
 }
 
+function boundedReceiptString(value, maximum) {
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0 &&
+    value.length <= maximum &&
+    !/[\r\n\0]/.test(value)
+  );
+}
+
+function validReceiptTimestamp(value) {
+  return (
+    typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value) &&
+    !Number.isNaN(Date.parse(value))
+  );
+}
+
 function reviewerResultPath(value) {
   return (
     isNonEmptyString(value) &&
+    value.length <= REVIEW_RESULT_FILE_MAX_CHARS &&
     value.startsWith(".agent-stack/runs/") &&
     value.endsWith(".json") &&
     safeScenarioPath(value)
@@ -531,9 +556,16 @@ function validateReviewEvidence(observed, item, expectedReview, findings) {
     ) {
       issue(`${location}.git_object_format must match git_commit`);
     }
-    for (const key of ["coordinator_id", "reviewer_kind", "reviewer_id"]) {
-      if (!isNonEmptyString(receipt[key])) {
-        issue(`${location}.${key} must be non-empty`);
+    for (const [key, maximum] of [
+      ["run_id", REVIEW_RUN_ID_MAX_CHARS],
+      ["coordinator_id", REVIEW_COORDINATOR_ID_MAX_CHARS],
+      ["reviewer_kind", REVIEW_KIND_MAX_CHARS],
+      ["reviewer_id", REVIEW_ID_MAX_CHARS],
+    ]) {
+      if (!boundedReceiptString(receipt[key], maximum)) {
+        issue(
+          `${location}.${key} must be a non-empty single-line string of at most ${maximum} characters`,
+        );
       }
     }
     if (
@@ -638,9 +670,16 @@ function validateReviewEvidence(observed, item, expectedReview, findings) {
     if (receipt.run_id !== observed.run_id) {
       issue(`${location}.run_id must equal observed.run_id`);
     }
-    for (const key of ["coordinator_id", "reason", "details"]) {
-      if (!isNonEmptyString(receipt[key])) {
-        issue(`${location}.${key} must be non-empty`);
+    for (const [key, maximum] of [
+      ["run_id", REVIEW_RUN_ID_MAX_CHARS],
+      ["coordinator_id", REVIEW_COORDINATOR_ID_MAX_CHARS],
+      ["reason", REVIEW_REASON_MAX_CHARS],
+      ["details", REVIEW_DETAILS_MAX_CHARS],
+    ]) {
+      if (!boundedReceiptString(receipt[key], maximum)) {
+        issue(
+          `${location}.${key} must be a non-empty single-line string of at most ${maximum} characters`,
+        );
       }
     }
     if (receipt.status !== REVIEW_UNAVAILABLE_STATUS) {
@@ -648,6 +687,9 @@ function validateReviewEvidence(observed, item, expectedReview, findings) {
     }
     if (receipt.claim !== "agent-recorded") {
       issue(`${location}.claim must equal agent-recorded`);
+    }
+    if (!validReceiptTimestamp(receipt.recorded_at)) {
+      issue(`${location}.recorded_at must be a UTC timestamp`);
     }
     if (receiptErrors.length === 0) {
       validUnavailable.push(receipt);

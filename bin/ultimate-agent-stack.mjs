@@ -4836,11 +4836,11 @@ function commandReviewStatus(target, runId) {
   );
   const invalidReceipts = [
     ...reviewDirectory.errors,
-    ...unavailableDirectory.errors,
-    ...selectedEntries.flatMap((entry) =>
+    ...reviewDirectory.entries.flatMap((entry) =>
       entry.errors.map((error) => `${entry.path}: ${error}`),
     ),
-    ...unavailableEntries.flatMap((entry) =>
+    ...unavailableDirectory.errors,
+    ...unavailableDirectory.entries.flatMap((entry) =>
       entry.errors.map((error) => `${entry.path}: ${error}`),
     ),
   ];
