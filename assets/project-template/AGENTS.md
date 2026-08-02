@@ -114,10 +114,12 @@ successful verification for the exact current clean Git head before its
 nested `readiness.pr_ready` can be true. Local receipts under
 `.agent-stack/review-receipts/` are separate from protected GitHub review
 receipts; unavailable, stale, altered, wrong-run, wrong-commit, dirty, empty,
-failed, malformed, or same-agent evidence blocks independent review. These
+failed, malformed, or evidence with the same recorded reviewer and coordinator
+identity blocks independent review. These
 receipts are bounded and atomic; they do not prove that an external harness or
 review provider acted. Receipt and verification-check hashes detect content
-alteration but cannot authenticate a provider, agent, or editor.
+alteration but cannot authenticate a provider, agent, or editor. Distinct
+physical-agent provenance remains agent-recorded and non-authenticated.
 
 Keep live test prompts and context at or below 2 KiB. Do not include repository
 dumps or expected skill names in a live prompt. The prompt is an intake request,

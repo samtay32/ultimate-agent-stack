@@ -110,13 +110,16 @@ contain `schema_version`, the exact `run_id` and `git_commit`, reviewer kind and
 identity, `result`, a summary, bounded findings, and `reviewed_at`. A reviewer
 identity must be nonempty and distinct from the coordinator; reviewer kind and
 identity need not be different strings. Missing, failed, unavailable, altered,
-stale, dirty, empty, wrong-run, wrong-commit, malformed, or same-agent evidence
-keeps the review gate blocked. Local receipts are separate from protected
+stale, dirty, empty, wrong-run, wrong-commit, malformed, or evidence with the
+same recorded reviewer and coordinator identity keeps the review gate blocked.
+Local receipts are separate from protected
 GitHub review receipts, and claim only `agent-recorded`; they do not
 authenticate a harness or external provider. Receipt and verification-check
 hashes detect content alteration but cannot authenticate a provider, agent, or
 editor. `review unavailable` is a durable
 blocker, never a successful review claim.
+The distinct-physical-agent boundary remains agent-recorded and
+non-authenticated.
 
 `review status --run RUN` reports `review_gate_ready` and
 `independent_reviewed` within that agent-recorded boundary; it does not by
@@ -124,6 +127,12 @@ itself claim the project is PR-ready. `status --run RUN` is the full project
 gate: it also requires healthy configuration and the latest successful
 stack-generated verification for the exact current clean Git head. Only then
 may its nested `readiness.pr_ready` be true.
+
+The ordinary `verify` command may run configured checks on a stable dirty
+worktree; `status --run RUN` still requires a clean exact-head verification.
+Verification records the checkout real path so evidence cannot be replayed in
+another checkout. This does not authenticate the writer or prevent same-path
+recomputation.
 
 For deterministic live evaluation, keep the request plus serialized context at
 or below 2 KiB (target roughly 512 input tokens), with no repository dumps or

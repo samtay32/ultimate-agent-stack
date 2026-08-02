@@ -650,6 +650,31 @@ function verificationReceiptSha256(evidence) {
   return sha256(stableJson(canonical));
 }
 
+function verificationConfigSha256(config) {
+  return sha256(stableJson(config));
+}
+
+function publicGitIdentity(git) {
+  if (!git || typeof git !== "object") {
+    return null;
+  }
+  return {
+    head: git.head ?? null,
+    object_format: git.object_format ?? null,
+    clean: git.clean === true,
+  };
+}
+
+function requiredVerificationTimestamp(errors, value, label) {
+  if (
+    typeof value !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value) ||
+    Number.isNaN(Date.parse(value))
+  ) {
+    errors.push(`${label} must be a non-null ISO-8601 UTC timestamp`);
+  }
+}
+
 function atomicText(file, value, mode = 0o600) {
   mkdirSync(dirname(file), { recursive: true });
   const temporary = join(
@@ -4125,7 +4150,13 @@ function normalizeReviewerResultPath(value) {
   const components = normalized.split("/");
   if (
     components.some(
-      (component) => component.length === 0 || component === "." || component === "..",
+      (component) =>
+        component.length === 0 ||
+        component === "." ||
+        component === ".." ||
+        component.includes(":") ||
+        /[. ]$/.test(component) ||
+        /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i.test(component),
     )
   ) {
     return null;
@@ -4320,10 +4351,13 @@ function validateReviewReceipt(receipt) {
   if (!REVIEW_RESULTS.has(receipt.result)) {
     errors.push("review receipt result must be passed or changes-requested");
   }
-  if (!normalizeReviewerResultPath(receipt.result_file)) {
+  const normalizedResultFile = normalizeReviewerResultPath(receipt.result_file);
+  if (!normalizedResultFile) {
     errors.push(
       "review receipt result_file must be a JSON reviewer-result artifact under .agent-stack/runs/",
     );
+  } else if (normalizedResultFile !== receipt.result_file) {
+    errors.push("review receipt result_file must use its canonical normalized path");
   }
   if (
     typeof receipt.result_file_sha256 !== "string" ||
@@ -4469,6 +4503,9 @@ function reviewReceiptDirectory(target, raw, label, maximum, validator) {
 
 function reviewReceiptCurrentErrors(target, receipt, git) {
   const errors = [];
+  if (git?.identity_error) {
+    errors.push(git.identity_error);
+  }
   if (!git || git.head === null || git.clean !== true) {
     errors.push("review evidence requires a clean Git working tree");
   }
@@ -4933,7 +4970,7 @@ function commandReviewStatus(target, runId, capturedGit = undefined) {
       evaluatedResultPaths,
     }),
     run_id: normalizedRunId,
-    git: git ? { ...git } : null,
+    git: publicGitIdentity(git),
     receipts: validReceipts,
     unavailable: unavailable.map((entry) => entry.receipt),
     invalid_receipts: invalidReceipts,
@@ -9302,15 +9339,19 @@ function runCheck(target, check, config) {
 }
 
 function commandVerify(target, failFast = false) {
-  const config = loadConfig(target);
-  const errors = validateConfig(config, target);
-  const actualChecksHash = currentChecksHash(config, target);
+  const canonicalTarget = realpathSync(target);
+  const config = loadConfig(canonicalTarget);
+  const errors = validateConfig(config, canonicalTarget);
+  const actualChecksHash = currentChecksHash(config, canonicalTarget);
+  const configSha256 = verificationConfigSha256(config);
+  const gitBefore = gitSnapshot(canonicalTarget);
   const evidence = {
     schema_version: 1,
     command: "verify",
     started_at: utcTimestamp(),
-    target,
+    target: canonicalTarget,
     checks_hash: actualChecksHash,
+    git_before: publicGitIdentity(gitBefore),
     checks: [],
   };
   let blockedBy;
@@ -9351,6 +9392,7 @@ function commandVerify(target, failFast = false) {
       "quality checks changed or were not reviewed; run approve-checks after inspecting them",
     );
   }
+  const attemptedChecks = errors.length === 0;
   if (errors.length > 0) {
     evidence.ok = false;
     evidence.configuration_errors = errors;
@@ -9360,7 +9402,7 @@ function commandVerify(target, failFast = false) {
     }
   } else {
     for (const check of config.quality.checks) {
-      const record = runCheck(target, check, config);
+      const record = runCheck(canonicalTarget, check, config);
       evidence.checks.push(record);
       if (record.status === "failed" && failFast) {
         break;
@@ -9372,11 +9414,54 @@ function commandVerify(target, failFast = false) {
         (record) => record.status === "passed" || !record.required,
       );
   }
-  evidence.git_after = gitSnapshot(target);
+  let configAfter = null;
+  let configAfterErrors = [];
+  try {
+    configAfter = loadConfig(canonicalTarget);
+    configAfterErrors = validateConfig(configAfter, canonicalTarget);
+  } catch (error) {
+    configAfterErrors = [error.message];
+  }
+  let checksHashAfter = null;
+  if (configAfter) {
+    try {
+      checksHashAfter = currentChecksHash(configAfter, canonicalTarget);
+    } catch (error) {
+      configAfterErrors.push(error.message);
+    }
+  }
+  const configSha256After = configAfter
+    ? verificationConfigSha256(configAfter)
+    : null;
+  if (attemptedChecks && configAfterErrors.length > 0) {
+    errors.push(...configAfterErrors.map((error) => `configuration changed or became invalid during verification: ${error}`));
+  }
+  if (attemptedChecks && checksHashAfter !== actualChecksHash) {
+    errors.push("configured checks or environment changed during verification");
+  }
+  if (attemptedChecks && configSha256After !== configSha256) {
+    errors.push("project configuration changed during verification");
+  }
+  const gitAfter = gitSnapshot(canonicalTarget);
+  evidence.git_after = publicGitIdentity(gitAfter);
+  const beforeIdentity = publicGitIdentity(gitBefore);
+  const afterIdentity = publicGitIdentity(gitAfter);
+  if (attemptedChecks && stableJson(beforeIdentity) !== stableJson(afterIdentity)) {
+    errors.push("Git identity changed during verification");
+  }
+  evidence.ok =
+    errors.length === 0 &&
+    evidence.checks.length === config.quality.checks.length &&
+    evidence.checks.every(
+      (record) => record.status === "passed" || !record.required,
+    );
+  if (errors.length > 0) {
+    evidence.configuration_errors = errors;
+  }
   evidence.finished_at = utcTimestamp();
   evidence.receipt_sha256 = verificationReceiptSha256(evidence);
   const evidenceDirectory = pathInside(
-    target,
+    canonicalTarget,
     config.quality.evidence_directory ?? RUNS_PATH,
     "quality.evidence_directory",
   );
@@ -9389,7 +9474,7 @@ function commandVerify(target, failFast = false) {
   atomicJson(join(evidenceDirectory, "latest.json"), evidence);
   return {
     ok: evidence.ok,
-    evidence: relative(target, evidenceFile),
+    evidence: relative(canonicalTarget, evidenceFile),
     checks: evidence.checks.map((record) => ({
       id: record.id,
       status: record.status,
@@ -9409,10 +9494,24 @@ function commandVerify(target, failFast = false) {
 
 function verificationReadiness(target, config, git) {
   const reasons = [];
+  let canonicalTarget = null;
+  try {
+    canonicalTarget = realpathSync(target);
+  } catch (error) {
+    reasons.push(`current checkout path cannot be resolved: ${error.message}`);
+  }
   if (!config) {
     reasons.push("project configuration is missing");
   }
-  if (!git || git.clean !== true || !GIT_OBJECT_ID.test(git.head ?? "")) {
+  if (git?.identity_error) {
+    reasons.push(git.identity_error);
+  }
+  if (
+    !git ||
+    git.clean !== true ||
+    !GIT_OBJECT_ID.test(git.head ?? "") ||
+    gitObjectFormatForId(git.head) !== git.object_format
+  ) {
     reasons.push("current Git state is not a clean exact commit");
   }
   let evidence = null;
@@ -9421,7 +9520,7 @@ function verificationReadiness(target, config, git) {
     ? config.quality.checks
     : null;
   const configuredChecksHash = config
-    ? currentChecksHash(config, target)
+    ? currentChecksHash(config, canonicalTarget ?? target)
     : null;
   if (config) {
     try {
@@ -9452,6 +9551,7 @@ function verificationReadiness(target, config, git) {
         "configuration_errors",
         "blocked_by",
         "next_steps",
+        "git_before",
         "git_after",
         "finished_at",
         "receipt_sha256",
@@ -9479,62 +9579,79 @@ function verificationReadiness(target, config, git) {
         "latest verification receipt_sha256 does not match its content",
       );
     }
-    contractTimestamp(evidenceErrors, evidence.started_at, "latest verification started_at");
-    contractTimestamp(evidenceErrors, evidence.finished_at, "latest verification finished_at");
+    requiredVerificationTimestamp(
+      evidenceErrors,
+      evidence.started_at,
+      "latest verification started_at",
+    );
+    requiredVerificationTimestamp(
+      evidenceErrors,
+      evidence.finished_at,
+      "latest verification finished_at",
+    );
     contractString(evidenceErrors, evidence.target, "latest verification target", 4_096);
+    if (canonicalTarget && evidence.target !== canonicalTarget) {
+      evidenceErrors.push(
+        "latest verification target does not match the current checkout",
+      );
+    }
     if (evidence.ok !== true) {
       reasons.push("latest verification did not pass");
     }
     reasons.push(...evidenceErrors);
-    if (!evidence.git_after || typeof evidence.git_after !== "object") {
-      reasons.push("latest verification lacks post-check Git evidence");
-    } else {
-      const recordedGit = evidence.git_after;
-      const gitErrors = [];
+    const gitErrors = [];
+    const validateRecordedIdentity = (recordedGit, label) => {
+      if (
+        !recordedGit ||
+        typeof recordedGit !== "object" ||
+        Array.isArray(recordedGit)
+      ) {
+        gitErrors.push(`latest verification lacks ${label} Git evidence`);
+        return false;
+      }
       rejectUnknownKeys(
         gitErrors,
         recordedGit,
-        new Set([
-          "head",
-          "object_format",
-          "branch",
-          "tracked_changes",
-          "untracked_changes",
-          "clean",
-        ]),
-        "latest verification git_after",
+        new Set(["head", "object_format", "clean"]),
+        `latest verification ${label}`,
       );
       if (!GIT_OBJECT_ID.test(recordedGit.head ?? "")) {
-        gitErrors.push("latest verification git_after.head must be a full Git commit");
+        gitErrors.push(`latest verification ${label}.head must be a full Git commit`);
       }
       if (
         !GIT_OBJECT_FORMATS.has(recordedGit.object_format) ||
         gitObjectFormatForId(recordedGit.head) !== recordedGit.object_format
       ) {
         gitErrors.push(
-          "latest verification git_after.object_format must match its Git commit",
+          `latest verification ${label}.object_format must match its Git commit`,
         );
       }
-      if (typeof recordedGit.branch !== "string" && recordedGit.branch !== null) {
-        gitErrors.push("latest verification git_after.branch must be a string or null");
+      if (recordedGit.clean !== true) {
+        gitErrors.push(`latest verification ${label}.clean must be true`);
       }
-      for (const key of ["tracked_changes", "untracked_changes"]) {
-        if (!Number.isInteger(recordedGit[key]) || recordedGit[key] < 0) {
-          gitErrors.push(
-            `latest verification git_after.${key} must be a non-negative integer`,
-          );
-        }
+      return (
+        GIT_OBJECT_ID.test(recordedGit.head ?? "") &&
+        GIT_OBJECT_FORMATS.has(recordedGit.object_format) &&
+        gitObjectFormatForId(recordedGit.head) === recordedGit.object_format &&
+        recordedGit.clean === true
+      );
+    };
+    const beforeValid = validateRecordedIdentity(evidence.git_before, "git_before");
+    const afterValid = validateRecordedIdentity(evidence.git_after, "git_after");
+    if (beforeValid && afterValid) {
+      if (stableJson(evidence.git_before) !== stableJson(evidence.git_after)) {
+        gitErrors.push("latest verification Git identity changed during verification");
       }
-      if (typeof recordedGit.clean !== "boolean") {
-        gitErrors.push("latest verification git_after.clean must be a boolean");
-      }
-      if (gitErrors.length > 0) {
-        reasons.push(...gitErrors);
-      }
-      if (stableJson(recordedGit) !== stableJson(git)) {
-        reasons.push("latest verification is stale or does not prove a clean current Git head");
+      if (
+        stableJson(evidence.git_before) !== stableJson(publicGitIdentity(git)) ||
+        stableJson(evidence.git_after) !== stableJson(publicGitIdentity(git))
+      ) {
+        gitErrors.push(
+          "latest verification is stale or does not prove a clean current Git head",
+        );
       }
     }
+    reasons.push(...gitErrors);
     if (!Array.isArray(evidence.checks)) {
       reasons.push("latest verification checks must be an array");
     } else if (!configuredChecks) {
@@ -9592,7 +9709,11 @@ function verificationReadiness(target, config, git) {
         if (record.timeout_seconds !== (configured.timeout_seconds ?? 900)) {
           checkErrors.push(`${label}.timeout_seconds does not match configured check`);
         }
-        contractTimestamp(checkErrors, record.started_at, `${label}.started_at`);
+        requiredVerificationTimestamp(
+          checkErrors,
+          record.started_at,
+          `${label}.started_at`,
+        );
         if (!(record.status === "passed" || record.status === "failed")) {
           checkErrors.push(`${label}.status must be passed or failed`);
         }
@@ -9651,7 +9772,7 @@ function verificationReadiness(target, config, git) {
     ok: reasons.length === 0,
     status: reasons.length === 0 ? "passed" : "blocked",
     evidence: evidencePath ? `${evidencePath}/latest.json` : null,
-    git: git ?? null,
+    git: publicGitIdentity(git),
     reasons: [...new Set(reasons)],
   };
 }
@@ -9672,8 +9793,8 @@ function gitSnapshot(target) {
   if (!isGitRepository(target)) {
     return null;
   }
-  const headResult = hardenedGitProbe(target, ["rev-parse", "HEAD"]);
-  const objectFormatResult = hardenedGitProbe(target, [
+  const headBeforeResult = hardenedGitProbe(target, ["rev-parse", "HEAD"]);
+  const objectFormatBeforeResult = hardenedGitProbe(target, [
     "rev-parse",
     "--show-object-format=storage",
   ]);
@@ -9684,20 +9805,53 @@ function gitSnapshot(target) {
     "--untracked-files=all",
     "--ignore-submodules=none",
   ]);
+  const headAfterResult = hardenedGitProbe(target, ["rev-parse", "HEAD"]);
+  const objectFormatAfterResult = hardenedGitProbe(target, [
+    "rev-parse",
+    "--show-object-format=storage",
+  ]);
   const statusOk = statusResult.status === 0;
-  const head = headResult.status === 0 ? headResult.stdout.trim() : null;
-  const objectFormat =
-    objectFormatResult.status === 0 &&
-    GIT_OBJECT_FORMATS.has(objectFormatResult.stdout.trim())
-      ? objectFormatResult.stdout.trim()
-      : head?.length === 40
-        ? "sha1"
-        : head?.length === 64
-          ? "sha256"
-          : null;
+  const headBefore =
+    headBeforeResult.status === 0 ? headBeforeResult.stdout.trim() : null;
+  const headAfter =
+    headAfterResult.status === 0 ? headAfterResult.stdout.trim() : null;
+  const head = headAfter ?? headBefore;
+  const objectFormatBefore =
+    objectFormatBeforeResult.status === 0
+      ? objectFormatBeforeResult.stdout.trim()
+      : null;
+  const objectFormatAfter =
+    objectFormatAfterResult.status === 0
+      ? objectFormatAfterResult.stdout.trim()
+      : null;
+  let objectFormat = null;
+  if (GIT_OBJECT_FORMATS.has(objectFormatAfter)) {
+    objectFormat = objectFormatAfter;
+  } else if (GIT_OBJECT_FORMATS.has(objectFormatBefore)) {
+    objectFormat = objectFormatBefore;
+  } else if (head?.length === 40) {
+    objectFormat = "sha1";
+  } else if (head?.length === 64) {
+    objectFormat = "sha256";
+  }
+  const identityChanged =
+    headBefore !== null &&
+    headAfter !== null &&
+    (headBefore !== headAfter || objectFormatBefore !== objectFormatAfter);
   const statusLines = statusOk
     ? statusResult.stdout.split("\n").filter(Boolean)
     : ["<git status failed>"];
+  const clean =
+    headBeforeResult.status === 0 &&
+    headAfterResult.status === 0 &&
+    objectFormatBeforeResult.status === 0 &&
+    objectFormatAfterResult.status === 0 &&
+    GIT_OBJECT_ID.test(head ?? "") &&
+    GIT_OBJECT_FORMATS.has(objectFormat) &&
+    gitObjectFormatForId(head) === objectFormat &&
+    !identityChanged &&
+    statusOk &&
+    statusLines.length === 0;
   return {
     head,
     object_format: objectFormat,
@@ -9709,11 +9863,10 @@ function gitSnapshot(target) {
       .length,
     untracked_changes: statusLines.filter((line) => line.startsWith("??"))
       .length,
-    clean:
-      headResult.status === 0 &&
-      GIT_OBJECT_ID.test(head ?? "") &&
-      statusOk &&
-      statusLines.length === 0,
+    clean,
+    ...(identityChanged
+      ? { identity_error: "Git HEAD or object format changed during the Git snapshot" }
+      : {}),
   };
 }
 
@@ -10550,10 +10703,28 @@ function commandStatus(target, runId) {
   const state = loadState(target);
   const pending = Object.keys(installation?.pending_files ?? {});
   const drift = protectedDrift(target, installation);
-  const actualChecksHash = config ? currentChecksHash(config, target) : null;
+  let configurationErrors = [];
+  if (config) {
+    try {
+      configurationErrors = validateConfig(config, target);
+    } catch (error) {
+      configurationErrors = [error.message];
+    }
+  }
+  let actualChecksHash = null;
+  try {
+    actualChecksHash = config ? currentChecksHash(config, target) : null;
+  } catch (error) {
+    configurationErrors.push(error.message);
+  }
   const actualConfigurationHash = config
     ? configurationHash(config)
     : null;
+  const checksApproved =
+    Boolean(config) &&
+    configurationErrors.length === 0 &&
+    (config.safety?.require_check_approval === false ||
+      config.safety?.approved_checks_hash === actualChecksHash);
   let checkpoint = null;
   try {
     const loadedCheckpoint = projectExists(
@@ -10620,10 +10791,12 @@ function commandStatus(target, runId) {
   }
   const projectHealthy =
     Boolean(installation && config) &&
+    configurationErrors.length === 0 &&
     pending.length === 0 &&
     drift.length === 0 &&
     config?.onboarding?.status === "complete" &&
     config?.safety?.approved_configuration_hash === actualConfigurationHash &&
+    checksApproved &&
     !checkpoint?.error &&
     !coordinator?.error;
   const projectHealthReasons = [];
@@ -10632,6 +10805,9 @@ function commandStatus(target, runId) {
   }
   if (!config) {
     projectHealthReasons.push("project configuration is missing");
+  }
+  if (configurationErrors.length > 0) {
+    projectHealthReasons.push("project configuration is invalid");
   }
   if (pending.length > 0) {
     projectHealthReasons.push("pending reconciliation files remain");
@@ -10648,11 +10824,22 @@ function commandStatus(target, runId) {
   ) {
     projectHealthReasons.push("project configuration approval is missing or stale");
   }
+  if (config && !checksApproved) {
+    projectHealthReasons.push("project checks approval is missing or stale");
+  }
   if (checkpoint?.error) {
     projectHealthReasons.push("project checkpoint has an error");
   }
   if (coordinator?.error) {
     projectHealthReasons.push("coordinator state has an error");
+  }
+  if (runId === undefined) {
+    readiness.reasons = [
+      ...new Set([
+        ...projectHealthReasons,
+        "a run id is required to evaluate review readiness",
+      ]),
+    ].slice(0, MAX_STATUS_REASONS);
   }
   const verification =
     runId === undefined
@@ -10662,9 +10849,9 @@ function commandStatus(target, runId) {
     const reviewGateReady = review?.review_gate_ready === true;
     const prReady = projectHealthy && verification?.ok === true && reviewGateReady;
     const readinessReasons = [
+      ...projectHealthReasons,
       ...(review?.reasons ?? []),
       ...(verification?.reasons ?? []),
-      ...projectHealthReasons,
     ];
     const boundedReadinessReasons = [
       ...new Set(readinessReasons.filter((reason) => typeof reason === "string")),
@@ -10694,9 +10881,10 @@ function commandStatus(target, runId) {
       installation.package.version !== PACKAGE_VERSION,
     pending_reconciliation: pending,
     protected_drift: drift,
-    checks_approved:
-      Boolean(config) &&
-      config.safety?.approved_checks_hash === actualChecksHash,
+    checks_approved: checksApproved,
+    ...(configurationErrors.length > 0
+      ? { configuration_errors: configurationErrors.slice(0, MAX_STATUS_REASONS) }
+      : {}),
     onboarding: config?.onboarding ?? null,
     capabilities: config?.capabilities ?? null,
     configuration_approved:

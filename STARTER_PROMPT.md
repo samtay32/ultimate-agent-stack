@@ -94,7 +94,8 @@ Delivery contract:
   JSON under `.agent-stack/runs/reviews/<safe-id>.json` with the exact run and
   Git commit, reviewer fields, result, bounded summary/findings, and timestamp.
   A missing, failed, unavailable, stale, altered, dirty, empty, malformed,
-  wrong-run, wrong-commit, or same-agent receipt is a blocker and cannot be
+  wrong-run, wrong-commit, or a receipt with the same recorded reviewer and
+  coordinator identity is a blocker and cannot be
   replaced by approval prose. `review_gate_ready` is the local agent-recorded
   review gate; full `status --run RUN` requires current verification before
   nested `readiness.pr_ready`.

@@ -357,12 +357,22 @@ function validReceiptTimestamp(value) {
 }
 
 function reviewerResultPath(value) {
+  if (typeof value !== "string" || value.includes(":")) {
+    return false;
+  }
+  const components = value.split("/");
   return (
     isNonEmptyString(value) &&
     value.length <= REVIEW_RESULT_FILE_MAX_CHARS &&
     value.startsWith(".agent-stack/runs/") &&
     value.endsWith(".json") &&
-    safeScenarioPath(value)
+    safeScenarioPath(value) &&
+    components.every(
+      (component) =>
+        component.length > 0 &&
+        !/[. ]$/.test(component) &&
+        !/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i.test(component),
+    )
   );
 }
 

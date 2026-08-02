@@ -1213,6 +1213,32 @@ test("reviewer-result snapshots are exact bounded self-contained evidence", () =
   }
 });
 
+test("evaluator rejects noncanonical portable reviewer-result paths", () => {
+  for (const path of [
+    ".agent-stack/runs/reviews\\bad.json",
+    ".agent-stack/runs/reviews:bad.json",
+    ".agent-stack/runs/reviews/bad./result.json",
+    ".agent-stack/runs/reviews/bad.json ",
+    ".agent-stack/runs/reviews/CON.json",
+    ".agent-stack/runs/reviews/Com1.json",
+    ".agent-stack/runs/reviews/LPT9.json",
+    `./.agent-stack/runs/reviews/direct-delivery-passed.json`,
+  ]) {
+    const record = passingRecord();
+    const direct = record.cases.find(
+      (item) => item.scenario_id === "direct-delivery",
+    );
+    const receipt = direct.observed.review_receipts[0];
+    receipt.result_file = path;
+    const body = { ...receipt };
+    delete body.receipt_id;
+    receipt.receipt_id = sha256(body);
+    const result = evaluateRecord(record, catalog);
+    assert.equal(result.ok, false, path);
+    assert.match(JSON.stringify(result), /result_file.*(?:safe|JSON reviewer-result|canonical)/s, path);
+  }
+});
+
 test("not-required review expectations cannot hide blocking evidence", () => {
   const record = passingRecord();
   const scenario = catalog.scenarios.find(

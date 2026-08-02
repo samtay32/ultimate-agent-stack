@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import {
   chmodSync,
   existsSync,
@@ -193,6 +194,28 @@ function prepareVerifiedFixture() {
 
 function latestVerificationPath(fixture) {
   return join(fixture.directory, ".agent-stack", "runs", "latest.json");
+}
+
+function canonicalValue(value) {
+  if (Array.isArray(value)) {
+    return value.map(canonicalValue);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonicalValue(value[key])]),
+    );
+  }
+  return value;
+}
+
+function verificationReceiptHash(evidence) {
+  const body = { ...evidence };
+  delete body.receipt_sha256;
+  return createHash("sha256")
+    .update(JSON.stringify(canonicalValue(body)))
+    .digest("hex");
 }
 
 test("activation-status derives exact-run activated skills from receipts", () => {
@@ -454,6 +477,38 @@ test("review result paths stay contained and bounded", () => {
         /JSON reviewer-result artifact|result-file/,
       );
     }
+    for (const resultFile of [
+      ".agent-stack/runs/reviews\\bad.json",
+      ".agent-stack/runs/reviews:bad.json",
+      ".agent-stack/runs/reviews/bad./result.json",
+      ".agent-stack/runs/reviews/bad.json ",
+      ".agent-stack/runs/reviews/CON.json",
+      ".agent-stack/runs/reviews/Com1.json",
+      ".agent-stack/runs/reviews/LpT9.json",
+    ]) {
+      assert.throws(
+        () => recordPassed(fixture, { resultFile }),
+        /JSON reviewer-result artifact|result-file/,
+        resultFile,
+      );
+    }
+    const friendly = recordPassed(fixture, {
+      resultFile: "./.agent-stack/runs/reviews/independent-review.json",
+    });
+    assert.equal(
+      friendly.receipt.result_file,
+      ".agent-stack/runs/reviews/independent-review.json",
+    );
+    const receiptFile = join(fixture.directory, friendly.path);
+    const receipt = JSON.parse(readFileSync(receiptFile, "utf8"));
+    receipt.result_file = `./${receipt.result_file}`;
+    writeFileSync(receiptFile, JSON.stringify(receipt, null, 2) + "\n");
+    const nonCanonical = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(nonCanonical.review_gate_ready, false);
+    assert.match(
+      nonCanonical.invalid_receipts.join(" "),
+      /canonical normalized path|content hash/,
+    );
     const sameKindAndId = recordPassed(fixture, {
       reviewerKind: "reviewer@example.test",
       reviewerId: "reviewer@example.test",
@@ -857,6 +912,40 @@ test("status --run requires current verification and exposes full readiness sepa
   }
 });
 
+test("verify runs stable dirty checks but readiness requires a clean exact head", () => {
+  const fixture = createFixture();
+  try {
+    recordPassed(fixture);
+    commandApproveChecks(
+      fixture.directory,
+      "Inspected the bounded fixture verification commands",
+    );
+    const dirtyVerification = commandVerify(fixture.directory);
+    assert.equal(dirtyVerification.ok, true, JSON.stringify(dirtyVerification, null, 2));
+    const dirtyEvidence = JSON.parse(
+      readFileSync(latestVerificationPath(fixture), "utf8"),
+    );
+    assert.equal(dirtyEvidence.git_before.clean, false);
+    assert.equal(dirtyEvidence.git_after.clean, false);
+    assert.equal(
+      dirtyEvidence.git_before.head,
+      dirtyEvidence.git_after.head,
+    );
+    const blocked = commandStatus(fixture.directory, fixture.runId);
+    assert.equal(blocked.ok, false);
+    assert.equal(blocked.verification.ok, false);
+    assert.match(blocked.verification.reasons.join(" "), /clean exact/);
+
+    commit(fixture.directory, "approve fixture verification checks");
+    const cleanVerification = commandVerify(fixture.directory);
+    assert.equal(cleanVerification.ok, true);
+    const clean = commandStatus(fixture.directory, fixture.runId);
+    assert.equal(clean.verification.ok, true, JSON.stringify(clean, null, 2));
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("verification evidence contains tamper-detection hashes and exact check results", () => {
   const fixture = prepareVerifiedFixture();
   try {
@@ -881,7 +970,14 @@ test("verification readiness rejects missing and altered integrity fields", () =
     ["missing receipt hash", (evidence) => delete evidence.receipt_sha256, /receipt_sha256/],
     ["wrong receipt hash", (evidence) => { evidence.receipt_sha256 = "0".repeat(64); }, /receipt_sha256/],
     ["changed checks hash", (evidence) => { evidence.checks_hash = "0".repeat(64); }, /checks_hash/],
-    ["altered Git evidence", (evidence) => { evidence.git_after.head = "0".repeat(40); }, /Git|receipt_sha256/],
+    [
+      "altered Git evidence with recomputed receipt",
+      (evidence) => {
+        evidence.git_after.head = "0".repeat(40);
+        evidence.receipt_sha256 = verificationReceiptHash(evidence);
+      },
+      /Git identity changed|stale|git_after.head/,
+    ],
   ];
   for (const [label, mutate, expected] of mutations) {
     const fixture = prepareVerifiedFixture();
@@ -893,6 +989,59 @@ test("verification readiness rejects missing and altered integrity fields", () =
       const status = commandStatus(fixture.directory, fixture.runId);
       assert.equal(status.ok, false, label);
       assert.match(status.verification.reasons.join(" "), expected, label);
+    } finally {
+      fixture.cleanup();
+    }
+  }
+});
+
+test("verification semantic mutations fail with their specific errors after rehashing", () => {
+  const mutations = [
+    [
+      "altered target",
+      (evidence) => {
+        evidence.target = "/another/checkout";
+      },
+      /target does not match the current checkout/,
+    ],
+    [
+      "null verification timestamp",
+      (evidence) => {
+        evidence.started_at = null;
+      },
+      /started_at must be a non-null/,
+    ],
+    [
+      "null check timestamp",
+      (evidence) => {
+        evidence.checks[0].started_at = null;
+      },
+      /checks\[0\]\.started_at must be a non-null/,
+    ],
+    [
+      "altered check definition",
+      (evidence) => {
+        evidence.checks[0].argv = ["node", "--version"];
+      },
+      /argv does not match configured check/,
+    ],
+  ];
+  for (const [label, mutate, expected] of mutations) {
+    const fixture = prepareVerifiedFixture();
+    try {
+      const evidencePath = latestVerificationPath(fixture);
+      const evidence = JSON.parse(readFileSync(evidencePath, "utf8"));
+      mutate(evidence);
+      evidence.receipt_sha256 = verificationReceiptHash(evidence);
+      writeFileSync(evidencePath, JSON.stringify(evidence, null, 2) + "\n");
+      const status = commandStatus(fixture.directory, fixture.runId);
+      assert.equal(status.ok, false, label);
+      assert.match(status.verification.reasons.join(" "), expected, label);
+      assert.doesNotMatch(
+        status.verification.reasons.join(" "),
+        /receipt_sha256 does not match its content/,
+        label,
+      );
     } finally {
       fixture.cleanup();
     }
@@ -938,6 +1087,50 @@ test("blocked project readiness reports concrete health reasons", () => {
   }
 });
 
+test("status validates configuration and preserves readiness across branch renames", () => {
+  const fixture = prepareVerifiedFixture();
+  try {
+    const renamed = runGit(fixture.directory, ["branch", "-m", "renamed-for-readiness"]);
+    assert.equal(renamed, "");
+    const status = commandStatus(fixture.directory, fixture.runId);
+    assert.equal(status.ok, true, JSON.stringify(status, null, 2));
+    assert.deepEqual(status.review.git, {
+      head: status.verification.git.head,
+      object_format: status.verification.git.object_format,
+      clean: true,
+    });
+
+    const configPath = join(fixture.directory, ".agent-stack", "config.json");
+    const config = JSON.parse(readFileSync(configPath, "utf8"));
+    config.quality.checks = "not-an-array";
+    writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
+    const invalid = commandStatus(fixture.directory);
+    assert.equal(invalid.ok, false);
+    assert.equal(invalid.checks_approved, false);
+    assert.ok(invalid.configuration_errors?.length > 0);
+    assert.ok(invalid.readiness.reasons.includes("project configuration is invalid"));
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("verification evidence cannot replay across real checkout paths", () => {
+  const source = prepareVerifiedFixture();
+  const copy = createFixture();
+  try {
+    writeFileSync(
+      latestVerificationPath(copy),
+      readFileSync(latestVerificationPath(source)),
+    );
+    const status = commandStatus(copy.directory, copy.runId);
+    assert.equal(status.ok, false);
+    assert.match(status.verification.reasons.join(" "), /target does not match/);
+  } finally {
+    source.cleanup();
+    copy.cleanup();
+  }
+});
+
 test("review receipt schema rejects unsafe paths and binds Git digest length to format", () => {
   const schemaPath = fileURLToPath(
     new URL(
@@ -950,14 +1143,40 @@ test("review receipt schema rejects unsafe paths and binds Git digest length to 
   assert.equal(pathPattern.test(".agent-stack/runs/reviews/good.json"), true);
   for (const unsafe of [
     ".agent-stack/runs/reviews\\bad.json",
+    ".agent-stack/runs/reviews:bad.json",
     ".agent-stack/runs//bad.json",
     ".agent-stack/runs/reviews/./bad.json",
     ".agent-stack/runs/reviews/../bad.json",
+    ".agent-stack/runs/reviews/bad./result.json",
+    ".agent-stack/runs/reviews/bad.json ",
   ]) {
     assert.equal(pathPattern.test(unsafe), false, unsafe);
   }
+  const reservedPattern = new RegExp(
+    schema.allOf
+      .find((entry) => entry.properties?.result_file?.not?.pattern)
+      .properties.result_file.not.pattern,
+  );
+  for (const unsafe of [
+    ".agent-stack/runs/reviews/CON.json",
+    ".agent-stack/runs/reviews/PrN.txt.json",
+    ".agent-stack/runs/reviews/aux.json",
+    ".agent-stack/runs/reviews/COM1.json",
+    ".agent-stack/runs/reviews/LPT9.json",
+  ]) {
+    assert.equal(reservedPattern.test(unsafe), true, unsafe);
+  }
   assert.equal(schema.allOf[0].then.properties.git_commit.pattern, "^[a-f0-9]{40}$");
   assert.equal(schema.allOf[1].then.properties.git_commit.pattern, "^[a-f0-9]{64}$");
+  const sha1Pattern = new RegExp(schema.allOf[0].then.properties.git_commit.pattern);
+  const sha256Pattern = new RegExp(schema.allOf[1].then.properties.git_commit.pattern);
+  assert.equal(sha1Pattern.test("a".repeat(40)), true);
+  assert.equal(sha1Pattern.test("a".repeat(64)), false);
+  assert.equal(sha256Pattern.test("a".repeat(64)), true);
+  assert.equal(sha256Pattern.test("a".repeat(40)), false);
+  assert.deepEqual(schema.properties.result.enum, ["passed", "changes-requested"]);
+  assert.equal(schema.properties.claim.const, "agent-recorded");
+  assert.match(schema.properties.result_file_sha256.pattern, /64/);
   assert.equal(Object.hasOwn(schema.properties, "git_object_format"), true);
   assert.equal(
     schema.required.includes("git_commit"),
