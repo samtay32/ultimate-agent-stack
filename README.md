@@ -113,7 +113,9 @@ identity need not be different strings. Missing, failed, unavailable, altered,
 stale, dirty, empty, wrong-run, wrong-commit, malformed, or same-agent evidence
 keeps the review gate blocked. Local receipts are separate from protected
 GitHub review receipts, and claim only `agent-recorded`; they do not
-authenticate a harness or external provider. `review unavailable` is a durable
+authenticate a harness or external provider. Receipt and verification-check
+hashes detect content alteration but cannot authenticate a provider, agent, or
+editor. `review unavailable` is a durable
 blocker, never a successful review claim.
 
 `review status --run RUN` reports `review_gate_ready` and

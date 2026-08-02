@@ -39,6 +39,19 @@ function runGit(directory, args) {
   return result.stdout.trim();
 }
 
+function supportsSha256Git() {
+  const directory = mkdtempSync(join(tmpdir(), "mechanical-sha256-capability-"));
+  try {
+    return spawnSync(
+      "git",
+      ["-C", directory, "init", "-q", "--object-format=sha256"],
+      { encoding: "utf8", shell: false },
+    ).status === 0;
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
 function commit(directory, message) {
   runGit(directory, ["add", "-A"]);
   runGit(directory, [
@@ -164,6 +177,22 @@ function recordPassed(fixture, overrides = {}) {
     resultFile,
     coordinatorToken: fixture.token,
   });
+}
+
+function prepareVerifiedFixture() {
+  const fixture = createFixture();
+  commandApproveChecks(
+    fixture.directory,
+    "Inspected the bounded fixture verification commands",
+  );
+  commit(fixture.directory, "approve fixture verification checks");
+  recordPassed(fixture);
+  commandVerify(fixture.directory);
+  return fixture;
+}
+
+function latestVerificationPath(fixture) {
+  return join(fixture.directory, ".agent-stack", "runs", "latest.json");
 }
 
 test("activation-status derives exact-run activated skills from receipts", () => {
@@ -707,6 +736,9 @@ test("hardened Git probes ignore ambient redirection and fsmonitor settings", ()
     );
     chmodSync(monitor, 0o700);
     runGit(fixture.directory, ["config", "core.fsmonitor", monitor]);
+    runGit(fixture.directory, ["status", "--porcelain=v1"]);
+    assert.equal(existsSync(marker), true, "fixture must prove the configured monitor is executable");
+    rmSync(marker);
     recordPassed(fixture);
     process.env.GIT_DIR = join(fixture.directory, "missing-git-dir");
     process.env.GIT_WORK_TREE = join(fixture.directory, "missing-work-tree");
@@ -760,7 +792,10 @@ test("hardened Git probes ignore ambient redirection and fsmonitor settings", ()
   }
 });
 
-test("SHA-256 repositories carry the exact 64-character Git object ID", () => {
+test(
+  "SHA-256 repositories carry the exact 64-character Git object ID",
+  { skip: !supportsSha256Git() },
+  () => {
   const fixture = createFixture({ objectFormat: "sha256" });
   try {
     assert.match(runGit(fixture.directory, ["rev-parse", "HEAD"]), /^[a-f0-9]{64}$/);
@@ -773,7 +808,8 @@ test("SHA-256 repositories carry the exact 64-character Git object ID", () => {
   } finally {
     fixture.cleanup();
   }
-});
+  },
+);
 
 test("status --run requires current verification and exposes full readiness separately", () => {
   const fixture = createFixture();
@@ -789,17 +825,27 @@ test("status --run requires current verification and exposes full readiness sepa
     assert.equal(before.review.review_gate_ready, true);
     assert.equal(before.readiness.pr_ready, false);
     assert.equal(before.verification.ok, false);
+    assert.match(
+      before.verification.reasons.join(" "),
+      /latest verification evidence/,
+    );
     const cliBefore = spawnSync(
       process.execPath,
       [PACKAGE_CLI, "status", "--target", fixture.directory, "--run", fixture.runId],
       { encoding: "utf8" },
     );
-    assert.notEqual(cliBefore.status, 0);
+    assert.equal(cliBefore.status, 1);
+    const cliBeforeOutput = JSON.parse(cliBefore.stdout);
+    assert.match(
+      cliBeforeOutput.verification.reasons.join(" "),
+      /latest verification evidence/,
+    );
     commandVerify(fixture.directory);
     const after = commandStatus(fixture.directory, fixture.runId);
     assert.equal(after.ok, true, JSON.stringify(after, null, 2));
     assert.equal(after.readiness.review_gate_ready, true);
     assert.equal(after.readiness.pr_ready, true);
+    assert.deepEqual(after.review.git, after.verification.git);
     const cliAfter = spawnSync(
       process.execPath,
       [PACKAGE_CLI, "status", "--target", fixture.directory, "--run", fixture.runId],
@@ -809,4 +855,116 @@ test("status --run requires current verification and exposes full readiness sepa
   } finally {
     fixture.cleanup();
   }
+});
+
+test("verification evidence contains tamper-detection hashes and exact check results", () => {
+  const fixture = prepareVerifiedFixture();
+  try {
+    const evidence = JSON.parse(readFileSync(latestVerificationPath(fixture), "utf8"));
+    assert.match(evidence.checks_hash, /^[a-f0-9]{64}$/);
+    assert.match(evidence.receipt_sha256, /^[a-f0-9]{64}$/);
+    assert.equal(evidence.checks.length, 1);
+    assert.equal(evidence.checks[0].required, true);
+    assert.equal(evidence.checks[0].status, "passed");
+    assert.equal(evidence.checks[0].result, "passed");
+    assert.equal(evidence.checks[0].returncode, 0);
+    const status = commandStatus(fixture.directory, fixture.runId);
+    assert.equal(status.ok, true, JSON.stringify(status, null, 2));
+    assert.deepEqual(status.review.git, status.verification.git);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("verification readiness rejects missing and altered integrity fields", () => {
+  const mutations = [
+    ["missing receipt hash", (evidence) => delete evidence.receipt_sha256, /receipt_sha256/],
+    ["wrong receipt hash", (evidence) => { evidence.receipt_sha256 = "0".repeat(64); }, /receipt_sha256/],
+    ["changed checks hash", (evidence) => { evidence.checks_hash = "0".repeat(64); }, /checks_hash/],
+    ["altered Git evidence", (evidence) => { evidence.git_after.head = "0".repeat(40); }, /Git|receipt_sha256/],
+  ];
+  for (const [label, mutate, expected] of mutations) {
+    const fixture = prepareVerifiedFixture();
+    try {
+      const evidencePath = latestVerificationPath(fixture);
+      const evidence = JSON.parse(readFileSync(evidencePath, "utf8"));
+      mutate(evidence);
+      writeFileSync(evidencePath, JSON.stringify(evidence, null, 2) + "\n");
+      const status = commandStatus(fixture.directory, fixture.runId);
+      assert.equal(status.ok, false, label);
+      assert.match(status.verification.reasons.join(" "), expected, label);
+    } finally {
+      fixture.cleanup();
+    }
+  }
+});
+
+test("verification readiness requires every configured check exactly once", () => {
+  const mutations = [
+    ["empty checks", (evidence) => { evidence.checks = []; }, /missing configured id|exactly once/],
+    ["missing checks", (evidence) => delete evidence.checks, /checks must be an array/],
+    ["duplicate checks", (evidence) => { evidence.checks = [evidence.checks[0], { ...evidence.checks[0] }]; }, /duplicate id|exactly once/],
+    ["unknown check", (evidence) => { evidence.checks[0].id = "unknown-check"; }, /unknown id|missing configured id/],
+    ["altered check definition", (evidence) => { evidence.checks[0].argv = ["node", "--version"]; }, /argv does not match|receipt_sha256/],
+    ["required/status/result disagreement", (evidence) => { evidence.checks[0].result = "failed"; }, /status and result|receipt_sha256/],
+  ];
+  for (const [label, mutate, expected] of mutations) {
+    const fixture = prepareVerifiedFixture();
+    try {
+      const evidencePath = latestVerificationPath(fixture);
+      const evidence = JSON.parse(readFileSync(evidencePath, "utf8"));
+      mutate(evidence);
+      writeFileSync(evidencePath, JSON.stringify(evidence, null, 2) + "\n");
+      const status = commandStatus(fixture.directory, fixture.runId);
+      assert.equal(status.ok, false, label);
+      assert.match(status.verification.reasons.join(" "), expected, label);
+    } finally {
+      fixture.cleanup();
+    }
+  }
+});
+
+test("blocked project readiness reports concrete health reasons", () => {
+  const directory = mkdtempSync(join(tmpdir(), "mechanical-status-health-"));
+  try {
+    const status = commandStatus(directory, "run-health");
+    assert.equal(status.ok, false);
+    assert.equal(status.readiness.status, "blocked");
+    assert.ok(status.readiness.reasons.length > 0);
+    assert.ok(status.readiness.reasons.includes("project installation is missing"));
+    assert.ok(status.readiness.reasons.includes("project configuration is missing"));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("review receipt schema rejects unsafe paths and binds Git digest length to format", () => {
+  const schemaPath = fileURLToPath(
+    new URL(
+      "../assets/project-template/.agent-stack/contracts/review-receipt.schema.json",
+      import.meta.url,
+    ),
+  );
+  const schema = JSON.parse(readFileSync(schemaPath, "utf8"));
+  const pathPattern = new RegExp(schema.properties.result_file.pattern);
+  assert.equal(pathPattern.test(".agent-stack/runs/reviews/good.json"), true);
+  for (const unsafe of [
+    ".agent-stack/runs/reviews\\bad.json",
+    ".agent-stack/runs//bad.json",
+    ".agent-stack/runs/reviews/./bad.json",
+    ".agent-stack/runs/reviews/../bad.json",
+  ]) {
+    assert.equal(pathPattern.test(unsafe), false, unsafe);
+  }
+  assert.equal(schema.allOf[0].then.properties.git_commit.pattern, "^[a-f0-9]{40}$");
+  assert.equal(schema.allOf[1].then.properties.git_commit.pattern, "^[a-f0-9]{64}$");
+  assert.equal(Object.hasOwn(schema.properties, "git_object_format"), true);
+  assert.equal(
+    schema.required.includes("git_commit"),
+    true,
+  );
+  assert.equal(
+    JSON.stringify(schema).includes("coordinator_id"),
+    true,
+  );
 });

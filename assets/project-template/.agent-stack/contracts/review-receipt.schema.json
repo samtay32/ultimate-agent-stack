@@ -39,19 +39,21 @@
     "reviewer_kind": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 120
+      "maxLength": 120,
+      "description": "Non-empty reviewer category. It may equal reviewer_id, but may not identify the coordinator."
     },
     "reviewer_id": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 256
+      "maxLength": 256,
+      "description": "Non-empty recorded reviewer identity distinct from coordinator_id."
     },
     "result": { "enum": ["passed", "changes-requested"] },
     "result_file": {
       "type": "string",
       "minLength": 1,
       "maxLength": 512,
-      "pattern": "^\\.agent-stack/runs/(?!.*(?:^|/)\\.(?:\\.?)(?:/|$)).+\\.json$"
+      "pattern": "^(?!.*\\\\)(?!.*//)(?!.*(?:^|/)\\.{1,2}(?:/|$))\\.agent-stack/runs/.+\\.json$"
     },
     "result_file_sha256": {
       "type": "string",
@@ -62,6 +64,31 @@
       "format": "date-time",
       "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?Z$"
     },
-    "claim": { "const": "agent-recorded" }
-  }
+    "claim": {
+      "const": "agent-recorded",
+      "description": "Recorded evidence only; receipt hashes detect alteration but cannot authenticate a provider, agent, or editor."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "git_object_format": { "const": "sha1" } }
+      },
+      "then": {
+        "properties": {
+          "git_commit": { "pattern": "^[a-f0-9]{40}$" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "git_object_format": { "const": "sha256" } }
+      },
+      "then": {
+        "properties": {
+          "git_commit": { "pattern": "^[a-f0-9]{64}$" }
+        }
+      }
+    }
+  ]
 }

@@ -116,7 +116,8 @@ nested `readiness.pr_ready` can be true. Local receipts under
 receipts; unavailable, stale, altered, wrong-run, wrong-commit, dirty, empty,
 failed, malformed, or same-agent evidence blocks independent review. These
 receipts are bounded and atomic; they do not prove that an external harness or
-review provider acted.
+review provider acted. Receipt and verification-check hashes detect content
+alteration but cannot authenticate a provider, agent, or editor.
 
 Keep live test prompts and context at or below 2 KiB. Do not include repository
 dumps or expected skill names in a live prompt. The prompt is an intake request,

@@ -101,7 +101,8 @@ identity is distinct from the coordinator. Reviewer kind and identity may be
 the same label. The CLI fails closed for missing, failed, unavailable, stale,
 altered, dirty, empty, malformed, wrong-run, wrong-commit, or same-agent
 evidence. This protects stack-generated status/evidence/evaluator/readiness
-artifacts; it does not constrain arbitrary model text or prove that an external
+artifacts. Receipt and verification-check hashes detect alteration but cannot
+authenticate a provider, agent, or editor. It does not constrain arbitrary model text or prove that an external
 reviewer performed the work. `status --run RUN` is the broader project gate
 and requires current successful verification before `readiness.pr_ready`.
 

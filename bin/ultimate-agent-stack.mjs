@@ -105,6 +105,7 @@ const MAX_REVIEW_SUMMARY_CHARS = 2_000;
 const MAX_REVIEW_FINDINGS = 64;
 const MAX_REVIEW_FINDING_CHARS = 1_000;
 const MAX_STATUS_EVIDENCE_PATHS = 128;
+const MAX_STATUS_REASONS = 32;
 const GIT_OBJECT_ID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 const GIT_OBJECT_FORMATS = new Set(["sha1", "sha256"]);
 
@@ -639,6 +640,12 @@ function stableJson(value) {
 
 function activationReceiptSha256(activation) {
   const canonical = { ...activation };
+  delete canonical.receipt_sha256;
+  return sha256(stableJson(canonical));
+}
+
+function verificationReceiptSha256(evidence) {
+  const canonical = { ...evidence };
   delete canonical.receipt_sha256;
   return sha256(stableJson(canonical));
 }
@@ -4844,7 +4851,7 @@ function commandReviewUnavailable(target, options) {
   };
 }
 
-function commandReviewStatus(target, runId) {
+function commandReviewStatus(target, runId, capturedGit = undefined) {
   const normalizedRunId = requireRunId(runId);
   const reviewDirectory = reviewReceiptDirectory(
     target,
@@ -4860,7 +4867,7 @@ function commandReviewStatus(target, runId) {
     MAX_REVIEW_UNAVAILABLE_RECEIPTS,
     validateReviewUnavailableReceipt,
   );
-  const git = gitSnapshot(target);
+  const git = capturedGit === undefined ? gitSnapshot(target) : capturedGit;
   const selectedEntries = reviewDirectory.entries.filter(
     (entry) => entry.receipt.run_id === normalizedRunId,
   );
@@ -4926,9 +4933,7 @@ function commandReviewStatus(target, runId) {
       evaluatedResultPaths,
     }),
     run_id: normalizedRunId,
-    git: git
-      ? { head: git.head, object_format: git.object_format, clean: git.clean }
-      : null,
+    git: git ? { ...git } : null,
     receipts: validReceipts,
     unavailable: unavailable.map((entry) => entry.receipt),
     invalid_receipts: invalidReceipts,
@@ -9226,12 +9231,14 @@ function runCheck(target, check, config) {
     id: check.id,
     argv: check.argv,
     required: check.required !== false,
+    timeout_seconds: check.timeout_seconds ?? 900,
     started_at: startedAt,
   };
   if (!executableExists(target, check.argv[0])) {
     return {
       ...result,
       status: "failed",
+      result: "failed",
       returncode: 127,
       duration_seconds: 0,
       output: `command not found: ${check.argv[0]}`,
@@ -9283,6 +9290,7 @@ function runCheck(target, check, config) {
   return {
     ...result,
     status: returncode === 0 ? "passed" : "failed",
+    result: returncode === 0 ? "passed" : "failed",
     returncode,
     ...(failureReason ? { reason: failureReason } : {}),
     duration_seconds: Math.round((Date.now() - started) / 10) / 100,
@@ -9296,14 +9304,15 @@ function runCheck(target, check, config) {
 function commandVerify(target, failFast = false) {
   const config = loadConfig(target);
   const errors = validateConfig(config, target);
+  const actualChecksHash = currentChecksHash(config, target);
   const evidence = {
     schema_version: 1,
     command: "verify",
     started_at: utcTimestamp(),
     target,
+    checks_hash: actualChecksHash,
     checks: [],
   };
-  const actualChecksHash = currentChecksHash(config, target);
   let blockedBy;
   let nextSteps;
   if (config.onboarding.status !== "complete") {
@@ -9365,6 +9374,7 @@ function commandVerify(target, failFast = false) {
   }
   evidence.git_after = gitSnapshot(target);
   evidence.finished_at = utcTimestamp();
+  evidence.receipt_sha256 = verificationReceiptSha256(evidence);
   const evidenceDirectory = pathInside(
     target,
     config.quality.evidence_directory ?? RUNS_PATH,
@@ -9407,6 +9417,12 @@ function verificationReadiness(target, config, git) {
   }
   let evidence = null;
   let evidencePath = null;
+  const configuredChecks = Array.isArray(config?.quality?.checks)
+    ? config.quality.checks
+    : null;
+  const configuredChecksHash = config
+    ? currentChecksHash(config, target)
+    : null;
   if (config) {
     try {
       evidencePath = config.quality?.evidence_directory ?? RUNS_PATH;
@@ -9421,43 +9437,221 @@ function verificationReadiness(target, config, git) {
     }
   }
   if (evidence) {
+    const evidenceErrors = [];
+    rejectUnknownKeys(
+      evidenceErrors,
+      evidence,
+      new Set([
+        "schema_version",
+        "command",
+        "started_at",
+        "target",
+        "checks_hash",
+        "checks",
+        "ok",
+        "configuration_errors",
+        "blocked_by",
+        "next_steps",
+        "git_after",
+        "finished_at",
+        "receipt_sha256",
+      ]),
+      "latest verification evidence",
+    );
     if (evidence.schema_version !== 1 || evidence.command !== "verify") {
-      reasons.push("latest verification evidence is not stack-generated verify evidence");
+      evidenceErrors.push(
+        "latest verification evidence is not stack-generated verify evidence",
+      );
     }
+    if (!/^[a-f0-9]{64}$/.test(evidence.checks_hash ?? "")) {
+      evidenceErrors.push("latest verification checks_hash is missing or malformed");
+    } else if (evidence.checks_hash !== configuredChecksHash) {
+      evidenceErrors.push(
+        "latest verification checks_hash does not match the current configured checks",
+      );
+    }
+    if (!/^[a-f0-9]{64}$/.test(evidence.receipt_sha256 ?? "")) {
+      evidenceErrors.push(
+        "latest verification receipt_sha256 is missing or malformed",
+      );
+    } else if (evidence.receipt_sha256 !== verificationReceiptSha256(evidence)) {
+      evidenceErrors.push(
+        "latest verification receipt_sha256 does not match its content",
+      );
+    }
+    contractTimestamp(evidenceErrors, evidence.started_at, "latest verification started_at");
+    contractTimestamp(evidenceErrors, evidence.finished_at, "latest verification finished_at");
+    contractString(evidenceErrors, evidence.target, "latest verification target", 4_096);
     if (evidence.ok !== true) {
       reasons.push("latest verification did not pass");
     }
+    reasons.push(...evidenceErrors);
     if (!evidence.git_after || typeof evidence.git_after !== "object") {
       reasons.push("latest verification lacks post-check Git evidence");
     } else {
       const recordedGit = evidence.git_after;
+      const gitErrors = [];
+      rejectUnknownKeys(
+        gitErrors,
+        recordedGit,
+        new Set([
+          "head",
+          "object_format",
+          "branch",
+          "tracked_changes",
+          "untracked_changes",
+          "clean",
+        ]),
+        "latest verification git_after",
+      );
+      if (!GIT_OBJECT_ID.test(recordedGit.head ?? "")) {
+        gitErrors.push("latest verification git_after.head must be a full Git commit");
+      }
       if (
-        recordedGit.head !== git?.head ||
-        recordedGit.object_format !== git?.object_format ||
-        recordedGit.clean !== true
+        !GIT_OBJECT_FORMATS.has(recordedGit.object_format) ||
+        gitObjectFormatForId(recordedGit.head) !== recordedGit.object_format
       ) {
+        gitErrors.push(
+          "latest verification git_after.object_format must match its Git commit",
+        );
+      }
+      if (typeof recordedGit.branch !== "string" && recordedGit.branch !== null) {
+        gitErrors.push("latest verification git_after.branch must be a string or null");
+      }
+      for (const key of ["tracked_changes", "untracked_changes"]) {
+        if (!Number.isInteger(recordedGit[key]) || recordedGit[key] < 0) {
+          gitErrors.push(
+            `latest verification git_after.${key} must be a non-negative integer`,
+          );
+        }
+      }
+      if (typeof recordedGit.clean !== "boolean") {
+        gitErrors.push("latest verification git_after.clean must be a boolean");
+      }
+      if (gitErrors.length > 0) {
+        reasons.push(...gitErrors);
+      }
+      if (stableJson(recordedGit) !== stableJson(git)) {
         reasons.push("latest verification is stale or does not prove a clean current Git head");
       }
     }
     if (!Array.isArray(evidence.checks)) {
       reasons.push("latest verification checks must be an array");
-    } else if (
-      config.quality?.checks?.some(
-        (check) =>
-          check.required === true &&
-          !evidence.checks.some(
-            (record) => record.id === check.id && record.status === "passed",
-          ),
-      )
-    ) {
-      reasons.push("latest verification lacks a passed required check");
+    } else if (!configuredChecks) {
+      reasons.push("latest verification cannot be checked against configured checks");
+    } else {
+      const configuredById = new Map(
+        configuredChecks.map((check) => [check?.id, check]),
+      );
+      const seen = new Set();
+      const checkErrors = [];
+      for (const [index, record] of evidence.checks.entries()) {
+        const label = `latest verification checks[${index}]`;
+        if (!record || typeof record !== "object" || Array.isArray(record)) {
+          checkErrors.push(`${label} must be an object`);
+          continue;
+        }
+        rejectUnknownKeys(
+          checkErrors,
+          record,
+          new Set([
+            "id",
+            "argv",
+            "required",
+            "timeout_seconds",
+            "started_at",
+            "status",
+            "result",
+            "returncode",
+            "reason",
+            "duration_seconds",
+            "output",
+          ]),
+          label,
+        );
+        if (typeof record.id !== "string" || record.id.length === 0) {
+          checkErrors.push(`${label}.id must be a non-empty string`);
+          continue;
+        }
+        if (seen.has(record.id)) {
+          checkErrors.push(`latest verification checks contains duplicate id: ${record.id}`);
+        }
+        seen.add(record.id);
+        const configured = configuredById.get(record.id);
+        if (!configured) {
+          checkErrors.push(`latest verification checks contains unknown id: ${record.id}`);
+          continue;
+        }
+        const expectedRequired = configured.required !== false;
+        if (record.required !== expectedRequired) {
+          checkErrors.push(`${label}.required does not match configured check`);
+        }
+        if (stableJson(record.argv) !== stableJson(configured.argv)) {
+          checkErrors.push(`${label}.argv does not match configured check`);
+        }
+        if (record.timeout_seconds !== (configured.timeout_seconds ?? 900)) {
+          checkErrors.push(`${label}.timeout_seconds does not match configured check`);
+        }
+        contractTimestamp(checkErrors, record.started_at, `${label}.started_at`);
+        if (!(record.status === "passed" || record.status === "failed")) {
+          checkErrors.push(`${label}.status must be passed or failed`);
+        }
+        if (!(record.result === "passed" || record.result === "failed")) {
+          checkErrors.push(`${label}.result must be passed or failed`);
+        } else if (record.result !== record.status) {
+          checkErrors.push(`${label}.status and result must agree`);
+        }
+        if (!Number.isInteger(record.returncode)) {
+          checkErrors.push(`${label}.returncode must be an integer`);
+        } else if (record.result === "passed" && record.returncode !== 0) {
+          checkErrors.push(`${label}.passed result must have returncode 0`);
+        } else if (record.result === "failed" && record.returncode === 0) {
+          checkErrors.push(`${label}.failed result must have a non-zero returncode`);
+        }
+        if (
+          !Number.isFinite(record.duration_seconds) ||
+          record.duration_seconds < 0
+        ) {
+          checkErrors.push(`${label}.duration_seconds must be a non-negative number`);
+        }
+        if (typeof record.output !== "string" || record.output.length > 12_000) {
+          checkErrors.push(`${label}.output must be a bounded string`);
+        }
+      }
+      for (const check of configuredChecks) {
+        if (!seen.has(check?.id)) {
+          checkErrors.push(`latest verification checks is missing configured id: ${check?.id}`);
+        }
+      }
+      if (evidence.checks.length !== configuredChecks.length) {
+        checkErrors.push(
+          "latest verification checks must contain every configured check exactly once",
+        );
+      }
+      const requiredPassed = configuredChecks.every((check) => {
+        const record = evidence.checks.find((item) => item?.id === check?.id);
+        return check.required !== false ? record?.status === "passed" : true;
+      });
+      if (!requiredPassed) {
+        checkErrors.push("latest verification lacks a passed required check");
+      }
+      const expectedOk =
+        evidence.checks.length === configuredChecks.length &&
+        configuredChecks.every((check) => {
+          const record = evidence.checks.find((item) => item?.id === check?.id);
+          return check.required !== false ? record?.status === "passed" : true;
+        });
+      if (evidence.ok !== expectedOk) {
+        checkErrors.push("latest verification ok does not agree with check results");
+      }
+      reasons.push(...checkErrors);
     }
   }
   return {
     ok: reasons.length === 0,
     status: reasons.length === 0 ? "passed" : "blocked",
     evidence: evidencePath ? `${evidencePath}/latest.json` : null,
-    git: evidence?.git_after ?? null,
+    git: git ?? null,
     reasons: [...new Set(reasons)],
   };
 }
@@ -10385,6 +10579,7 @@ function commandStatus(target, runId) {
   } catch (error) {
     coordinator = { error: error.message };
   }
+  const git = runId === undefined ? null : gitSnapshot(target);
   let review = null;
   let readiness = {
     independent_reviewed: false,
@@ -10395,7 +10590,7 @@ function commandStatus(target, runId) {
   };
   if (runId !== undefined) {
     try {
-      review = commandReviewStatus(target, runId);
+      review = commandReviewStatus(target, runId, git);
       readiness = {
         independent_reviewed: review.independent_reviewed,
         review_gate_ready: review.review_gate_ready,
@@ -10431,22 +10626,58 @@ function commandStatus(target, runId) {
     config?.safety?.approved_configuration_hash === actualConfigurationHash &&
     !checkpoint?.error &&
     !coordinator?.error;
+  const projectHealthReasons = [];
+  if (!installation) {
+    projectHealthReasons.push("project installation is missing");
+  }
+  if (!config) {
+    projectHealthReasons.push("project configuration is missing");
+  }
+  if (pending.length > 0) {
+    projectHealthReasons.push("pending reconciliation files remain");
+  }
+  if (drift.length > 0) {
+    projectHealthReasons.push("protected project files have drifted");
+  }
+  if (config && config.onboarding?.status !== "complete") {
+    projectHealthReasons.push("project onboarding is incomplete");
+  }
+  if (
+    config &&
+    config.safety?.approved_configuration_hash !== actualConfigurationHash
+  ) {
+    projectHealthReasons.push("project configuration approval is missing or stale");
+  }
+  if (checkpoint?.error) {
+    projectHealthReasons.push("project checkpoint has an error");
+  }
+  if (coordinator?.error) {
+    projectHealthReasons.push("coordinator state has an error");
+  }
   const verification =
     runId === undefined
       ? null
-      : verificationReadiness(target, config, gitSnapshot(target));
+      : verificationReadiness(target, config, git);
   if (runId !== undefined) {
     const reviewGateReady = review?.review_gate_ready === true;
     const prReady = projectHealthy && verification?.ok === true && reviewGateReady;
+    const readinessReasons = [
+      ...(review?.reasons ?? []),
+      ...(verification?.reasons ?? []),
+      ...projectHealthReasons,
+    ];
+    const boundedReadinessReasons = [
+      ...new Set(readinessReasons.filter((reason) => typeof reason === "string")),
+    ].slice(0, MAX_STATUS_REASONS);
+    if (!prReady && boundedReadinessReasons.length === 0) {
+      boundedReadinessReasons.push("project readiness requirements are not satisfied");
+    }
     readiness = {
       ...readiness,
       review_gate_ready: reviewGateReady,
       pr_ready: prReady,
       status: prReady ? "passed" : "blocked",
-      reasons: [
-        ...(review?.reasons ?? []),
-        ...(verification?.reasons ?? []),
-      ],
+      reasons: boundedReadinessReasons,
     };
   }
   return {
