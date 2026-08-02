@@ -75,11 +75,15 @@
           "pr_ready_evidence_prepared",
           "independent_review_complete"
         ],
-        "required_outputs": [
-          "passing_project_tests",
-          "pr_ready_evidence_prepared",
-          "independent_review_evidence"
-        ]
+    "required_outputs": [
+      "passing_project_tests",
+      "pr_ready_evidence_prepared",
+      "independent_review_evidence"
+    ],
+    "review": {
+      "required": true,
+      "result": "passed"
+    }
       }
     },
     {
@@ -867,11 +871,15 @@
           "supporting_attachment_not_external",
           "greenfield_bounded_direct"
         ],
-        "required_outputs": [
-          "bounded_delivery_plan",
-          "passing_project_tests",
-          "pr_ready_evidence_prepared"
-        ]
+    "required_outputs": [
+      "bounded_delivery_plan",
+      "passing_project_tests",
+      "pr_ready_evidence_prepared"
+    ],
+    "review": {
+      "required": true,
+      "result": "passed"
+    }
       }
     },
     {
@@ -1149,9 +1157,13 @@
           "tested_work_preserved",
           "independent_review_blocked"
         ],
-        "required_outputs": [
-          "review_unavailable_handoff"
-        ]
+    "required_outputs": [
+      "review_unavailable_handoff"
+    ],
+    "review": {
+      "required": true,
+      "result": "unavailable"
+    }
       }
     },
     {

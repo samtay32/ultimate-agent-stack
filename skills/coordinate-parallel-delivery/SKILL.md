@@ -57,6 +57,15 @@ dispatching work.
 10. **Close the crew.** Stop or release idle workers, record what was accepted,
    rejected, or superseded, and return one unified result to the user.
 
+For review-sensitive delivery, keep worker dispatch evidence separate from
+mechanical receipt evidence. The primary agent may use the portable CLI's
+`evidence activation-status --run RUN --require SKILL` to derive exact-run
+activation from durable receipts. A worker's message, a skill name in a prompt,
+or a failed/empty delegation cannot create activation proof. If no real
+independent reviewer returns an inspectable result, record `review unavailable`
+and keep readiness blocked; do not convert the worker's failure into a passed
+review.
+
 ## Fast Decision Rule
 
 Use parallel work only when all are true:

@@ -21,3 +21,9 @@ The receipt is agent-recorded evidence and must never be created before the
 native `Skill` call or without the coordinator token and repository-write
 authority. For read-only work, do not mutate the repository; report that the
 receipt was not persisted.
+
+Use `evidence activation-status --run RUN --require SKILL` for receipt-derived
+activation and `review status --run RUN` for local pre-PR readiness. Never
+replace those artifacts with skill names or approval prose; unavailable review
+evidence remains blocked. Keep live evaluation request plus context at or below
+2 KiB, without repository dumps or expected skill names.

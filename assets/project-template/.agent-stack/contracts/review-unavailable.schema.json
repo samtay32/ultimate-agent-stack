@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/samtay32/ultimate-agent-stack/schemas/review-unavailable.schema.json",
+  "title": "Ultimate Agent Stack unavailable local review receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "receipt_id",
+    "run_id",
+    "coordinator_id",
+    "reason",
+    "details",
+    "recorded_at",
+    "claim",
+    "status"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "receipt_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "run_id": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "coordinator_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "reason": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "details": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "recorded_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?Z$"
+    },
+    "claim": { "const": "agent-recorded" },
+    "status": { "const": "unavailable" }
+  }
+}

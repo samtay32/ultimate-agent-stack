@@ -95,6 +95,29 @@ retain the exposed trace outside project state and report that the receipt was
 not persisted. This is agent-recorded trace evidence, not independent proof
 that a harness tool call occurred.
 
+For a bounded run, inspect the derived activation result with
+`node .agent-stack/bin/agent-stack.mjs evidence activation-status --run RUN
+--require SKILL`. The command derives its answer only from exact-run activation
+receipts; a skill name in a prompt or free-form output is not activation
+evidence. The coordinator may record a local pre-PR review with
+`review record --run RUN --reviewer-kind KIND --reviewer-id ID --result
+passed|changes-requested --result-file PATH --coordinator-token TOKEN`, or
+record an unavailable reviewer with `review unavailable --run RUN --reason
+REASON --details TEXT --coordinator-token TOKEN`. `review status --run RUN`
+and stack `status --run RUN` derive readiness only from durable, exact-head,
+clean-tree receipts. Local receipts under `.agent-stack/review-receipts/` are
+separate from protected GitHub review receipts; unavailable, stale, altered,
+wrong-run, wrong-commit, dirty, empty, failed, or same-agent evidence blocks
+independent review and PR readiness. These receipts are bounded, atomic, and
+claim only `agent-recorded`; they do not prove that an external harness or
+review provider acted.
+
+Keep live test prompts and context at or below 2 KiB. Do not include repository
+dumps or expected skill names in a live prompt. The prompt is an intake request,
+not a substitute for structured stack-generated status, evidence, evaluator, or
+readiness artifacts. Do not run paid live-model tests as part of deterministic
+package validation.
+
 A question that asks the user to accept a recommendation ends the turn. Do not
 continue as though the recommendation approved itself. A prior explicit
 instruction such as "use the recommendation" is approval and should not trigger

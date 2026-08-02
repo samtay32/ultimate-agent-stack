@@ -300,6 +300,41 @@ path and one stable ID for the activation event. The entry is agent-recorded
 trace evidence and must not be presented as independent proof of a harness tool
 call. Do not persist it when the user authorized read-only work only.
 
+For a bounded run, derive activation rather than trusting a skill name in a
+prompt or transcript:
+
+```bash
+node .agent-stack/bin/agent-stack.mjs evidence activation-status \
+  --run RUN --require SKILL
+```
+
+The result is exact-run, durable `agent-recorded` evidence. It is portable
+across harnesses, but it is not independent proof that a native harness call
+occurred. Local pre-PR review is a separate receipt family from the protected
+GitHub review receipt:
+
+```bash
+node .agent-stack/bin/agent-stack.mjs review record \
+  --run RUN --reviewer-kind KIND --reviewer-id ID \
+  --result passed --result-file PATH --coordinator-token TOKEN
+node .agent-stack/bin/agent-stack.mjs review status --run RUN
+node .agent-stack/bin/agent-stack.mjs status --run RUN
+```
+
+Use `review unavailable --run RUN --reason REASON --details TEXT` when the
+independent reviewer cannot act. Unavailable, missing, failed,
+changes-requested, empty, altered, stale, dirty-tree, wrong-run,
+wrong-commit, or same-agent evidence remains blocked and cannot become
+PR-ready. A local receipt claims only `agent-recorded`; it does not authenticate
+an external provider or authorize a push, merge, or release.
+
+For deterministic live evaluation, keep the serialized request plus context at
+or below 2 KiB (a practical target is at most 512 input tokens). Do not include
+repository dumps or expected skill names. These are prompt-size and leakage
+controls for the evaluation surface, not a claim that every model runtime
+exposes or enforces token accounting. Do not run paid live-model tests as part
+of package validation.
+
 When sharing a transcript or JSONL trace, keep the private raw file and export a
 separate redacted copy:
 

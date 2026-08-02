@@ -78,6 +78,8 @@ function main() {
       ".gitattributes",
       "assets/project-template/CLAUDE.md",
       "assets/project-template/.agent-stack/artifacts/BRIEF.md",
+      "assets/project-template/.agent-stack/contracts/review-receipt.schema.json",
+      "assets/project-template/.agent-stack/contracts/review-unavailable.schema.json",
       "skills/develop-project-brief/SKILL.md",
       "skills/develop-project-brief/references/brief-contract.md",
       "skills/develop-project-brief/references/intake-and-reconciliation.md",
@@ -361,6 +363,22 @@ function main() {
           "campaign-state.schema.json",
         ],
         "bounded campaign contract",
+      ],
+      [
+        [
+          ".agent-stack",
+          "contracts",
+          "review-receipt.schema.json",
+        ],
+        "local review receipt contract",
+      ],
+      [
+        [
+          ".agent-stack",
+          "contracts",
+          "review-unavailable.schema.json",
+        ],
+        "unavailable review contract",
       ],
       [
         [".codex", "agents", "uas_researcher.toml"],

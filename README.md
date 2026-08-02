@@ -91,6 +91,33 @@ notable preserved local paths. Counts summarize ordinary outcomes. The CLI
 returns the complete per-file JSON result by default for scripts and maintainers
 that need every outcome.
 
+## Mechanical Activation and Review Receipts
+
+Activation and readiness are derived from stack-generated receipts, not from
+skill names or approval prose in a model response:
+
+```bash
+node .agent-stack/bin/agent-stack.mjs evidence activation-status \
+  --run RUN --require SKILL
+node .agent-stack/bin/agent-stack.mjs review status --run RUN
+node .agent-stack/bin/agent-stack.mjs status --run RUN
+```
+
+The coordinator can record a local pre-PR result with `review record` only for
+a clean exact Git head and a contained, non-empty result file. A separate
+reviewer identity and kind are required. Missing, failed, unavailable,
+altered, stale, dirty, empty, wrong-run, wrong-commit, or same-agent evidence
+keeps independent review and PR readiness false. Local receipts are separate
+from protected GitHub review receipts, and claim only `agent-recorded`; they do
+not authenticate a harness or external provider. `review unavailable` is a
+durable blocker, never a successful review claim.
+
+For deterministic live evaluation, keep the request plus serialized context at
+or below 2 KiB (target roughly 512 input tokens), with no repository dumps or
+expected skill names. This is a portable prompt-size target, not a claim that
+every model runtime exposes hard token accounting. Package checks do not run
+paid live-model tests.
+
 ## Continuing in Another Conversation
 
 You do not have to keep an entire project in one enormous chat. Before leaving,

@@ -1248,7 +1248,7 @@ function parseCommandArguments(
 }
 
 function main() {
-  const [command, ...args] = process.argv.slice(2);
+  const [command = "list", ...args] = process.argv.slice(2);
   if (command === "list") {
     parseCommandArguments(args);
     process.stdout.write(

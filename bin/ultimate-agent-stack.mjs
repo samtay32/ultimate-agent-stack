@@ -94,6 +94,13 @@ const TELEMETRY_CREDENTIAL_ENVIRONMENTS = Object.freeze({
 });
 const GBRAIN_CHECKPOINT_SLUG = "projects/ultimate-agent-stack/checkpoint";
 const RUNS_PATH = ".agent-stack/runs";
+const REVIEW_RECEIPTS_PATH = ".agent-stack/review-receipts";
+const REVIEW_UNAVAILABLE_PATH = ".agent-stack/review-unavailable";
+const MAX_REVIEW_RECEIPTS = 1_000;
+const MAX_REVIEW_UNAVAILABLE_RECEIPTS = 1_000;
+const MAX_REVIEW_RECEIPT_BYTES = 32 * 1024;
+const MAX_ACTIVATION_RECEIPTS_PER_RUN = 128;
+const MAX_REVIEW_RESULT_FILE_BYTES = 4 * 1024 * 1024;
 const PROJECT_CLI_PATH = ".agent-stack/bin/agent-stack.mjs";
 const PROJECT_PROCESS_HELPER_PATH =
   ".agent-stack/lib/portable-process.mjs";
@@ -520,6 +527,7 @@ const EVIDENCE_RELATIONS = new Set([
   "supersedes",
 ]);
 const SKILL_ACTIVATION_MODES = new Set(["native", "file-read"]);
+const REVIEW_RESULTS = new Set(["passed", "changes-requested"]);
 const EXTERNAL_DATA_POLICIES = new Set([
   "local_only",
   "approved_providers",
@@ -3957,6 +3965,14 @@ function commandEvidenceActivate(
         "Agent-recorded evidence is not independent proof of a harness tool call.",
     };
   }
+  const runActivationCount = graph.skill_activations.filter(
+    (activation) => activation.run_id === runId,
+  ).length;
+  if (runActivationCount >= MAX_ACTIVATION_RECEIPTS_PER_RUN) {
+    throw new StackError(
+      `A run may contain at most ${MAX_ACTIVATION_RECEIPTS_PER_RUN} activation receipts`,
+    );
+  }
   const activation = {
     id,
     recorded_at: utcTimestamp(),
@@ -3983,6 +3999,644 @@ function commandEvidenceActivate(
     activation,
     boundary:
       "Agent-recorded evidence is not independent proof of a harness tool call.",
+  };
+}
+
+function boundedReceiptText(value, label, maximum) {
+  if (
+    typeof value !== "string" ||
+    value.trim().length === 0 ||
+    value.length > maximum ||
+    /[\r\n\0]/.test(value)
+  ) {
+    throw new StackError(
+      `${label} must be a non-empty single-line string of at most ${maximum} characters`,
+    );
+  }
+  SECRET_ASSIGNMENT.lastIndex = 0;
+  if (SECRET_LIKE_TEXT.test(value) || SECRET_ASSIGNMENT.test(value)) {
+    SECRET_ASSIGNMENT.lastIndex = 0;
+    throw new StackError(`${label} must not contain credential-like text`);
+  }
+  SECRET_ASSIGNMENT.lastIndex = 0;
+  return value;
+}
+
+function reviewReceiptId(receipt) {
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
+    return null;
+  }
+  const canonical = { ...receipt };
+  delete canonical.receipt_id;
+  return sha256(stableJson(canonical));
+}
+
+function reviewUnavailableReceiptId(receipt) {
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
+    return null;
+  }
+  const canonical = { ...receipt };
+  delete canonical.receipt_id;
+  return sha256(stableJson(canonical));
+}
+
+function validateReviewReceipt(receipt) {
+  const errors = [];
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
+    return ["review receipt must be an object"];
+  }
+  rejectUnknownKeys(
+    errors,
+    receipt,
+    new Set([
+      "schema_version",
+      "receipt_id",
+      "run_id",
+      "git_commit",
+      "coordinator_id",
+      "reviewer_kind",
+      "reviewer_id",
+      "result",
+      "result_file",
+      "result_file_sha256",
+      "recorded_at",
+      "claim",
+    ]),
+    "review receipt",
+  );
+  if (receipt.schema_version !== 1) {
+    errors.push("review receipt schema_version must equal 1");
+  }
+  if (
+    typeof receipt.receipt_id !== "string" ||
+    !/^[a-f0-9]{64}$/.test(receipt.receipt_id)
+  ) {
+    errors.push("review receipt receipt_id must be a sha256 hex digest");
+  } else if (receipt.receipt_id !== reviewReceiptId(receipt)) {
+    errors.push("review receipt receipt_id must match its canonical content hash");
+  }
+  for (const [key, maximum] of [
+    ["run_id", 200],
+    ["coordinator_id", 120],
+    ["reviewer_kind", 120],
+    ["reviewer_id", 256],
+  ]) {
+    contractString(errors, receipt[key], `review receipt ${key}`, maximum);
+    if (
+      typeof receipt[key] === "string" &&
+      /[\r\n\0]/.test(receipt[key])
+    ) {
+      errors.push(`review receipt ${key} must be a single-line value`);
+    }
+  }
+  if (
+    typeof receipt.reviewer_id === "string" &&
+    typeof receipt.reviewer_kind === "string" &&
+    receipt.reviewer_id.trim().toLowerCase() ===
+      receipt.reviewer_kind.trim().toLowerCase()
+  ) {
+    errors.push("review receipt reviewer identity and kind must be distinct");
+  }
+  if (
+    typeof receipt.reviewer_id === "string" &&
+    typeof receipt.coordinator_id === "string" &&
+    receipt.reviewer_id.trim().toLowerCase() ===
+      receipt.coordinator_id.trim().toLowerCase()
+  ) {
+    errors.push("review receipt reviewer must be distinct from the coordinator");
+  }
+  if (
+    typeof receipt.reviewer_kind === "string" &&
+    new Set(["coordinator", "primary", "project-steward"]).has(
+      receipt.reviewer_kind.trim().toLowerCase(),
+    )
+  ) {
+    errors.push("review receipt reviewer kind cannot identify the coordinator");
+  }
+  if (
+    typeof receipt.git_commit !== "string" ||
+    !/^[a-f0-9]{40}$/.test(receipt.git_commit)
+  ) {
+    errors.push("review receipt git_commit must be a full Git commit");
+  }
+  if (!REVIEW_RESULTS.has(receipt.result)) {
+    errors.push("review receipt result must be passed or changes-requested");
+  }
+  if (!contractProjectPath(receipt.result_file)) {
+    errors.push("review receipt result_file must be a bounded project-relative path");
+  }
+  if (
+    typeof receipt.result_file_sha256 !== "string" ||
+    !/^sha256:[a-f0-9]{64}$/.test(receipt.result_file_sha256)
+  ) {
+    errors.push("review receipt result_file_sha256 must be a prefixed SHA-256 digest");
+  }
+  if (
+    typeof receipt.recorded_at !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(
+      receipt.recorded_at,
+    ) ||
+    Number.isNaN(Date.parse(receipt.recorded_at))
+  ) {
+    errors.push("review receipt recorded_at must be a UTC timestamp");
+  }
+  if (receipt.claim !== "agent-recorded") {
+    errors.push("review receipt claim must equal agent-recorded");
+  }
+  return errors;
+}
+
+function validateReviewUnavailableReceipt(receipt) {
+  const errors = [];
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
+    return ["review unavailable receipt must be an object"];
+  }
+  rejectUnknownKeys(
+    errors,
+    receipt,
+    new Set([
+      "schema_version",
+      "receipt_id",
+      "run_id",
+      "coordinator_id",
+      "reason",
+      "details",
+      "recorded_at",
+      "claim",
+      "status",
+    ]),
+    "review unavailable receipt",
+  );
+  if (receipt.schema_version !== 1) {
+    errors.push("review unavailable receipt schema_version must equal 1");
+  }
+  if (
+    typeof receipt.receipt_id !== "string" ||
+    !/^[a-f0-9]{64}$/.test(receipt.receipt_id)
+  ) {
+    errors.push("review unavailable receipt receipt_id must be a sha256 hex digest");
+  } else if (receipt.receipt_id !== reviewUnavailableReceiptId(receipt)) {
+    errors.push(
+      "review unavailable receipt receipt_id must match its canonical content hash",
+    );
+  }
+  for (const [key, maximum] of [
+    ["run_id", 200],
+    ["coordinator_id", 120],
+    ["reason", 200],
+    ["details", 2_000],
+  ]) {
+    contractString(errors, receipt[key], `review unavailable receipt ${key}`, maximum);
+    if (
+      typeof receipt[key] === "string" &&
+      /[\r\n\0]/.test(receipt[key])
+    ) {
+      errors.push(`review unavailable receipt ${key} must be a single-line value`);
+    }
+  }
+  if (receipt.claim !== "agent-recorded") {
+    errors.push("review unavailable receipt claim must equal agent-recorded");
+  }
+  if (receipt.status !== "unavailable") {
+    errors.push("review unavailable receipt status must equal unavailable");
+  }
+  if (
+    typeof receipt.recorded_at !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(
+      receipt.recorded_at,
+    ) ||
+    Number.isNaN(Date.parse(receipt.recorded_at))
+  ) {
+    errors.push("review unavailable receipt recorded_at must be a UTC timestamp");
+  }
+  return errors;
+}
+
+function reviewReceiptDirectory(target, raw, label, maximum, validator) {
+  const errors = [];
+  let directory;
+  try {
+    directory = projectFileWithoutSymlinkComponents(target, raw, label);
+  } catch (error) {
+    return { entries: [], errors: [error.message] };
+  }
+  if (!existsSync(directory)) {
+    return { entries: [], errors: [] };
+  }
+  if (lstatSync(directory).isSymbolicLink() || !statSync(directory).isDirectory()) {
+    return { entries: [], errors: [`${raw} must be a real project directory`] };
+  }
+  const names = readdirSync(directory).sort();
+  const receiptNames = names.filter((name) => name !== ".gitkeep");
+  if (receiptNames.length > maximum) {
+    errors.push(`${raw} exceeds the ${maximum} receipt limit`);
+  }
+  const entries = [];
+  for (const name of receiptNames.slice(0, maximum + 1)) {
+    if (!/^[a-f0-9]{64}\.json$/.test(name)) {
+      errors.push(`${raw} contains an invalid receipt file name: ${name}`);
+      continue;
+    }
+    const relativePath = `${raw}/${name}`;
+    try {
+      const file = projectFileWithoutSymlinkComponents(
+        target,
+        relativePath,
+        label,
+      );
+      if (lstatSync(file).isSymbolicLink() || !statSync(file).isFile()) {
+        errors.push(`${relativePath} must be a real project file`);
+        continue;
+      }
+      if (statSync(file).size > MAX_REVIEW_RECEIPT_BYTES) {
+        errors.push(
+          `${relativePath} exceeds the ${MAX_REVIEW_RECEIPT_BYTES}-byte receipt limit`,
+        );
+        continue;
+      }
+      const receipt = readJson(file, label);
+      const receiptErrors = validator(receipt);
+      if (receipt.receipt_id !== name.slice(0, -5)) {
+        receiptErrors.push(`${relativePath} file name must match receipt_id`);
+      }
+      entries.push({ path: relativePath, file, receipt, errors: receiptErrors });
+    } catch (error) {
+      errors.push(`${relativePath}: ${error.message}`);
+    }
+  }
+  return { entries, errors };
+}
+
+function reviewReceiptCurrentErrors(target, receipt, git) {
+  const errors = [];
+  if (!git || git.head === null || git.clean !== true) {
+    errors.push("review evidence requires a clean Git working tree");
+  }
+  if (git?.head !== receipt.git_commit) {
+    errors.push("review receipt git_commit is stale or does not match current HEAD");
+  }
+  let resultFile;
+  try {
+    resultFile = projectFileWithoutSymlinkComponents(
+      target,
+      receipt.result_file,
+      "review result file",
+    );
+  } catch (error) {
+    errors.push(error.message);
+    return errors;
+  }
+  if (!existsSync(resultFile)) {
+    errors.push("review result file is missing");
+    return errors;
+  }
+  if (lstatSync(resultFile).isSymbolicLink() || !statSync(resultFile).isFile()) {
+    errors.push("review result file must be a regular non-symlink file");
+    return errors;
+  }
+  const size = statSync(resultFile).size;
+  if (size === 0) {
+    errors.push("review result file must be non-empty");
+  }
+  if (size > MAX_REVIEW_RESULT_FILE_BYTES) {
+    errors.push(
+      `review result file exceeds the ${MAX_REVIEW_RESULT_FILE_BYTES}-byte limit`,
+    );
+  }
+  if (size > 0 && size <= MAX_REVIEW_RESULT_FILE_BYTES) {
+    const actual = `sha256:${hashFile(resultFile)}`;
+    if (actual !== receipt.result_file_sha256) {
+      errors.push("review result file hash does not match the receipt");
+    }
+  }
+  return errors;
+}
+
+function requireRunId(runId, label = "--run") {
+  return boundedReceiptText(runId, label, 200);
+}
+
+function activationStatusForRun(target, runId, requiredSkills = []) {
+  const normalizedRunId = requireRunId(runId);
+  const required = [...new Set(requiredSkills)];
+  if (required.length > MAX_ACTIVATION_RECEIPTS_PER_RUN) {
+    throw new StackError(
+      `--require may contain at most ${MAX_ACTIVATION_RECEIPTS_PER_RUN} skills`,
+    );
+  }
+  for (const skill of required) {
+    if (!contractIdentifier(skill)) {
+      throw new StackError("--require values must be canonical skill names");
+    }
+  }
+  const graphFile = projectFileWithoutSymlinkComponents(
+    target,
+    EVIDENCE_GRAPH_PATH,
+    "evidence graph",
+  );
+  let graph;
+  try {
+    graph = readJson(graphFile, "evidence graph");
+  } catch (error) {
+    return {
+      ok: false,
+      command: "evidence activation-status",
+      run_id: normalizedRunId,
+      required_skills: required,
+      activated_skills: [],
+      missing_skills: required,
+      receipts: [],
+      errors: [error instanceof Error ? error.message : String(error)],
+      status: "blocked",
+      boundary:
+        "Activation status is derived only from durable agent-recorded receipts; it is not independent proof of a harness tool call.",
+    };
+  }
+  const graphErrors = validateEvidenceGraph(graph);
+  if (graphErrors.length > 0) {
+    return {
+      ok: false,
+      command: "evidence activation-status",
+      run_id: normalizedRunId,
+      required_skills: required,
+      activated_skills: [],
+      missing_skills: required,
+      receipts: [],
+      errors: graphErrors,
+      status: "blocked",
+      boundary:
+        "Activation status is derived only from durable agent-recorded receipts; it is not independent proof of a harness tool call.",
+    };
+  }
+  const receipts = (graph.skill_activations ?? []).filter(
+    (activation) => activation.run_id === normalizedRunId,
+  );
+  if (receipts.length > MAX_ACTIVATION_RECEIPTS_PER_RUN) {
+    return {
+      ok: false,
+      command: "evidence activation-status",
+      run_id: normalizedRunId,
+      required_skills: required,
+      activated_skills: [],
+      missing_skills: required,
+      receipts: [],
+      errors: [
+        `run ${normalizedRunId} exceeds the ${MAX_ACTIVATION_RECEIPTS_PER_RUN}-receipt activation bound`,
+      ],
+      status: "blocked",
+      boundary:
+        "Activation status is derived only from durable agent-recorded receipts; it is not independent proof of a harness tool call.",
+    };
+  }
+  const activated = [...new Set(receipts.map((receipt) => receipt.skill))].sort();
+  const missing = required.filter((skill) => !activated.includes(skill));
+  return {
+    ok: missing.length === 0,
+    command: "evidence activation-status",
+    run_id: normalizedRunId,
+    required_skills: required,
+    activated_skills: activated,
+    missing_skills: missing,
+    receipts,
+    status: missing.length === 0 ? "satisfied" : "blocked",
+    boundary:
+      "Activation status is derived only from durable agent-recorded receipts; it is not independent proof of a harness tool call.",
+  };
+}
+
+function commandEvidenceActivationStatus(target, options) {
+  return activationStatusForRun(target, options.runId, options.requiredSkills);
+}
+
+function commandReviewRecord(target, options) {
+  const coordinator = requireCoordinator(target, options.coordinatorToken);
+  const runId = requireRunId(options.runId);
+  const reviewerKind = boundedReceiptText(
+    options.reviewerKind,
+    "--reviewer-kind",
+    120,
+  );
+  const reviewerId = boundedReceiptText(
+    options.reviewerId,
+    "--reviewer-id",
+    256,
+  );
+  const resultFile = projectFileWithoutSymlinkComponents(
+    target,
+    options.resultFile,
+    "review result file",
+  );
+  if (!existsSync(resultFile)) {
+    throw new StackError("--result-file must name an existing project file");
+  }
+  if (lstatSync(resultFile).isSymbolicLink() || !statSync(resultFile).isFile()) {
+    throw new StackError("--result-file must name a regular non-symlink project file");
+  }
+  const size = statSync(resultFile).size;
+  if (size === 0 || size > MAX_REVIEW_RESULT_FILE_BYTES) {
+    throw new StackError(
+      `--result-file must be non-empty and at most ${MAX_REVIEW_RESULT_FILE_BYTES} bytes`,
+    );
+  }
+  const git = gitSnapshot(target);
+  if (!git || git.clean !== true || !/^[a-f0-9]{40}$/.test(git.head ?? "")) {
+    throw new StackError(
+      "review record requires a clean Git working tree at an exact commit",
+      2,
+      { git },
+    );
+  }
+  const normalizedResultFile = relative(realpathSync(target), resultFile)
+    .split(sep)
+    .join("/");
+  const receipt = {
+    schema_version: 1,
+    run_id: runId,
+    git_commit: git.head,
+    coordinator_id: coordinator.lease.coordinator_id,
+    reviewer_kind: reviewerKind,
+    reviewer_id: reviewerId,
+    result: options.result,
+    result_file: normalizedResultFile,
+    result_file_sha256: `sha256:${hashFile(resultFile)}`,
+    recorded_at: utcTimestamp(),
+    claim: "agent-recorded",
+  };
+  const receiptWithId = {
+    receipt_id: reviewReceiptId(receipt),
+    ...receipt,
+  };
+  const errors = validateReviewReceipt(receiptWithId);
+  if (errors.length > 0) {
+    throw new StackError("Refusing to write an invalid review receipt", 2, errors);
+  }
+  const directory = projectFileWithoutSymlinkComponents(
+    target,
+    REVIEW_RECEIPTS_PATH,
+    "review receipts directory",
+  );
+  if (existsSync(directory) && lstatSync(directory).isSymbolicLink()) {
+    throw new StackError("review receipts directory must not be a symlink");
+  }
+  if (
+    existsSync(directory) &&
+    readdirSync(directory).filter((name) => name !== ".gitkeep").length >=
+      MAX_REVIEW_RECEIPTS
+  ) {
+    throw new StackError(
+      `review receipts are limited to ${MAX_REVIEW_RECEIPTS} files`,
+    );
+  }
+  const path = `${REVIEW_RECEIPTS_PATH}/${receiptWithId.receipt_id}.json`;
+  atomicProjectJson(target, path, receiptWithId, "local review receipt");
+  return {
+    ok: true,
+    command: "review record",
+    recorded: true,
+    path,
+    receipt: receiptWithId,
+    boundary:
+      "This is an agent-recorded local pre-PR receipt. It is separate from protected GitHub review receipts and is not external-provider authentication.",
+  };
+}
+
+function commandReviewUnavailable(target, options) {
+  const coordinator = requireCoordinator(target, options.coordinatorToken);
+  const receipt = {
+    schema_version: 1,
+    run_id: requireRunId(options.runId),
+    coordinator_id: coordinator.lease.coordinator_id,
+    reason: boundedReceiptText(options.reason, "--reason", 200),
+    details: boundedReceiptText(options.details, "--details", 2_000),
+    recorded_at: utcTimestamp(),
+    claim: "agent-recorded",
+    status: "unavailable",
+  };
+  const receiptWithId = {
+    receipt_id: reviewUnavailableReceiptId(receipt),
+    ...receipt,
+  };
+  const errors = validateReviewUnavailableReceipt(receiptWithId);
+  if (errors.length > 0) {
+    throw new StackError(
+      "Refusing to write an invalid review unavailable receipt",
+      2,
+      errors,
+    );
+  }
+  const directory = projectFileWithoutSymlinkComponents(
+    target,
+    REVIEW_UNAVAILABLE_PATH,
+    "review unavailable directory",
+  );
+  if (existsSync(directory) && lstatSync(directory).isSymbolicLink()) {
+    throw new StackError("review unavailable directory must not be a symlink");
+  }
+  if (
+    existsSync(directory) &&
+    readdirSync(directory).filter((name) => name !== ".gitkeep").length >=
+      MAX_REVIEW_UNAVAILABLE_RECEIPTS
+  ) {
+    throw new StackError(
+      `review unavailable receipts are limited to ${MAX_REVIEW_UNAVAILABLE_RECEIPTS} files`,
+    );
+  }
+  const path = `${REVIEW_UNAVAILABLE_PATH}/${receiptWithId.receipt_id}.json`;
+  atomicProjectJson(target, path, receiptWithId, "review unavailable receipt");
+  return {
+    ok: true,
+    command: "review unavailable",
+    recorded: true,
+    path,
+    receipt: receiptWithId,
+    boundary:
+      "Unavailable review evidence is a blocker and can never create a successful independent-review claim or PR-ready state.",
+  };
+}
+
+function commandReviewStatus(target, runId) {
+  const normalizedRunId = requireRunId(runId);
+  const reviewDirectory = reviewReceiptDirectory(
+    target,
+    REVIEW_RECEIPTS_PATH,
+    "review receipts directory",
+    MAX_REVIEW_RECEIPTS,
+    validateReviewReceipt,
+  );
+  const unavailableDirectory = reviewReceiptDirectory(
+    target,
+    REVIEW_UNAVAILABLE_PATH,
+    "review unavailable directory",
+    MAX_REVIEW_UNAVAILABLE_RECEIPTS,
+    validateReviewUnavailableReceipt,
+  );
+  const git = gitSnapshot(target);
+  const selectedEntries = reviewDirectory.entries.filter(
+    (entry) => entry.receipt.run_id === normalizedRunId,
+  );
+  const unavailableEntries = unavailableDirectory.entries.filter(
+    (entry) => entry.receipt.run_id === normalizedRunId,
+  );
+  const invalidReceipts = [
+    ...reviewDirectory.errors,
+    ...unavailableDirectory.errors,
+    ...selectedEntries.flatMap((entry) =>
+      entry.errors.map((error) => `${entry.path}: ${error}`),
+    ),
+  ];
+  const currentErrors = [];
+  const validReceipts = [];
+  for (const entry of selectedEntries) {
+    if (entry.errors.length > 0) {
+      continue;
+    }
+    const errors = reviewReceiptCurrentErrors(target, entry.receipt, git);
+    if (errors.length > 0) {
+      invalidReceipts.push(...errors.map((error) => `${entry.path}: ${error}`));
+      currentErrors.push(...errors);
+    } else {
+      validReceipts.push(entry.receipt);
+    }
+  }
+  const unavailable = unavailableEntries.filter((entry) => entry.errors.length === 0);
+  const passed = validReceipts.filter((receipt) => receipt.result === "passed");
+  const changesRequested = validReceipts.filter(
+    (receipt) => receipt.result === "changes-requested",
+  );
+  const blockedReasons = [];
+  if (unavailable.length > 0) {
+    blockedReasons.push("independent review was recorded as unavailable");
+  }
+  if (selectedEntries.length === 0) {
+    blockedReasons.push("no review receipt exists for this run");
+  }
+  if (passed.length === 0) {
+    blockedReasons.push("no passed exact-head independent review exists");
+  }
+  if (changesRequested.length > 0) {
+    blockedReasons.push("a reviewer requested changes");
+  }
+  if (invalidReceipts.length > 0) {
+    blockedReasons.push("review evidence is invalid, stale, altered, or dirty");
+  }
+  const independentReviewed = blockedReasons.length === 0;
+  return {
+    ok: independentReviewed,
+    command: "review status",
+    run_id: normalizedRunId,
+    git: git
+      ? { head: git.head, clean: git.clean }
+      : null,
+    receipts: validReceipts,
+    unavailable: unavailable.map((entry) => entry.receipt),
+    invalid_receipts: invalidReceipts,
+    independent_reviewed: independentReviewed,
+    pr_ready: independentReviewed,
+    status: independentReviewed ? "passed" : "blocked",
+    reasons: [...new Set(blockedReasons)],
+    current_errors: [...new Set(currentErrors)],
+    boundary:
+      "Local pre-PR review status is derived from durable receipt files and exact current Git state. Protected GitHub review receipts are a separate gate.",
   };
 }
 
@@ -8429,10 +9083,10 @@ function gitSnapshot(target) {
   const headResult = run(["rev-parse", "HEAD"]);
   const branchResult = run(["branch", "--show-current"]);
   const statusResult = run(["status", "--porcelain=v1"]);
-  const statusLines =
-    statusResult.status === 0
-      ? statusResult.stdout.split("\n").filter(Boolean)
-      : [];
+  const statusOk = statusResult.status === 0;
+  const statusLines = statusOk
+    ? statusResult.stdout.split("\n").filter(Boolean)
+    : ["<git status failed>"];
   return {
     head: headResult.status === 0 ? headResult.stdout.trim() : null,
     branch:
@@ -8443,7 +9097,7 @@ function gitSnapshot(target) {
       .length,
     untracked_changes: statusLines.filter((line) => line.startsWith("??"))
       .length,
-    clean: statusLines.length === 0,
+    clean: statusOk && statusLines.length === 0,
   };
 }
 
@@ -9272,7 +9926,7 @@ function testConfiguredMemory(target, config, health, checkpoint) {
   };
 }
 
-function commandStatus(target) {
+function commandStatus(target, runId) {
   const installation = loadInstallation(target);
   const config = projectExists(target, CONFIG_PATH, "project config")
     ? loadConfig(target)
@@ -9309,6 +9963,40 @@ function commandStatus(target) {
   } catch (error) {
     coordinator = { error: error.message };
   }
+  let review = null;
+  let readiness = {
+    independent_reviewed: false,
+    pr_ready: false,
+    status: "blocked",
+    reasons: ["a run id is required to evaluate review readiness"],
+  };
+  if (runId !== undefined) {
+    try {
+      review = commandReviewStatus(target, runId);
+      readiness = {
+        independent_reviewed: review.independent_reviewed,
+        pr_ready: review.pr_ready,
+        status: review.status,
+        reasons: review.reasons,
+      };
+    } catch (error) {
+      review = {
+        ok: false,
+        command: "review status",
+        run_id: runId,
+        independent_reviewed: false,
+        pr_ready: false,
+        status: "blocked",
+        reasons: [error.message],
+      };
+      readiness = {
+        independent_reviewed: false,
+        pr_ready: false,
+        status: "blocked",
+        reasons: [error.message],
+      };
+    }
+  }
   return {
     ok:
       Boolean(installation && config) &&
@@ -9336,6 +10024,8 @@ function commandStatus(target) {
     active_lock: state.active_lock?.locked_at ?? null,
     checkpoint,
     coordinator,
+    ...(review ? { review } : {}),
+    readiness,
   };
 }
 
@@ -9577,7 +10267,7 @@ Your Project Steward — one conversation managing the entire build.
 Safe project setup:
   ultimate-agent-stack init [--target DIR] [--concise]
   ultimate-agent-stack upgrade [--target DIR] [--concise]
-  ultimate-agent-stack status [--target DIR]
+  ultimate-agent-stack status [--target DIR] [--run RUN]
   ultimate-agent-stack doctor [--target DIR] [--human]
   ultimate-agent-stack capabilities [--target DIR]
   ultimate-agent-stack work validate [--target DIR]
@@ -9587,8 +10277,16 @@ Safe project setup:
     --harness NAME --model NAME --run ID --event ID
     --coordinator-token TOKEN
     [--target DIR]
+  ultimate-agent-stack evidence activation-status --run RUN
+    [--require SKILL ...] [--target DIR]
   ultimate-agent-stack evidence report [--format json|mermaid]
     [--max-nodes 1..500] [--output PATH] [--target DIR]
+  ultimate-agent-stack review record --run RUN --reviewer-kind KIND
+    --reviewer-id ID --result passed|changes-requested --result-file PATH
+    --coordinator-token TOKEN [--target DIR]
+  ultimate-agent-stack review unavailable --run RUN --reason REASON
+    --details TEXT --coordinator-token TOKEN [--target DIR]
+  ultimate-agent-stack review status --run RUN [--target DIR]
   ultimate-agent-stack receipts validate [--target DIR]
   ultimate-agent-stack campaign status [--target DIR]
   ultimate-agent-stack campaign start --objective TEXT --max-iterations 1..25
@@ -9694,16 +10392,16 @@ function execute(command, args) {
     }
     case "evidence": {
       const [subcommand, ...evidenceArgs] = args;
-      if (!["validate", "activate", "report"].includes(subcommand)) {
+      if (!["validate", "activate", "activation-status", "report"].includes(subcommand)) {
         throw new StackError(
-          "evidence subcommand must be validate, activate, or report",
+          "evidence subcommand must be validate, activate, activation-status, or report",
         );
       }
       assertNoUnknownOptions(
         evidenceArgs,
         subcommand === "validate"
           ? ["--target"]
-          : subcommand === "activate"
+            : subcommand === "activate"
             ? [
                 "--target",
                 "--skill",
@@ -9715,6 +10413,8 @@ function execute(command, args) {
                 "--event",
                 "--coordinator-token",
               ]
+            : subcommand === "activation-status"
+              ? ["--target", "--run", "--require"]
             : ["--target", "--format", "--max-nodes", "--output"],
       );
       const target = resolveTarget(getOption(evidenceArgs, "--target", "."));
@@ -9736,11 +10436,65 @@ function execute(command, args) {
           ),
         });
       }
+      if (subcommand === "activation-status") {
+        return commandEvidenceActivationStatus(target, {
+          runId: getOption(evidenceArgs, "--run"),
+          requiredSkills: getRepeatedOption(evidenceArgs, "--require"),
+        });
+      }
       return commandEvidenceReport(target, {
         format: getOption(evidenceArgs, "--format", "json"),
         maxNodes: getOption(evidenceArgs, "--max-nodes", "200"),
         output: getOption(evidenceArgs, "--output"),
       });
+    }
+    case "review": {
+      const [subcommand, ...reviewArgs] = args;
+      if (!["record", "unavailable", "status"].includes(subcommand)) {
+        throw new StackError(
+          "review subcommand must be record, unavailable, or status",
+        );
+      }
+      const allowedReviewOptions = {
+        record: [
+          "--target",
+          "--run",
+          "--reviewer-kind",
+          "--reviewer-id",
+          "--result",
+          "--result-file",
+          "--coordinator-token",
+        ],
+        unavailable: [
+          "--target",
+          "--run",
+          "--reason",
+          "--details",
+          "--coordinator-token",
+        ],
+        status: ["--target", "--run"],
+      };
+      assertNoUnknownOptions(reviewArgs, allowedReviewOptions[subcommand]);
+      const target = resolveTarget(getOption(reviewArgs, "--target", "."));
+      if (subcommand === "record") {
+        return commandReviewRecord(target, {
+          runId: getOption(reviewArgs, "--run"),
+          reviewerKind: getOption(reviewArgs, "--reviewer-kind"),
+          reviewerId: getOption(reviewArgs, "--reviewer-id"),
+          result: getOption(reviewArgs, "--result"),
+          resultFile: getOption(reviewArgs, "--result-file"),
+          coordinatorToken: getOption(reviewArgs, "--coordinator-token"),
+        });
+      }
+      if (subcommand === "unavailable") {
+        return commandReviewUnavailable(target, {
+          runId: getOption(reviewArgs, "--run"),
+          reason: getOption(reviewArgs, "--reason"),
+          details: getOption(reviewArgs, "--details"),
+          coordinatorToken: getOption(reviewArgs, "--coordinator-token"),
+        });
+      }
+      return commandReviewStatus(target, getOption(reviewArgs, "--run"));
     }
     case "receipts": {
       const [subcommand, ...receiptArgs] = args;
@@ -9975,9 +10729,9 @@ function execute(command, args) {
       });
     }
     case "status": {
-      assertNoUnknownOptions(args, ["--target"]);
+      assertNoUnknownOptions(args, ["--target", "--run"]);
       const target = resolveTarget(getOption(args, "--target", "."));
-      return commandStatus(target);
+      return commandStatus(target, getOption(args, "--run"));
     }
     case "start": {
       assertNoUnknownOptions(args, [
@@ -10111,7 +10865,11 @@ export {
   commandDoctor,
   commandEvidenceValidate,
   commandEvidenceActivate,
+  commandEvidenceActivationStatus,
   commandEvidenceReport,
+  commandReviewRecord,
+  commandReviewUnavailable,
+  commandReviewStatus,
   commandLock,
   commandLinearHealth,
   commandLinearEvidenceComment,

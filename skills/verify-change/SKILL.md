@@ -36,6 +36,13 @@ Evidence, not confidence, decides readiness.
    returns an inspectable result for the exact reviewed commit. Failed spawn,
    empty wait, missing result, self-review, or handwritten approval prose is a
    blocker, not review evidence.
+   For the portable local gate, use `review status --run RUN` and require a
+   passed receipt for the exact current clean Git head. The receipt must name a
+   contained non-empty result file with its hash, coordinator identity, and a
+   distinct reviewer identity and kind. Missing, failed, unavailable, altered,
+   stale, dirty, empty, wrong-run, wrong-commit, or same-agent evidence keeps
+   `independent_reviewed` and `pr_ready` false. Keep these local receipts
+   separate from protected GitHub review receipts.
 6. For visual changes, inspect rendered output at meaningful sizes and include screenshots or recordings.
 7. For integrations, test timeouts, malformed input, retries, idempotency, partial failure, and authentication boundaries where applicable.
 8. Classify every failure:
@@ -55,6 +62,11 @@ Evidence, not confidence, decides readiness.
 - silently skipping unavailable tools.
 - claiming a test was added, a review was closed, or an artifact was locked
   without matching repository and command evidence.
+- using free-form model text, an expected skill name, or an unsupported
+  activation string in place of receipt-derived status;
+- exceeding the portable live-evaluation prompt budget: request plus context
+  must stay at or below 2 KiB (target about 512 input tokens), without repository
+  dumps or expected skill names.
 
 ## Exit Contract
 

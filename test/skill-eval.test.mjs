@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   mkdtempSync,
   readFileSync,
@@ -35,6 +36,86 @@ const catalog = JSON.parse(
 );
 const COORDINATOR_TOKEN = "0123456789abcdef".repeat(4);
 const NORMAL_HASH = "fedcba9876543210".repeat(4);
+
+function stableJson(value) {
+  if (Array.isArray(value)) {
+    return value.map(stableJson);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, stableJson(value[key])]),
+    );
+  }
+  return value;
+}
+
+function sha256(value) {
+  return createHash("sha256").update(JSON.stringify(stableJson(value))).digest("hex");
+}
+
+function activationReceipt(scenario, skill) {
+  const receipt = {
+    id: "",
+    skill,
+    mode: "file-read",
+    harness: "test-harness",
+    model: "test-model",
+    run_id: `test-run:${scenario.id}`,
+    event_id: `activation:${scenario.id}:${skill}`,
+    recorded_at: "2026-01-01T00:00:00Z",
+    skill_path: `.agents/skills/${skill}/SKILL.md`,
+    skill_sha256: "a".repeat(64),
+    claim: "agent-recorded",
+  };
+  receipt.id = `skill-activation-${sha256({
+    harness: receipt.harness,
+    model: receipt.model,
+    run_id: receipt.run_id,
+    event_id: receipt.event_id,
+  }).slice(0, 20)}`;
+  return receipt;
+}
+
+function reviewReceipt(scenario, gitCommit) {
+  const receipt = {
+    schema_version: 1,
+    receipt_id: "",
+    run_id: `test-run:${scenario.id}`,
+    git_commit: gitCommit,
+    coordinator_id: "coordinator:test-run",
+    reviewer_kind: "independent-reviewer",
+    reviewer_id: `reviewer:${scenario.id}`,
+    result: "passed",
+    result_file: `reviews/${scenario.id}.md`,
+    result_file_sha256: `sha256:${"b".repeat(64)}`,
+    recorded_at: "2026-01-01T00:00:00Z",
+    claim: "agent-recorded",
+  };
+  const body = { ...receipt };
+  delete body.receipt_id;
+  receipt.receipt_id = sha256(body);
+  return receipt;
+}
+
+function unavailableReviewReceipt(scenario) {
+  const receipt = {
+    schema_version: 1,
+    receipt_id: "",
+    run_id: `test-run:${scenario.id}`,
+    coordinator_id: "coordinator:test-run",
+    reason: "reviewer-unavailable",
+    details: "The bounded independent reviewer was unavailable.",
+    recorded_at: "2026-01-01T00:00:00Z",
+    claim: "agent-recorded",
+    status: "unavailable",
+  };
+  const body = { ...receipt };
+  delete body.receipt_id;
+  receipt.receipt_id = sha256(body);
+  return receipt;
+}
 
 function passingRecord() {
   const record = buildScaffold(catalog);
@@ -94,33 +175,57 @@ function passingRecord() {
       external_inputs:
         structuredClone(scaffold.external_inputs),
       observed: {
-      activated_skills: [...scenario.expected.must_activate],
-      asked_clarifying_question:
-        (scenario.expected.minimum_questions ??
-          (scenario.expected.question === "required" ? 1 : 0)) > 0,
-      question_count:
-        scenario.expected.minimum_questions ??
-        (scenario.expected.question === "required" ? 1 : 0),
-      max_questions_in_turn:
-        (scenario.expected.minimum_questions ??
-          (scenario.expected.question === "required" ? 1 : 0)) > 0
-          ? 1
-          : 0,
-      question_tags: [
-        ...(scenario.expected.required_question_tags ?? []),
-      ],
-      performed_actions: [...(scenario.expected.required_actions ?? [])],
-      written_paths: [...(scenario.expected.required_write_paths ?? [])],
-      artifacts: structuredClone(
-        scenario.expected.required_artifact_states ?? [],
-      ),
-      outcome_tags: [...scenario.expected.required_outcomes],
-      observable_outputs: [
-        ...(scenario.expected.required_outputs ?? []),
-      ],
-      source_claim_dispositions: (
-        scenario.expected.required_source_claim_ids ?? []
-      ).map((id) => ({ id, disposition: "kept" })),
+        run_id: `test-run:${scenario.id}`,
+        activation_receipts: scenario.expected.must_activate.map((skill) =>
+          activationReceipt(scenario, skill),
+        ),
+        activation_status: {
+          run_id: `test-run:${scenario.id}`,
+          required_skills: [...scenario.expected.must_activate].sort(),
+          activated_skills: [...scenario.expected.must_activate].sort(),
+          missing_skills: [],
+          status: "satisfied",
+        },
+        activated_skills: [...scenario.expected.must_activate].sort(),
+        asked_clarifying_question:
+          (scenario.expected.minimum_questions ??
+            (scenario.expected.question === "required" ? 1 : 0)) > 0,
+        question_count:
+          scenario.expected.minimum_questions ??
+          (scenario.expected.question === "required" ? 1 : 0),
+        max_questions_in_turn:
+          (scenario.expected.minimum_questions ??
+            (scenario.expected.question === "required" ? 1 : 0)) > 0
+            ? 1
+            : 0,
+        question_tags: [
+          ...(scenario.expected.required_question_tags ?? []),
+        ],
+        performed_actions: [...(scenario.expected.required_actions ?? [])],
+        written_paths: [...(scenario.expected.required_write_paths ?? [])],
+        artifacts: structuredClone(
+          scenario.expected.required_artifact_states ?? [],
+        ),
+        outcome_tags: [...scenario.expected.required_outcomes],
+        observable_outputs: [
+          ...(scenario.expected.required_outputs ?? []),
+        ],
+        source_claim_dispositions: (
+          scenario.expected.required_source_claim_ids ?? []
+        ).map((id) => ({ id, disposition: "kept" })),
+        review_receipts:
+          scenario.expected.review?.result === "passed"
+            ? [reviewReceipt(scenario, finalGitHead)]
+            : [],
+        review_unavailable_receipts:
+          scenario.expected.review?.result === "unavailable"
+            ? [unavailableReviewReceipt(scenario)]
+            : [],
+        review_status: {
+          independent_reviewed: scenario.expected.review?.result === "passed",
+          pr_ready: scenario.expected.review?.result === "passed",
+          status: scenario.expected.review?.result === "passed" ? "passed" : "blocked",
+        },
       },
       evidence: {
         summary: `Observed ${scenario.id} in the test harness.`,
@@ -506,7 +611,7 @@ test("a complete live run record passes against the current behavior surface", (
   const record = passingRecord();
   assert.equal(record.schema_version, 2);
   const result = validateRunRecord(record, catalog);
-  assert.equal(result.ok, true, JSON.stringify(result, null, 2));
+  assert.equal(result.ok, true);
   assert.deepEqual(result.summary, {
     total: 28,
     passed: 28,
@@ -686,13 +791,32 @@ test("routing reliability is reported as k/N per harness and model", () => {
   const route = second.cases.find(
     (item) => item.scenario_id === "flexible-direct-bypass",
   );
-  route.observed.activated_skills =
-    route.observed.activated_skills.filter(
-      (skill) => skill !== "run-autonomous-delivery",
-    );
-  second.cases
-    .find((item) => item.scenario_id === "negative-explanation-only")
-    .observed.activated_skills.push("run-autonomous-delivery");
+  route.observed.activation_receipts = [];
+  route.observed.activated_skills = [];
+  route.observed.activation_status = {
+    run_id: route.observed.run_id,
+    required_skills: ["run-autonomous-delivery"],
+    activated_skills: [],
+    missing_skills: ["run-autonomous-delivery"],
+    status: "blocked",
+  };
+  const negativeSecond = second.cases.find(
+    (item) => item.scenario_id === "negative-explanation-only",
+  );
+  const negativeScenario = catalog.scenarios.find(
+    (scenario) => scenario.id === "negative-explanation-only",
+  );
+  negativeSecond.observed.activation_receipts = [
+    activationReceipt(negativeScenario, "run-autonomous-delivery"),
+  ];
+  negativeSecond.observed.activated_skills = ["run-autonomous-delivery"];
+  negativeSecond.observed.activation_status = {
+    run_id: negativeSecond.observed.run_id,
+    required_skills: [],
+    activated_skills: ["run-autonomous-delivery"],
+    missing_skills: [],
+    status: "satisfied",
+  };
 
   const result = summarizeRoutingRates([first, second], catalog);
   assert.equal(result.ok, true);
@@ -831,6 +955,18 @@ test("telemetry diagnosis requires explicit activation and rejects project write
     (item) => item.scenario_id === "direct-telemetry-diagnosis",
   );
   telemetry.observed = {
+    run_id: `test-run:${telemetry.scenario_id}`,
+    activation_receipts: [activationReceipt(
+      catalog.scenarios.find((scenario) => scenario.id === telemetry.scenario_id),
+      "use-project-telemetry",
+    )],
+    activation_status: {
+      run_id: `test-run:${telemetry.scenario_id}`,
+      required_skills: ["use-project-telemetry"],
+      activated_skills: ["use-project-telemetry"],
+      missing_skills: [],
+      status: "satisfied",
+    },
     activated_skills: ["use-project-telemetry"],
     asked_clarifying_question: false,
     question_count: 0,
@@ -846,6 +982,13 @@ test("telemetry diagnosis requires explicit activation and rejects project write
     ],
     observable_outputs: [],
     source_claim_dispositions: [],
+    review_receipts: [],
+    review_unavailable_receipts: [],
+    review_status: {
+      independent_reviewed: false,
+      pr_ready: false,
+      status: "blocked",
+    },
   };
   assert.equal(validateRunRecord(record, catalog).ok, true);
 
@@ -858,7 +1001,15 @@ test("telemetry diagnosis requires explicit activation and rejects project write
   );
 
   telemetry.observed.performed_actions = [];
+  telemetry.observed.activation_receipts = [];
   telemetry.observed.activated_skills = [];
+  telemetry.observed.activation_status = {
+    run_id: telemetry.observed.run_id,
+    required_skills: ["use-project-telemetry"],
+    activated_skills: [],
+    missing_skills: ["use-project-telemetry"],
+    status: "blocked",
+  };
   const activationResult = validateRunRecord(record, catalog);
   assert.equal(activationResult.ok, false);
   assert.match(
@@ -884,7 +1035,21 @@ test("work management requires activation and preserves provider authority", () 
   const missingActivation = passingRecord();
   missingActivation.cases.find(
     (item) => item.scenario_id === workScenarioId,
+  ).observed.activation_receipts = [];
+  missingActivation.cases.find(
+    (item) => item.scenario_id === workScenarioId,
   ).observed.activated_skills = [];
+  missingActivation.cases.find(
+    (item) => item.scenario_id === workScenarioId,
+  ).observed.activation_status = {
+    run_id: missingActivation.cases.find(
+      (item) => item.scenario_id === workScenarioId,
+    ).observed.run_id,
+    required_skills: ["manage-project-work"],
+    activated_skills: [],
+    missing_skills: ["manage-project-work"],
+    status: "blocked",
+  };
   result = validateRunRecord(missingActivation, catalog);
   assert.equal(result.ok, false);
   assert.match(

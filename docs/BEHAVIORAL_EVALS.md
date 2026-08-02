@@ -64,6 +64,16 @@ Every scenario defines:
 - load-bearing source claim IDs that must each receive exactly one
   `kept | tightened | rejected | deferred` disposition.
 
+Activation and review claims are structured rather than free-form. Each live
+case records an exact `run_id`, durable `activation_receipts`, and a derived
+`activation_status`; `activated_skills` must exactly equal the skills derived
+from valid receipt content. Cases that require local review also record
+`review_receipts` or `review_unavailable_receipts` plus a derived
+`review_status`. Direct delivery and the flexible direct bypass require a
+passed receipt whose commit equals the exact final head. The reviewer-unavailable
+edge case must remain blocked. These records claim only `agent-recorded` and do
+not authenticate a harness tool call or external review provider.
+
 The additive evidence fields do not turn model behavior into a deterministic
 security control. A run collector records `question_count`,
 `max_questions_in_turn`, `question_tags`, `written_paths`, artifact states,
@@ -95,8 +105,14 @@ This command:
    dispositions;
 2. reads the actual skill frontmatter and rejects unknown skill names;
 3. requires all eight categories and at least one false-activation case;
-4. rejects prompts that disclose a `$skill-name` command;
+4. rejects prompts that disclose an expected skill name or exceed the 2 KiB
+   request-plus-context budget;
 5. prints a SHA-256 hash over the behavioral surface.
+
+The 2 KiB limit is a deterministic prompt/context boundary (roughly a 512-token
+target), not a claim that every live model runtime exposes hard token accounting.
+Keep repository dumps and expected skill names out of live prompts. Paid
+live-model tests are intentionally outside package validation.
 
 The behavioral surface includes skills and their references, entry prompts,
 installed project instructions, native harness adapters, core policy, plugin

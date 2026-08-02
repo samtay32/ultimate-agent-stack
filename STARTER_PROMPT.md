@@ -87,6 +87,12 @@ Delivery contract:
 - Never weaken a test, check, security control, permission, or acceptance criterion to obtain green.
 - Run focused checks while building and the complete configured gate before review and after every repair batch.
 - Review independently for engineering standards and for the locked intent.
+- For any run that requires independent review, use the stack-generated
+  activation and review receipts. Derive activation with `evidence
+  activation-status --run RUN --require SKILL`; use `review status --run RUN`
+  and `status --run RUN` for readiness. A missing, failed, unavailable, stale,
+  altered, dirty, empty, wrong-run, wrong-commit, or same-agent receipt is a
+  blocker and cannot be replaced by approval prose.
 - Keep the PR as a draft until implementation and full verification are complete.
 - Treat reviewer claims as hypotheses. Inspect the cited code and its surrounding
   behavior before changing production code. Use only the canonical dispositions
@@ -100,6 +106,9 @@ Delivery contract:
 - Write deterministic checkpoints after verified milestones so a fresh
   conversation can resume. Never give the coordinator token to subagents.
 - If five repair loops fail to reduce the open problem set, preserve the work and report the smallest actual blocker with the evidence and attempted remedies.
+- Keep deterministic live test request plus context at or below 2 KiB (target
+  about 512 input tokens), without repository dumps or expected skill names.
+  Do not run paid live-model tests as part of package validation.
 
 Definition of done:
 - observable acceptance criteria pass;

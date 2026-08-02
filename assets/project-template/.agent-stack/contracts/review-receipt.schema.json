@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/samtay32/ultimate-agent-stack/schemas/review-receipt.schema.json",
+  "title": "Ultimate Agent Stack local review receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "receipt_id",
+    "run_id",
+    "git_commit",
+    "coordinator_id",
+    "reviewer_kind",
+    "reviewer_id",
+    "result",
+    "result_file",
+    "result_file_sha256",
+    "recorded_at",
+    "claim"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "receipt_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "run_id": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "git_commit": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "coordinator_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "reviewer_kind": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "reviewer_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "result": { "enum": ["passed", "changes-requested"] },
+    "result_file": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(?![\\\\/]|[A-Za-z]:[\\\\/])(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).+$"
+    },
+    "result_file_sha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "recorded_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?Z$"
+    },
+    "claim": { "const": "agent-recorded" }
+  }
+}
