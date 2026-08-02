@@ -559,12 +559,7 @@ function validateActivationReceipts(receipts, observedRunId, skills, findings) {
         issue(`${location}.skill_sha256 must match the canonical skill content`);
       }
     }
-    if (
-      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(
-        receipt.recorded_at ?? "",
-      ) ||
-      Number.isNaN(Date.parse(receipt.recorded_at))
-    ) {
+    if (!validReceiptTimestamp(receipt.recorded_at)) {
       issue(`${location}.recorded_at must be a UTC timestamp`);
     }
     if (receipt.claim !== "agent-recorded") {
@@ -759,12 +754,7 @@ function validateReviewEvidence(
     if (!SHA256_RECEIPT.test(receipt.result_file_sha256 ?? "")) {
       issue(`${location}.result_file_sha256 must be a SHA-256 receipt`);
     }
-    if (
-      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(
-        receipt.recorded_at ?? "",
-      ) ||
-      Number.isNaN(Date.parse(receipt.recorded_at))
-    ) {
+    if (!validReceiptTimestamp(receipt.recorded_at)) {
       issue(`${location}.recorded_at must be a UTC timestamp`);
     }
     if (receipt.claim !== "agent-recorded") {

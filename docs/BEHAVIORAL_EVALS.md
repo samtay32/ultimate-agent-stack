@@ -340,6 +340,15 @@ denominator. The command consumes existing records and does not launch models
 or create a harness. Like the underlying records, the rate does not
 authenticate a collector's truthfulness.
 
+The `review_outcomes` section reports each derived review outcome—
+`not-required`, `passed`, and `blocked`—with `observed` and `attempts` counts
+and an `observed/attempts` rate for each scenario and outcome. Its attempts
+denominator is the number of complete case observations for that scenario,
+including behaviorally observed receipt misses or blocked outcomes. This is a
+separate denominator from `scenario_route_accuracy`, whose `28-scenario`
+route-accuracy denominator counts one route attempt per complete scenario
+record; do not interpret review-outcome counts as route-accuracy counts.
+
 New scaffolds use run-record schema version 3, which requires
 `source_claim_dispositions` and the other expanded observation fields in every
 case. Schema-version-1 and schema-version-2 records described smaller

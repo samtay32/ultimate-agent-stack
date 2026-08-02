@@ -39,8 +39,9 @@ Evidence, not confidence, decides readiness.
    For the portable local gate, use `review status --run RUN` and require a
    passed receipt for the exact current clean Git head. The receipt must name a
    contained structured JSON result artifact with its hash, coordinator
-   identity, nonempty reviewer kind, and reviewer identity distinct from the
-   coordinator. Missing, failed, unavailable, altered,
+   identity, nonempty reviewer kind, and nonempty reviewer identity distinct
+   from the coordinator. Reviewer kind and reviewer identity may be the same
+   string/label. Missing, failed, unavailable, altered,
    stale, dirty, empty, wrong-run, wrong-commit, or evidence with the same
    recorded reviewer and coordinator identity keeps
    `independent_reviewed` and `review_gate_ready` false. Keep these local

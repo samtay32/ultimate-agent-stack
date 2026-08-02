@@ -122,7 +122,11 @@ Do not say "done" until all applicable conditions hold:
    Record a passed local result only through the portable `review record`
    command, naming the exact clean Git head and a structured JSON result file
    under `.agent-stack/runs/reviews/<safe-id>.json` with a bounded summary and
-   findings. Check `review status --run RUN` and stack `status --run RUN`.
+   findings. `reviewer_id` must be nonempty and distinct from the coordinator
+   identity; `reviewer_kind` must be nonempty and may be the same string/label
+   as `reviewer_id`. These recorded fields do not authenticate distinct
+   physical-agent or provider identity. Check `review status --run RUN` and
+   stack `status --run RUN`.
    If delegation or review is unavailable, use `review unavailable --run RUN
    --reason REASON --details TEXT --coordinator-token TOKEN`; that receipt is a blocker and can never satisfy
    the independent-review claim. Local pre-PR receipts remain separate from

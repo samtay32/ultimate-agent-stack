@@ -875,22 +875,43 @@ test("false activation fails the negative scenario", () => {
   );
 });
 
-test("activation receipts require a canonical installed hash and content receipt hash", () => {
-  for (const mutate of [
-    (receipt) => delete receipt.receipt_sha256,
-    (receipt) => {
-      receipt.skill_path = `.agents/skills/${receipt.skill}/changed.md`;
+test("activation receipt mutations report their specific binding findings", () => {
+  const cases = [
+    {
+      name: "missing receipt hash",
+      mutate: (receipt) => delete receipt.receipt_sha256,
+      finding: /receipt_sha256 must be present and be a SHA-256 digest/,
     },
-    (receipt) => {
-      receipt.skill_sha256 = "0".repeat(64);
+    {
+      name: "altered installed skill path",
+      mutate: (receipt) => {
+        receipt.skill_path = `.agents/skills/${receipt.skill}/changed.md`;
+      },
+      finding: /skill_path must be the canonical installed skill path/,
     },
-    (receipt) => {
-      receipt.mode = "native";
+    {
+      name: "altered installed skill hash",
+      mutate: (receipt) => {
+        receipt.skill_sha256 = "0".repeat(64);
+      },
+      finding: /skill_sha256 must match the canonical skill content/,
     },
-    (receipt) => {
-      receipt.recorded_at = "2025-01-01T00:00:00Z";
+    {
+      name: "native mode changes the receipt hash binding",
+      mutate: (receipt) => {
+        receipt.mode = "native";
+      },
+      finding: /receipt_sha256 must match its canonical content hash/,
     },
-  ]) {
+    {
+      name: "different valid timestamp changes the receipt hash binding",
+      mutate: (receipt) => {
+        receipt.recorded_at = "2025-01-01T00:00:00Z";
+      },
+      finding: /receipt_sha256 must match its canonical content hash/,
+    },
+  ];
+  for (const { name, mutate, finding } of cases) {
     const record = passingRecord();
     const direct = record.cases.find(
       (item) => item.scenario_id === "direct-delivery",
@@ -900,7 +921,8 @@ test("activation receipts require a canonical installed hash and content receipt
     assert.equal(result.ok, false);
     assert.match(
       JSON.stringify(result),
-      /canonical installed skill path|canonical skill content|receipt_sha256|content hash|deterministic activation receipt id/,
+      finding,
+      name,
     );
   }
 });

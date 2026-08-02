@@ -93,6 +93,10 @@ Delivery contract:
   and `status --run RUN` for readiness. Reviewer results must be structured
   JSON under `.agent-stack/runs/reviews/<safe-id>.json` with the exact run and
   Git commit, reviewer fields, result, bounded summary/findings, and timestamp.
+  `reviewer_id` must be nonempty and distinct from `coordinator_id`;
+  `reviewer_kind` must be nonempty and may be the same string/label as
+  `reviewer_id`. These are recorded reviewer fields, not authenticated
+  physical-agent or provider identity.
   A missing, failed, unavailable, stale, altered, dirty, empty, malformed,
   wrong-run, wrong-commit, or a receipt with the same recorded reviewer and
   coordinator identity is a blocker and cannot be

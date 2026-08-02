@@ -329,7 +329,9 @@ Unavailable, missing, failed,
 changes-requested, empty, altered, stale, dirty-tree, wrong-run,
 wrong-commit, or evidence with the same recorded reviewer and coordinator
 identity remains blocked and cannot become
-PR-ready. A local receipt claims only `agent-recorded`; it authenticates
+PR-ready. `reviewer_id` must be nonempty and distinct from the coordinator
+identity; `reviewer_kind` must be nonempty and may be the same string/label as
+`reviewer_id`. A local receipt claims only `agent-recorded`; it authenticates
 neither distinct physical-agent provenance nor an external provider, and it
 does not authorize a push, merge, or release. `review status`
 exposes `review_gate_ready`, while full `status --run` also requires current

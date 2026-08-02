@@ -96,9 +96,10 @@ structured artifact under `.agent-stack/runs/reviews/<safe-id>.json`; it is
 cross-checked against the exact run, current Git head, reviewer fields, and
 result before a receipt is written. A local `review status --run RUN` result
 reports `review_gate_ready` only when a passed receipt names the exact current
-clean Git commit, the artifact is non-empty and hash-matches, and the reviewer
-identity is distinct from the coordinator. Reviewer kind and identity may be
-the same label. The CLI fails closed for missing, failed, unavailable, stale,
+clean Git commit, the artifact is non-empty and hash-matches, and `reviewer_id`
+is nonempty and distinct from `coordinator_id`. `reviewer_kind` must also be
+nonempty, and reviewer kind and identity may be the same string/label. The CLI
+fails closed for missing, failed, unavailable, stale,
 altered, dirty, empty, malformed, wrong-run, wrong-commit, or evidence with the
 same recorded reviewer and coordinator identity. This protects stack-generated
 status/evidence/evaluator/readiness
