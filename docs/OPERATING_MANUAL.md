@@ -47,8 +47,9 @@ npx -y ultimate-agent-stack@latest init --concise
 The default install includes the portable skill path and each shipped native
 harness adapter, including Claude Code, so a brand-new folder does not need
 detection hints. Existing harness markers such as `.claude/` or `CLAUDE.md`
-are still reported for the agent. The older `--claude` spelling remains
-accepted for compatibility. The agent then:
+are still reported for the agent. The older `--claude` spelling is accepted
+silently for pre-1.0 command compatibility, but it no longer changes what gets
+installed. The agent then:
 
 1. reads existing project instructions and preserves them;
 2. reconciles any proposals instead of overwriting files;

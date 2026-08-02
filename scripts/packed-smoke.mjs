@@ -65,7 +65,7 @@ function main() {
     }
     const duplicatePaths = (packed[0].files ?? [])
       .map((entry) => entry.path)
-      .filter((path) => /(?:^|\/)[^/]+ 2\.[^/]+$/.test(path));
+      .filter((path) => /(?:^|\/)[^/]+ 2(?:\.[^/]+)?(?:\/|$)/.test(path));
     if (duplicatePaths.length > 0) {
       throw new Error(
         `npm pack included duplicate-copy paths: ${duplicatePaths.join(", ")}`,

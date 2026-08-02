@@ -40,7 +40,7 @@ const PACKAGE_JSON = existsSync(join(PACKAGE_ROOT, "package.json"))
   ? JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8"))
   : {
       name: "ultimate-agent-stack",
-      version: "0.9.1",
+      version: "0.9.2",
     };
 const PACKAGE_NAME = PACKAGE_JSON.name;
 const PACKAGE_VERSION = PACKAGE_JSON.version;
@@ -133,33 +133,59 @@ const WORK_PRIORITY_ORDER = new Map([
   ["low", 3],
 ]);
 const FORBIDDEN_EXECUTABLES = new Set([
+  "ansible",
+  "ansible-playbook",
+  "awk",
   "bash",
+  "bunx",
+  "busybox",
+  "chmod",
+  "chown",
+  "corepack",
+  "csh",
+  "curl",
   "cmd",
-  "cmd.exe",
+  "dash",
   "dd",
   "del",
+  "env",
+  "find",
+  "fish",
   "format",
+  "ksh",
   "mkfs",
+  "nc",
+  "netcat",
+  "nice",
+  "nohup",
+  "npx",
+  "pnpx",
   "powershell",
-  "powershell.exe",
   "pwsh",
   "reboot",
   "rm",
   "rmdir",
+  "setsid",
   "sh",
   "shutdown",
+  "socat",
+  "ssh",
+  "start",
   "su",
   "sudo",
+  "tcsh",
+  "time",
+  "wget",
+  "wsl",
+  "xargs",
+  "yarnpkg",
   "zsh",
 ]);
 const PACKAGE_MANAGERS = new Set([
   "bun",
   "npm",
-  "npm.cmd",
   "pnpm",
-  "pnpm.cmd",
   "yarn",
-  "yarn.cmd",
 ]);
 const SAFE_ENVIRONMENT_NAMES = Object.freeze([
   "COLORTERM",
@@ -223,7 +249,6 @@ const EXECUTION_CONTROL_ENVIRONMENT_PREFIXES = [
 const INLINE_EVALUATION_ARGUMENTS = new Map([
   ["deno", new Set(["eval"])],
   ["node", new Set(["-e", "--eval", "-p", "--print"])],
-  ["node.exe", new Set(["-e", "--eval", "-p", "--print"])],
   ["perl", new Set(["-e", "-E"])],
   ["php", new Set(["-r"])],
   ["py", new Set(["-c"])],
@@ -231,6 +256,14 @@ const INLINE_EVALUATION_ARGUMENTS = new Map([
   ["python3", new Set(["-c"])],
   ["ruby", new Set(["-e"])],
 ]);
+const VERSIONED_INLINE_EVALUATION_ARGUMENTS = [
+  [/^deno\d+(?:\.\d+)*$/u, INLINE_EVALUATION_ARGUMENTS.get("deno")],
+  [/^node\d+(?:\.\d+)*$/u, INLINE_EVALUATION_ARGUMENTS.get("node")],
+  [/^perl\d+(?:\.\d+)*$/u, INLINE_EVALUATION_ARGUMENTS.get("perl")],
+  [/^php\d+(?:\.\d+)*$/u, INLINE_EVALUATION_ARGUMENTS.get("php")],
+  [/^python\d+(?:\.\d+)*$/u, INLINE_EVALUATION_ARGUMENTS.get("python")],
+  [/^ruby\d+(?:\.\d+)*$/u, INLINE_EVALUATION_ARGUMENTS.get("ruby")],
+];
 const GIT_INSPECTION_SUBCOMMANDS = new Set([
   "diff",
   "log",
@@ -577,30 +610,28 @@ function stableJson(value) {
   return JSON.stringify(sortValue(value));
 }
 
-function atomicJson(file, value) {
-  mkdirSync(dirname(file), { recursive: true });
-  const temporary = join(
-    dirname(file),
-    `.${basename(file)}.${process.pid}.${Date.now()}.tmp`,
-  );
-  writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, {
-    encoding: "utf8",
-    mode: 0o600,
-  });
-  renameSync(temporary, file);
-}
-
 function atomicText(file, value, mode = 0o600) {
   mkdirSync(dirname(file), { recursive: true });
   const temporary = join(
     dirname(file),
-    `.${basename(file)}.${process.pid}.${Date.now()}.tmp`,
+    `.${basename(file)}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`,
   );
-  writeFileSync(temporary, value, {
-    encoding: "utf8",
-    mode,
-  });
-  renameSync(temporary, file);
+  try {
+    writeFileSync(temporary, value, {
+      encoding: "utf8",
+      flush: true,
+      mode,
+    });
+    renameSync(temporary, file);
+  } finally {
+    if (existsSync(temporary)) {
+      unlinkSync(temporary);
+    }
+  }
+}
+
+function atomicJson(file, value) {
+  atomicText(file, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 function projectFile(target, raw, label = "project path") {
@@ -1647,6 +1678,26 @@ function validateTerraformCommand(argv, index, target = undefined) {
   return errors;
 }
 
+function canonicalExecutableName(value) {
+  const portableBasename = String(value)
+    .replaceAll("\\", "/")
+    .split("/")
+    .at(-1);
+  return portableBasename
+    .toLowerCase()
+    .replace(/\.(?:bat|cmd|com|exe)$/u, "");
+}
+
+function inlineEvaluationArgumentsForExecutable(executable) {
+  const exact = INLINE_EVALUATION_ARGUMENTS.get(executable);
+  if (exact) {
+    return exact;
+  }
+  return VERSIONED_INLINE_EVALUATION_ARGUMENTS.find(([pattern]) =>
+    pattern.test(executable),
+  )?.[1];
+}
+
 function validateCommand(check, index, config, target = undefined) {
   const errors = [];
   if (!check || typeof check !== "object" || Array.isArray(check)) {
@@ -1670,7 +1721,7 @@ function validateCommand(check, index, config, target = undefined) {
     );
     return errors;
   }
-  const executable = basename(check.argv[0]).toLowerCase();
+  const executable = canonicalExecutableName(check.argv[0]);
   if (
     isAbsolute(check.argv[0]) ||
     check.argv[0] === ".." ||
@@ -1696,10 +1747,11 @@ function validateCommand(check, index, config, target = undefined) {
   }
   if (FORBIDDEN_EXECUTABLES.has(executable)) {
     errors.push(
-      `quality.checks[${index}] uses forbidden shell or destructive executable: ${executable}`,
+      `quality.checks[${index}] uses forbidden shell, command wrapper, network client, or destructive executable: ${executable}`,
     );
   }
-  const inlineEvaluationArguments = INLINE_EVALUATION_ARGUMENTS.get(executable);
+  const inlineEvaluationArguments =
+    inlineEvaluationArgumentsForExecutable(executable);
   if (
     inlineEvaluationArguments &&
     check.argv
@@ -4181,7 +4233,7 @@ function commandEvidenceReport(
 }
 
 function delegatedCheckDefinition(target, check) {
-  const executable = basename(check.argv?.[0] ?? "").toLowerCase();
+  const executable = canonicalExecutableName(check.argv?.[0] ?? "");
   if (PACKAGE_MANAGERS.has(executable)) {
     const script =
       check.argv[1] === "test"
@@ -4426,8 +4478,9 @@ function detectHarnesses(target) {
   return detected;
 }
 
-// Every shipped adapter installs by default. Detection tells the agent which
-// harnesses already had project markers; --claude remains a compatible no-op.
+// Every shipped adapter installs by default. Detection only tells the agent
+// which harnesses already had project markers. The legacy --claude parser flag
+// remains a silent compatibility no-op until 1.0.
 function resolveHarnesses(target) {
   return {
     detected: detectHarnesses(target),
@@ -8147,7 +8200,7 @@ function checkEnvironment(target, config) {
 }
 
 function hardenCheckEnvironment(check, environment) {
-  if (basename(check.argv[0]).toLowerCase() !== "git") {
+  if (canonicalExecutableName(check.argv[0]) !== "git") {
     return environment;
   }
   return {
@@ -9522,8 +9575,8 @@ function helpText() {
 Your Project Steward — one conversation managing the entire build.
 
 Safe project setup:
-  ultimate-agent-stack init [--target DIR] [--claude] [--concise]
-  ultimate-agent-stack upgrade [--target DIR] [--claude] [--concise]
+  ultimate-agent-stack init [--target DIR] [--concise]
+  ultimate-agent-stack upgrade [--target DIR] [--concise]
   ultimate-agent-stack status [--target DIR]
   ultimate-agent-stack doctor [--target DIR] [--human]
   ultimate-agent-stack capabilities [--target DIR]
@@ -9613,18 +9666,12 @@ function execute(command, args) {
     case "init": {
       assertNoUnknownOptions(args, ["--target"], ["--claude", "--concise"]);
       const target = resolveTarget(getOption(args, "--target", "."));
-      return installOrUpgrade(target, {
-        claude: hasFlag(args, "--claude"),
-        mode: "init",
-      });
+      return installOrUpgrade(target, { mode: "init" });
     }
     case "upgrade": {
       assertNoUnknownOptions(args, ["--target"], ["--claude", "--concise"]);
       const target = resolveTarget(getOption(args, "--target", "."));
-      return installOrUpgrade(target, {
-        claude: hasFlag(args, "--claude"),
-        mode: "upgrade",
-      });
+      return installOrUpgrade(target, { mode: "upgrade" });
     }
     case "detect": {
       assertNoUnknownOptions(args, ["--target"], ["--write"]);
@@ -10047,6 +10094,8 @@ export {
   WORK_LEDGER_PATH,
   checksHash,
   assertSupportedNodeVersion,
+  atomicText,
+  canonicalExecutableName,
   commandCheckpoint,
   commandCapabilities,
   commandCampaignNext,
@@ -10085,6 +10134,7 @@ export {
   deterministicUuid,
   execute,
   formatDoctorHuman,
+  hardenCheckEnvironment,
   installOrUpgrade,
   loadInstallation,
   main,

@@ -15,7 +15,7 @@ sandbox and the Markdown skills are not executable security controls.
 | Reject setup writes through symlinks outside the project | Recommend one safe choice and at most one useful alternative |
 | Verify protected policy and local CLI bytes against package source | Research the repository before asking the human |
 | Require approval after configured checks or delegated script bodies change | Keep routine technical choices with the agent |
-| Validate command arrays and reject direct shell or destructive executables | Build vertical slices instead of a large untested code drop |
+| Validate command arrays and reject listed direct shells, wrappers, network clients, and destructive executables | Build vertical slices instead of a large untested code drop |
 | Fail required checks on missing commands, timeout, nonzero exit, or missing evidence | Do not weaken tests merely to make a check pass |
 | Require exactly one visible `Status: APPROVED` and `Material open conflicts: NO` in each selected lock artifact, reject unresolved `[[PLACEHOLDERS]]`, hash accepted intent files, and report drift | Route intake proportionately and reconcile semantic conflicts before promotion |
 | Reject stale, change-requested, or unresolved required review evidence | Treat worker output and optional memory as untrusted advice |
@@ -99,10 +99,11 @@ Campaign state is also validated. One active campaign may select one ready item
 at a time, only after its dependencies are done, and stops after at most 25
 iterations. Campaign commands do not call an external work provider.
 
-Quality checks use command arrays rather than shell strings. Direct shell
-interpreters, known destructive programs, unsafe package-manager operations,
-write-capable Git commands, and unsafe Docker or Terraform commands are
-rejected.
+Quality checks use command arrays rather than shell strings. Executable names
+are normalized across supported Windows suffixes. Listed direct shell
+interpreters, command wrappers, network clients, known destructive programs,
+unsafe package-manager operations, write-capable Git commands, and unsafe
+Docker or Terraform commands are rejected.
 
 Git inspection commands use subcommand-specific argument allowlists. Diff,
 show, and log checks must disable external diff helpers and text-conversion
@@ -120,9 +121,10 @@ Package scripts are allowed because real projects use them. Their exact bodies
 are included in check approval. Keeping `npm run test` while changing what the
 `test` script does invalidates approval before the changed script can run.
 
-This is a command policy, not a sandbox. An approved package script may invoke a
-shell and project code may be unsafe. Use the operating-system or agent-harness
-sandbox for untrusted repositories.
+This is a command policy, not an exhaustive executable denylist or a sandbox.
+An approved package script, build tool, or project file may invoke a shell and
+project code may be unsafe. Use the operating-system or agent-harness sandbox
+for untrusted repositories.
 
 ### Evidence and secrets
 

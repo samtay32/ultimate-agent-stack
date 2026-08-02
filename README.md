@@ -21,10 +21,12 @@ choices, destructive production actions, merging, and publishing.
 
 Provider-neutral does not mean every model/harness combination is silently
 declared compatible. The same project contract and skills are installed for
-each supported adapter, and releases report live evidence by exact harness and
-model. A harness that cannot follow the shared contract safely is reported as
-limited or untested; the package does not add vendor-specific exceptions or
-weaken the contract to manufacture a pass.
+each supported adapter. When behavior changes, live evidence is attached to the
+exact-head pull request or release record and names the exact harness and model,
+as described in [the release guide](docs/RELEASE.md). A harness that cannot
+follow the shared contract safely is reported as limited or untested; the
+package does not add vendor-specific exceptions or weaken the contract to
+manufacture a pass.
 
 ## Start in 30 Seconds
 

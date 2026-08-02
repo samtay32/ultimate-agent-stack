@@ -4,6 +4,37 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ## Unreleased
 
+## 0.9.2 - 2026-08-02
+
+### Changed
+
+- Quality-command executable names are normalized consistently across Windows
+  executable suffixes, and known indirect launchers, alternate shells, network
+  clients, and destructive tools are rejected before checks run.
+- The release gate now runs the existing Markdown policy and conservative
+  built-in code-coverage floors. Markdown tooling remains development-only;
+  the package still has zero runtime dependencies.
+- CI cancels stale duplicate runs, release workflows explicitly deny default
+  permissions, and upstream issue-write permission is scoped to its writing
+  job.
+- The legacy no-op `--claude` setup flag remains silently compatible before
+  1.0 but is no longer advertised because every adapter installs by default.
+- Live harness evidence is documented as an exact-head pull-request or release
+  attachment rather than implied to be an in-package runtime record.
+- Repository contribution and ownership guidance now makes the supported
+  release gate and simplicity boundary explicit for outside changes.
+
+### Fixed
+
+- Windows forms such as `bash.exe`, `git.exe`, `npm.cmd`, and `python.exe` can
+  no longer bypass their corresponding quality-command rules.
+- Windows package-manager forms retain their delegated script definition in
+  the approval hash, so a changed script body invalidates approval normally.
+- Atomic state writes flush temporary files before replacement and remove
+  abandoned temporary files after failed writes.
+- Packed-package smoke checks detect duplicate-copy directory segments as well
+  as duplicate-copy filenames.
+
 ## 0.9.1 - 2026-08-01
 
 ### Changed
