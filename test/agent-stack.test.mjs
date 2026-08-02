@@ -5280,6 +5280,50 @@ test("changing an approved package script invalidates approval before execution"
   }
 });
 
+test("Windows package-manager suffixes retain script definitions in approval hashes", () => {
+  const fixture = temporaryProject();
+  try {
+    for (const argv of [
+      ["npm.cmd", "test"],
+      ["pnpm.cmd", "run", "verify"],
+      ["yarn.cmd", "run", "verify"],
+    ]) {
+      writeJson(join(fixture.directory, "package.json"), {
+        name: "fixture",
+        private: true,
+        scripts: {
+          test: "node original-test.mjs",
+          verify: "node original-verify.mjs",
+        },
+      });
+      const checks = [
+        {
+          id: "windows-package-script",
+          argv,
+          required: true,
+          timeout_seconds: 30,
+        },
+      ];
+      const originalHash = checksHash(checks, fixture.directory);
+      writeJson(join(fixture.directory, "package.json"), {
+        name: "fixture",
+        private: true,
+        scripts: {
+          test: "node changed-test.mjs",
+          verify: "node changed-verify.mjs",
+        },
+      });
+      assert.notEqual(
+        checksHash(checks, fixture.directory),
+        originalHash,
+        `${argv[0]} must fingerprint its delegated script body`,
+      );
+    }
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("verification does not expose inherited secret environment values", () => {
   const fixture = temporaryProject();
   try {

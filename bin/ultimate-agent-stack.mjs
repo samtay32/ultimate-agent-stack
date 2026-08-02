@@ -4214,7 +4214,7 @@ function commandEvidenceReport(
 }
 
 function delegatedCheckDefinition(target, check) {
-  const executable = basename(check.argv?.[0] ?? "").toLowerCase();
+  const executable = canonicalExecutableName(check.argv?.[0] ?? "");
   if (PACKAGE_MANAGERS.has(executable)) {
     const script =
       check.argv[1] === "test"

@@ -28,6 +28,8 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 - Windows forms such as `bash.exe`, `git.exe`, `npm.cmd`, and `python.exe` can
   no longer bypass their corresponding quality-command rules.
+- Windows package-manager forms retain their delegated script definition in
+  the approval hash, so a changed script body invalidates approval normally.
 - Atomic state writes flush temporary files before replacement and remove
   abandoned temporary files after failed writes.
 - Packed-package smoke checks detect duplicate-copy directory segments as well
