@@ -90,9 +90,14 @@ Delivery contract:
 - For any run that requires independent review, use the stack-generated
   activation and review receipts. Derive activation with `evidence
   activation-status --run RUN --require SKILL`; use `review status --run RUN`
-  and `status --run RUN` for readiness. A missing, failed, unavailable, stale,
-  altered, dirty, empty, wrong-run, wrong-commit, or same-agent receipt is a
-  blocker and cannot be replaced by approval prose.
+  and `status --run RUN` for readiness. Reviewer results must be structured
+  JSON under `.agent-stack/runs/reviews/<safe-id>.json` with the exact run and
+  Git commit, reviewer fields, result, bounded summary/findings, and timestamp.
+  A missing, failed, unavailable, stale, altered, dirty, empty, malformed,
+  wrong-run, wrong-commit, or same-agent receipt is a blocker and cannot be
+  replaced by approval prose. `review_gate_ready` is the local agent-recorded
+  review gate; full `status --run RUN` requires current verification before
+  nested `readiness.pr_ready`.
 - Keep the PR as a draft until implementation and full verification are complete.
 - Treat reviewer claims as hypotheses. Inspect the cited code and its surrounding
   behavior before changing production code. Use only the canonical dispositions

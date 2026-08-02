@@ -62,9 +62,9 @@ mechanical receipt evidence. The primary agent may use the portable CLI's
 `evidence activation-status --run RUN --require SKILL` to derive exact-run
 activation from durable receipts. A worker's message, a skill name in a prompt,
 or a failed/empty delegation cannot create activation proof. If no real
-independent reviewer returns an inspectable result, record `review unavailable`
-and keep readiness blocked; do not convert the worker's failure into a passed
-review.
+independent reviewer returns an inspectable result, record `review unavailable
+--run RUN --reason REASON --details TEXT --coordinator-token TOKEN` and keep
+readiness blocked; do not convert the worker's failure into a passed review.
 
 ## Fast Decision Rule
 

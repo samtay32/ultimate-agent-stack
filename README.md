@@ -103,14 +103,25 @@ node .agent-stack/bin/agent-stack.mjs review status --run RUN
 node .agent-stack/bin/agent-stack.mjs status --run RUN
 ```
 
-The coordinator can record a local pre-PR result with `review record` only for
-a clean exact Git head and a contained, non-empty result file. A separate
-reviewer identity and kind are required. Missing, failed, unavailable,
-altered, stale, dirty, empty, wrong-run, wrong-commit, or same-agent evidence
-keeps independent review and PR readiness false. Local receipts are separate
-from protected GitHub review receipts, and claim only `agent-recorded`; they do
-not authenticate a harness or external provider. `review unavailable` is a
-durable blocker, never a successful review claim.
+The coordinator can record a local pre-PR result only with a clean exact Git
+head and a structured JSON reviewer artifact such as
+`.agent-stack/runs/reviews/<safe-id>.json`. The artifact is bounded and must
+contain `schema_version`, the exact `run_id` and `git_commit`, reviewer kind and
+identity, `result`, a summary, bounded findings, and `reviewed_at`. A reviewer
+identity must be nonempty and distinct from the coordinator; reviewer kind and
+identity need not be different strings. Missing, failed, unavailable, altered,
+stale, dirty, empty, wrong-run, wrong-commit, malformed, or same-agent evidence
+keeps the review gate blocked. Local receipts are separate from protected
+GitHub review receipts, and claim only `agent-recorded`; they do not
+authenticate a harness or external provider. `review unavailable` is a durable
+blocker, never a successful review claim.
+
+`review status --run RUN` reports `review_gate_ready` and
+`independent_reviewed` within that agent-recorded boundary; it does not by
+itself claim the project is PR-ready. `status --run RUN` is the full project
+gate: it also requires healthy configuration and the latest successful
+stack-generated verification for the exact current clean Git head. Only then
+may its nested `readiness.pr_ready` be true.
 
 For deterministic live evaluation, keep the request plus serialized context at
 or below 2 KiB (target roughly 512 input tokens), with no repository dumps or

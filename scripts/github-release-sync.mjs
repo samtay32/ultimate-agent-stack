@@ -55,7 +55,7 @@ function validateRepository(repository) {
 }
 
 function validateCommit(commit, label = "commit") {
-  if (!/^[0-9a-f]{40}$/i.test(commit ?? "")) {
+  if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(commit ?? "")) {
     throw new Error(`${label} must be a full Git commit SHA`);
   }
   return commit.toLowerCase();

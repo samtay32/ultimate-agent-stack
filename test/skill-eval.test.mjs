@@ -66,7 +66,9 @@ function activationReceipt(scenario, skill) {
     event_id: `activation:${scenario.id}:${skill}`,
     recorded_at: "2026-01-01T00:00:00Z",
     skill_path: `.agents/skills/${skill}/SKILL.md`,
-    skill_sha256: "a".repeat(64),
+    skill_sha256: createHash("sha256")
+      .update(readFileSync(join(PACKAGE_ROOT, "skills", skill, "SKILL.md")))
+      .digest("hex"),
     claim: "agent-recorded",
   };
   receipt.id = `skill-activation-${sha256({
@@ -75,20 +77,26 @@ function activationReceipt(scenario, skill) {
     run_id: receipt.run_id,
     event_id: receipt.event_id,
   }).slice(0, 20)}`;
+  receipt.receipt_sha256 = sha256(receipt);
   return receipt;
 }
 
-function reviewReceipt(scenario, gitCommit) {
+function reviewReceipt(
+  scenario,
+  gitCommit,
+  { result = "passed", reviewerId = `reviewer:${scenario.id}` } = {},
+) {
   const receipt = {
     schema_version: 1,
     receipt_id: "",
     run_id: `test-run:${scenario.id}`,
     git_commit: gitCommit,
+    git_object_format: gitCommit.length === 64 ? "sha256" : "sha1",
     coordinator_id: "coordinator:test-run",
     reviewer_kind: "independent-reviewer",
-    reviewer_id: `reviewer:${scenario.id}`,
-    result: "passed",
-    result_file: `reviews/${scenario.id}.md`,
+    reviewer_id: reviewerId,
+    result,
+    result_file: `.agent-stack/runs/reviews/${scenario.id}-${result}.json`,
     result_file_sha256: `sha256:${"b".repeat(64)}`,
     recorded_at: "2026-01-01T00:00:00Z",
     claim: "agent-recorded",
@@ -141,6 +149,8 @@ function passingRecord() {
       materialization_spec_sha256:
         scaffold.materialization_spec_sha256,
       materialized_git_head: initialGitHead,
+      materialized_git_object_format:
+        initialGitHead.length === 64 ? "sha256" : "sha1",
       materialized_project_tree_sha256: initialProjectTreeSha256,
       materialized_project_state_sha256: projectStateSha256({
         materializationSpecSha256:
@@ -149,6 +159,8 @@ function passingRecord() {
         projectTreeSha256: initialProjectTreeSha256,
       }),
       final_git_head: finalGitHead,
+      final_git_object_format:
+        finalGitHead.length === 64 ? "sha256" : "sha1",
       final_project_tree_sha256: finalProjectTreeSha256,
       final_project_state_sha256: projectStateSha256({
         materializationSpecSha256:
@@ -214,17 +226,20 @@ function passingRecord() {
           scenario.expected.required_source_claim_ids ?? []
         ).map((id) => ({ id, disposition: "kept" })),
         review_receipts:
-          scenario.expected.review?.result === "passed"
+          scenario.expected.review === "passed"
             ? [reviewReceipt(scenario, finalGitHead)]
             : [],
         review_unavailable_receipts:
-          scenario.expected.review?.result === "unavailable"
+          scenario.expected.review === "blocked"
             ? [unavailableReviewReceipt(scenario)]
             : [],
         review_status: {
-          independent_reviewed: scenario.expected.review?.result === "passed",
-          pr_ready: scenario.expected.review?.result === "passed",
-          status: scenario.expected.review?.result === "passed" ? "passed" : "blocked",
+          independent_reviewed: scenario.expected.review === "passed",
+          review_gate_ready: scenario.expected.review === "passed",
+          status:
+            scenario.expected.review === "passed"
+              ? "passed"
+              : scenario.expected.review,
         },
       },
       evidence: {
@@ -311,6 +326,18 @@ test("scenario catalog validation exercises its negative paths", () => {
       message: /request must not disclose the expected skill command/,
       mutate(broken) {
         broken.scenarios[0].request = "$setup-autonomous-project";
+      },
+    },
+    {
+      message: /live prompt and context must be at most 2048 bytes/,
+      mutate(broken) {
+        broken.scenarios[0].context.payload = "x".repeat(2_048);
+      },
+    },
+    {
+      message: /request\/context must not disclose expected skill name/,
+      mutate(broken) {
+        broken.scenarios[0].context.notes = "setup-autonomous-project";
       },
     },
     {
@@ -609,7 +636,7 @@ test("evidence export preserves private raw input and writes a redacted sibling"
 
 test("a complete live run record passes against the current behavior surface", () => {
   const record = passingRecord();
-  assert.equal(record.schema_version, 2);
+  assert.equal(record.schema_version, 3);
   const result = validateRunRecord(record, catalog);
   assert.equal(result.ok, true);
   assert.deepEqual(result.summary, {
@@ -624,7 +651,7 @@ test("a complete live run record passes against the current behavior surface", (
   );
 });
 
-test("run-record schema 2 requires claim dispositions and rejects stale schemas", () => {
+test("run-record schema 3 requires claim dispositions and rejects stale schemas", () => {
   const current = passingRecord();
   delete current.cases[0].observed.source_claim_dispositions;
   let result = validateRunRecord(current, catalog);
@@ -634,14 +661,14 @@ test("run-record schema 2 requires claim dispositions and rejects stale schemas"
     /source_claim_dispositions must be an array/,
   );
 
-  for (const staleVersion of [1, 3]) {
+  for (const staleVersion of [1, 2]) {
     const stale = passingRecord();
     stale.schema_version = staleVersion;
     result = validateRunRecord(stale, catalog);
     assert.equal(result.ok, false);
     assert.match(
       result.errors.join("\n"),
-      /run record schema_version must equal 2/,
+      /run record schema_version must equal 3/,
     );
   }
 });
@@ -782,6 +809,77 @@ test("false activation fails the negative scenario", () => {
   );
 });
 
+test("activation receipts require a canonical installed hash and content receipt hash", () => {
+  for (const mutate of [
+    (receipt) => delete receipt.receipt_sha256,
+    (receipt) => {
+      receipt.skill_path = `.agents/skills/${receipt.skill}/changed.md`;
+    },
+    (receipt) => {
+      receipt.skill_sha256 = "0".repeat(64);
+    },
+    (receipt) => {
+      receipt.mode = "native";
+    },
+    (receipt) => {
+      receipt.recorded_at = "2025-01-01T00:00:00Z";
+    },
+  ]) {
+    const record = passingRecord();
+    const direct = record.cases.find(
+      (item) => item.scenario_id === "direct-delivery",
+    );
+    mutate(direct.observed.activation_receipts[0]);
+    const result = validateRunRecord(record, catalog);
+    assert.equal(result.ok, false);
+    assert.match(
+      JSON.stringify(result),
+      /canonical installed skill path|canonical skill content|receipt_sha256|content hash|deterministic activation receipt id/,
+    );
+  }
+});
+
+test("review evidence derives blocked and conflicting outcomes without treating them as passes", () => {
+  const changes = passingRecord();
+  const direct = changes.cases.find(
+    (item) => item.scenario_id === "direct-delivery",
+  );
+  const scenario = catalog.scenarios.find(
+    (item) => item.id === "direct-delivery",
+  );
+  direct.observed.review_receipts.push(
+    reviewReceipt(scenario, direct.final_git_head, {
+      result: "changes-requested",
+      reviewerId: "second-reviewer",
+    }),
+  );
+  let result = validateRunRecord(changes, catalog);
+  assert.equal(result.ok, false);
+  assert.match(JSON.stringify(result), /review outcome was blocked/);
+
+  const unavailable = passingRecord();
+  const unavailableDirect = unavailable.cases.find(
+    (item) => item.scenario_id === "direct-delivery",
+  );
+  unavailableDirect.observed.review_unavailable_receipts = [
+    unavailableReviewReceipt(scenario),
+  ];
+  result = validateRunRecord(unavailable, catalog);
+  assert.equal(result.ok, false);
+  assert.match(JSON.stringify(result), /review outcome was blocked/);
+
+  const tampered = passingRecord();
+  const tamperedDirect = tampered.cases.find(
+    (item) => item.scenario_id === "direct-delivery",
+  );
+  const invalidUnavailable = unavailableReviewReceipt(scenario);
+  invalidUnavailable.claim = "unsupported-claim";
+  tamperedDirect.observed.review_unavailable_receipts = [invalidUnavailable];
+  result = validateRunRecord(tampered, catalog);
+  assert.equal(result.ok, false);
+  assert.match(JSON.stringify(result), /review_unavailable_receipts.*claim/);
+});
+
 test("routing reliability is reported as k/N per harness and model", () => {
   const first = passingRecord();
   const second = passingRecord();
@@ -798,6 +896,15 @@ test("routing reliability is reported as k/N per harness and model", () => {
     required_skills: ["run-autonomous-delivery"],
     activated_skills: [],
     missing_skills: ["run-autonomous-delivery"],
+    status: "blocked",
+  };
+  const missedReview = second.cases.find(
+    (item) => item.scenario_id === "direct-delivery",
+  );
+  missedReview.observed.review_receipts = [];
+  missedReview.observed.review_status = {
+    independent_reviewed: false,
+    review_gate_ready: false,
     status: "blocked",
   };
   const negativeSecond = second.cases.find(
@@ -824,6 +931,17 @@ test("routing reliability is reported as k/N per harness and model", () => {
   assert.equal(result.groups[0].run_records, 2);
   assert.equal(result.groups[0].reliability_ready, true);
   assert.equal(result.groups[0].evaluated_runs_passed, 1);
+  const directReviewOutcome = result.groups[0].review_outcomes.find(
+    (item) =>
+      item.scenario_id === "direct-delivery" && item.outcome === "blocked",
+  );
+  assert.deepEqual(directReviewOutcome, {
+    scenario_id: "direct-delivery",
+    outcome: "blocked",
+    observed: 1,
+    attempts: 2,
+    rate: "1/2",
+  });
   const directRoute = result.groups[0].routes.find(
     (item) =>
       item.scenario_id === "flexible-direct-bypass" &&
@@ -986,8 +1104,8 @@ test("telemetry diagnosis requires explicit activation and rejects project write
     review_unavailable_receipts: [],
     review_status: {
       independent_reviewed: false,
-      pr_ready: false,
-      status: "blocked",
+      review_gate_ready: false,
+      status: "not-required",
     },
   };
   assert.equal(validateRunRecord(record, catalog).ok, true);

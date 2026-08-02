@@ -38,10 +38,11 @@ Evidence, not confidence, decides readiness.
    blocker, not review evidence.
    For the portable local gate, use `review status --run RUN` and require a
    passed receipt for the exact current clean Git head. The receipt must name a
-   contained non-empty result file with its hash, coordinator identity, and a
-   distinct reviewer identity and kind. Missing, failed, unavailable, altered,
+   contained structured JSON result artifact with its hash, coordinator
+   identity, nonempty reviewer kind, and reviewer identity distinct from the
+   coordinator. Missing, failed, unavailable, altered,
    stale, dirty, empty, wrong-run, wrong-commit, or same-agent evidence keeps
-   `independent_reviewed` and `pr_ready` false. Keep these local receipts
+   `independent_reviewed` and `review_gate_ready` false. Keep these local receipts
    separate from protected GitHub review receipts.
 6. For visual changes, inspect rendered output at meaningful sizes and include screenshots or recordings.
 7. For integrations, test timeouts, malformed input, retries, idempotency, partial failure, and authentication boundaries where applicable.

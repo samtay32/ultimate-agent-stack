@@ -42,9 +42,10 @@ const COORDINATOR_TOKEN_FIELD_NAMES = new Set([
   "coordinatorToken",
 ]);
 const COORDINATOR_OPTION = "--coordinator-token";
-const CURRENT_RUN_RECORD_SCHEMA_VERSION = 2;
+const CURRENT_RUN_RECORD_SCHEMA_VERSION = 3;
 const SHA256_RECEIPT = /^sha256:[a-f0-9]{64}$/;
-const GIT_COMMIT_ID = /^[a-f0-9]{40}$/;
+const GIT_COMMIT_ID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
+const GIT_OBJECT_FORMATS = new Set(["sha1", "sha256"]);
 const ARTIFACT_STATUSES = new Set([
   "DRAFT",
   "APPROVED",
@@ -81,6 +82,7 @@ const ACTIVATION_RECEIPT_HASH = /^[a-f0-9]{64}$/;
 const REVIEW_RECEIPT_ID = /^[a-f0-9]{64}$/;
 const REVIEW_UNAVAILABLE_STATUS = "unavailable";
 const REVIEW_RESULTS = new Set(["passed", "changes-requested"]);
+const REVIEW_EXPECTATIONS = new Set(["not-required", "passed", "blocked"]);
 const LIVE_PROMPT_MAX_BYTES = 2 * 1024;
 
 function readJson(path) {
@@ -162,8 +164,10 @@ function behaviorSurfaceEntries() {
     "bin/ultimate-agent-stack.mjs",
     "STARTER_PROMPT.md",
     "assets/project-template/.agent-stack/core-policy.json",
+    "assets/project-template/.agent-stack/contracts/evidence-graph.schema.json",
     "assets/project-template/.agent-stack/contracts/review-receipt.schema.json",
     "assets/project-template/.agent-stack/contracts/review-unavailable.schema.json",
+    "assets/project-template/.agent-stack/contracts/reviewer-result.schema.json",
     "assets/project-template/.agent-stack/HANDOFF.md",
     "assets/project-template/.agent-stack/artifacts/ARCHITECTURE.md",
     "assets/project-template/.agent-stack/artifacts/BRIEF.md",
@@ -297,6 +301,34 @@ function reviewUnavailableReceiptId(receipt) {
   return digest(canonicalJson(copy));
 }
 
+function activationReceiptSha256(receipt) {
+  const copy = { ...receipt };
+  delete copy.receipt_sha256;
+  return digest(canonicalJson(copy));
+}
+
+function gitObjectFormatForId(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  if (value.length === 40 && /^[a-f0-9]{40}$/.test(value)) {
+    return "sha1";
+  }
+  if (value.length === 64 && /^[a-f0-9]{64}$/.test(value)) {
+    return "sha256";
+  }
+  return null;
+}
+
+function reviewerResultPath(value) {
+  return (
+    isNonEmptyString(value) &&
+    value.startsWith(".agent-stack/runs/") &&
+    value.endsWith(".json") &&
+    safeScenarioPath(value)
+  );
+}
+
 function validateActivationReceipts(receipts, observedRunId, skills, findings) {
   if (!Array.isArray(receipts)) {
     findings.push("activation_receipts must be an array");
@@ -309,8 +341,13 @@ function validateActivationReceipts(receipts, observedRunId, skills, findings) {
   const derived = new Set();
   for (const [index, receipt] of receipts.entries()) {
     const location = `activation_receipts[${index}]`;
+    const receiptErrors = [];
+    const issue = (message) => {
+      receiptErrors.push(message);
+      findings.push(message);
+    };
     if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
-      findings.push(`${location} must be an object`);
+      issue(`${location} must be an object`);
       continue;
     }
     const activationKeys = new Set([
@@ -325,10 +362,11 @@ function validateActivationReceipts(receipts, observedRunId, skills, findings) {
       "skill_path",
       "skill_sha256",
       "claim",
+      "receipt_sha256",
     ]);
     for (const key of Object.keys(receipt)) {
       if (!activationKeys.has(key)) {
-        findings.push(`${location} contains unsupported field ${key}`);
+        issue(`${location} contains unsupported field ${key}`);
       }
     }
     for (const key of [
@@ -345,32 +383,45 @@ function validateActivationReceipts(receipts, observedRunId, skills, findings) {
       "claim",
     ]) {
       if (!isNonEmptyString(receipt[key])) {
-        findings.push(`${location}.${key} must be a non-empty string`);
+        issue(`${location}.${key} must be a non-empty string`);
       }
     }
     if (!ACTIVATION_RECEIPT_ID.test(receipt.id ?? "")) {
-      findings.push(`${location}.id must be a deterministic activation receipt id`);
+      issue(`${location}.id must be a deterministic activation receipt id`);
     } else if (receipt.id !== activationReceiptId(receipt)) {
-      findings.push(`${location}.id must match its deterministic activation identity`);
+      issue(`${location}.id must match its deterministic activation identity`);
     }
     if (seen.has(receipt.id)) {
-      findings.push(`${location} duplicates activation receipt ${receipt.id}`);
+      issue(`${location} duplicates activation receipt ${receipt.id}`);
     }
     seen.add(receipt.id);
     if (!skills.has(receipt.skill)) {
-      findings.push(`${location}.skill references an unknown skill`);
+      issue(`${location}.skill references an unknown skill`);
     }
     if (!new Set(["native", "file-read"]).has(receipt.mode)) {
-      findings.push(`${location}.mode must be native or file-read`);
+      issue(`${location}.mode must be native or file-read`);
     }
     if (receipt.run_id !== observedRunId) {
-      findings.push(`${location}.run_id must equal observed.run_id`);
+      issue(`${location}.run_id must equal observed.run_id`);
     }
-    if (!safeScenarioPath(receipt.skill_path)) {
-      findings.push(`${location}.skill_path must be a safe project-relative path`);
+    if (
+      !skills.has(receipt.skill) ||
+      !new Set([
+        `.agents/skills/${receipt.skill}/SKILL.md`,
+        `.claude/skills/${receipt.skill}/SKILL.md`,
+      ]).has(receipt.skill_path)
+    ) {
+      issue(`${location}.skill_path must be the canonical installed skill path`);
     }
     if (!ACTIVATION_RECEIPT_HASH.test(receipt.skill_sha256 ?? "")) {
-      findings.push(`${location}.skill_sha256 must be a SHA-256 digest`);
+      issue(`${location}.skill_sha256 must be a SHA-256 digest`);
+    } else if (skills.has(receipt.skill)) {
+      const canonicalHash = digest(
+        readFileSync(join(PACKAGE_ROOT, skills.get(receipt.skill).path)),
+      );
+      if (receipt.skill_sha256 !== canonicalHash) {
+        issue(`${location}.skill_sha256 must match the canonical skill content`);
+      }
     }
     if (
       !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(
@@ -378,29 +429,24 @@ function validateActivationReceipts(receipts, observedRunId, skills, findings) {
       ) ||
       Number.isNaN(Date.parse(receipt.recorded_at))
     ) {
-      findings.push(`${location}.recorded_at must be a UTC timestamp`);
+      issue(`${location}.recorded_at must be a UTC timestamp`);
     }
     if (receipt.claim !== "agent-recorded") {
-      findings.push(`${location}.claim must equal agent-recorded`);
+      issue(`${location}.claim must equal agent-recorded`);
     }
-    if (
-      receipt.id === activationReceiptId(receipt) &&
-      skills.has(receipt.skill) &&
-      receipt.run_id === observedRunId &&
-      receipt.claim === "agent-recorded"
-    ) {
+    if (!ACTIVATION_RECEIPT_HASH.test(receipt.receipt_sha256 ?? "")) {
+      issue(`${location}.receipt_sha256 must be present and be a SHA-256 digest`);
+    } else if (receipt.receipt_sha256 !== activationReceiptSha256(receipt)) {
+      issue(`${location}.receipt_sha256 must match its canonical content hash`);
+    }
+    if (receiptErrors.length === 0) {
       derived.add(receipt.skill);
     }
   }
   return [...derived].sort();
 }
 
-function validateReviewEvidence(
-  observed,
-  item,
-  expectedReview,
-  findings,
-) {
+function validateReviewEvidence(observed, item, expectedReview, findings) {
   const receipts = observed.review_receipts;
   const unavailableReceipts = observed.review_unavailable_receipts;
   if (!Array.isArray(receipts)) {
@@ -410,10 +456,18 @@ function validateReviewEvidence(
     findings.push("review_unavailable_receipts must be an array");
   }
   const validReviews = [];
-    for (const [index, receipt] of asArray(receipts).entries()) {
+  const validChangesRequested = [];
+  let invalidReviewCount = 0;
+  for (const [index, receipt] of asArray(receipts).entries()) {
     const location = `review_receipts[${index}]`;
+    const receiptErrors = [];
+    const issue = (message) => {
+      receiptErrors.push(message);
+      findings.push(message);
+    };
     if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
-      findings.push(`${location} must be an object`);
+      issue(`${location} must be an object`);
+      invalidReviewCount += 1;
       continue;
     }
     const reviewKeys = new Set([
@@ -421,6 +475,7 @@ function validateReviewEvidence(
       "receipt_id",
       "run_id",
       "git_commit",
+      "git_object_format",
       "coordinator_id",
       "reviewer_kind",
       "reviewer_id",
@@ -432,7 +487,7 @@ function validateReviewEvidence(
     ]);
     for (const key of Object.keys(receipt)) {
       if (!reviewKeys.has(key)) {
-        findings.push(`${location} contains unsupported field ${key}`);
+        issue(`${location} contains unsupported field ${key}`);
       }
     }
     for (const key of [
@@ -440,6 +495,7 @@ function validateReviewEvidence(
       "receipt_id",
       "run_id",
       "git_commit",
+      "git_object_format",
       "coordinator_id",
       "reviewer_kind",
       "reviewer_id",
@@ -450,37 +506,35 @@ function validateReviewEvidence(
       "claim",
     ]) {
       if (receipt[key] === undefined) {
-        findings.push(`${location}.${key} is required`);
+        issue(`${location}.${key} is required`);
       }
     }
     if (receipt.schema_version !== 1) {
-      findings.push(`${location}.schema_version must equal 1`);
+      issue(`${location}.schema_version must equal 1`);
     }
     if (!REVIEW_RECEIPT_ID.test(receipt.receipt_id ?? "")) {
-      findings.push(`${location}.receipt_id must be a SHA-256 digest`);
+      issue(`${location}.receipt_id must be a SHA-256 digest`);
     } else if (receipt.receipt_id !== reviewReceiptId(receipt)) {
-      findings.push(`${location}.receipt_id must match its canonical content hash`);
+      issue(`${location}.receipt_id must match its canonical content hash`);
     }
     if (receipt.run_id !== observed.run_id) {
-      findings.push(`${location}.run_id must equal observed.run_id`);
+      issue(`${location}.run_id must equal observed.run_id`);
     }
     if (!GIT_COMMIT_ID.test(receipt.git_commit ?? "")) {
-      findings.push(`${location}.git_commit must be a full Git commit`);
+      issue(`${location}.git_commit must be a full Git commit`);
     } else if (receipt.git_commit !== item.final_git_head) {
-      findings.push(`${location}.git_commit must equal final_git_head`);
+      issue(`${location}.git_commit must equal final_git_head`);
+    }
+    if (
+      !GIT_OBJECT_FORMATS.has(receipt.git_object_format) ||
+      gitObjectFormatForId(receipt.git_commit) !== receipt.git_object_format
+    ) {
+      issue(`${location}.git_object_format must match git_commit`);
     }
     for (const key of ["coordinator_id", "reviewer_kind", "reviewer_id"]) {
       if (!isNonEmptyString(receipt[key])) {
-        findings.push(`${location}.${key} must be non-empty`);
+        issue(`${location}.${key} must be non-empty`);
       }
-    }
-    if (
-      isNonEmptyString(receipt.reviewer_id) &&
-      isNonEmptyString(receipt.reviewer_kind) &&
-      receipt.reviewer_id.trim().toLowerCase() ===
-        receipt.reviewer_kind.trim().toLowerCase()
-    ) {
-      findings.push(`${location} reviewer identity and kind must be distinct`);
     }
     if (
       isNonEmptyString(receipt.reviewer_id) &&
@@ -488,7 +542,7 @@ function validateReviewEvidence(
       receipt.reviewer_id.trim().toLowerCase() ===
         receipt.coordinator_id.trim().toLowerCase()
     ) {
-      findings.push(`${location} reviewer must be distinct from coordinator`);
+      issue(`${location} reviewer must be distinct from coordinator`);
     }
     if (
       isNonEmptyString(receipt.reviewer_kind) &&
@@ -496,16 +550,16 @@ function validateReviewEvidence(
         receipt.reviewer_kind.trim().toLowerCase(),
       )
     ) {
-      findings.push(`${location} reviewer kind cannot identify the coordinator`);
+      issue(`${location} reviewer kind cannot identify the coordinator`);
     }
     if (!REVIEW_RESULTS.has(receipt.result)) {
-      findings.push(`${location}.result must be passed or changes-requested`);
+      issue(`${location}.result must be passed or changes-requested`);
     }
-    if (!safeScenarioPath(receipt.result_file)) {
-      findings.push(`${location}.result_file must be a safe project-relative path`);
+    if (!reviewerResultPath(receipt.result_file)) {
+      issue(`${location}.result_file must be a JSON reviewer-result artifact under .agent-stack/runs/`);
     }
     if (!SHA256_RECEIPT.test(receipt.result_file_sha256 ?? "")) {
-      findings.push(`${location}.result_file_sha256 must be a SHA-256 receipt`);
+      issue(`${location}.result_file_sha256 must be a SHA-256 receipt`);
     }
     if (
       !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(
@@ -513,26 +567,33 @@ function validateReviewEvidence(
       ) ||
       Number.isNaN(Date.parse(receipt.recorded_at))
     ) {
-      findings.push(`${location}.recorded_at must be a UTC timestamp`);
+      issue(`${location}.recorded_at must be a UTC timestamp`);
     }
     if (receipt.claim !== "agent-recorded") {
-      findings.push(`${location}.claim must equal agent-recorded`);
+      issue(`${location}.claim must equal agent-recorded`);
     }
-    if (
-      receipt.receipt_id === reviewReceiptId(receipt) &&
-      receipt.run_id === observed.run_id &&
-      receipt.git_commit === item.final_git_head &&
-      receipt.result === "passed" &&
-      receipt.claim === "agent-recorded"
-    ) {
-      validReviews.push(receipt);
+    if (receiptErrors.length === 0) {
+      if (receipt.result === "passed") {
+        validReviews.push(receipt);
+      } else {
+        validChangesRequested.push(receipt);
+      }
+    } else {
+      invalidReviewCount += 1;
     }
   }
   const validUnavailable = [];
+  let invalidUnavailableCount = 0;
   for (const [index, receipt] of asArray(unavailableReceipts).entries()) {
     const location = `review_unavailable_receipts[${index}]`;
+    const receiptErrors = [];
+    const issue = (message) => {
+      receiptErrors.push(message);
+      findings.push(message);
+    };
     if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
-      findings.push(`${location} must be an object`);
+      issue(`${location} must be an object`);
+      invalidUnavailableCount += 1;
       continue;
     }
     const unavailableKeys = new Set([
@@ -548,7 +609,7 @@ function validateReviewEvidence(
     ]);
     for (const key of Object.keys(receipt)) {
       if (!unavailableKeys.has(key)) {
-        findings.push(`${location} contains unsupported field ${key}`);
+        issue(`${location} contains unsupported field ${key}`);
       }
     }
     for (const key of [
@@ -563,75 +624,97 @@ function validateReviewEvidence(
       "status",
     ]) {
       if (receipt[key] === undefined) {
-        findings.push(`${location}.${key} is required`);
+        issue(`${location}.${key} is required`);
       }
     }
     if (receipt.schema_version !== 1) {
-      findings.push(`${location}.schema_version must equal 1`);
+      issue(`${location}.schema_version must equal 1`);
     }
     if (!REVIEW_RECEIPT_ID.test(receipt.receipt_id ?? "")) {
-      findings.push(`${location}.receipt_id must be a SHA-256 digest`);
+      issue(`${location}.receipt_id must be a SHA-256 digest`);
     } else if (receipt.receipt_id !== reviewUnavailableReceiptId(receipt)) {
-      findings.push(`${location}.receipt_id must match its canonical content hash`);
+      issue(`${location}.receipt_id must match its canonical content hash`);
     }
     if (receipt.run_id !== observed.run_id) {
-      findings.push(`${location}.run_id must equal observed.run_id`);
+      issue(`${location}.run_id must equal observed.run_id`);
     }
     for (const key of ["coordinator_id", "reason", "details"]) {
       if (!isNonEmptyString(receipt[key])) {
-        findings.push(`${location}.${key} must be non-empty`);
+        issue(`${location}.${key} must be non-empty`);
       }
     }
     if (receipt.status !== REVIEW_UNAVAILABLE_STATUS) {
-      findings.push(`${location}.status must equal unavailable`);
+      issue(`${location}.status must equal unavailable`);
     }
     if (receipt.claim !== "agent-recorded") {
-      findings.push(`${location}.claim must equal agent-recorded`);
+      issue(`${location}.claim must equal agent-recorded`);
     }
-    if (
-      receipt.receipt_id === reviewUnavailableReceiptId(receipt) &&
-      receipt.run_id === observed.run_id &&
-      receipt.status === REVIEW_UNAVAILABLE_STATUS &&
-      receipt.claim === "agent-recorded"
-    ) {
+    if (receiptErrors.length === 0) {
       validUnavailable.push(receipt);
+    } else {
+      invalidUnavailableCount += 1;
     }
   }
-  const expected = expectedReview ?? { required: false };
+  const expected = expectedReview;
+  if (!REVIEW_EXPECTATIONS.has(expected)) {
+    findings.push("expected review expectation must be not-required, passed, or blocked");
+  }
   const status = observed.review_status;
   if (!status || typeof status !== "object" || Array.isArray(status)) {
     findings.push("review_status must be an object");
   }
-  const required = expected.required === true;
-  const passes = validReviews.length > 0 && validUnavailable.length === 0;
-  const derived = {
-    independent_reviewed: passes,
-    pr_ready: passes && required,
-    status: passes && required ? "passed" : "blocked",
-  };
-  if (expected.result === "passed" && !passes) {
-    findings.push("required passed exact-head independent review evidence is absent");
-  }
-  if (expected.result === "unavailable") {
-    if (validUnavailable.length === 0) {
-      findings.push("reviewer-unavailable scenario requires unavailable review evidence");
+  const hasBlockingOutcome =
+    validChangesRequested.length > 0 || validUnavailable.length > 0;
+  const hasInvalidOutcome = invalidReviewCount > 0 || invalidUnavailableCount > 0;
+  const passes = validReviews.length > 0 && !hasBlockingOutcome && !hasInvalidOutcome;
+  let derived;
+  if (expected === "not-required") {
+    derived = {
+      independent_reviewed: false,
+      review_gate_ready: false,
+      status: "not-required",
+    };
+  } else if (expected === "passed") {
+    if (!passes) {
+      if (hasBlockingOutcome) {
+        findings.push("review outcome was blocked");
+      } else if (!hasInvalidOutcome) {
+        findings.push("required passed review outcome was not observed");
+      }
     }
-    if (validReviews.length > 0) {
-      findings.push("unavailable review evidence cannot be paired with a successful review claim");
+    derived = {
+      independent_reviewed: passes,
+      review_gate_ready: passes,
+      status: passes ? "passed" : "blocked",
+    };
+  } else {
+    if (!hasBlockingOutcome && !hasInvalidOutcome) {
+      findings.push("expected blocked review outcome was not observed");
     }
-    derived.independent_reviewed = false;
-    derived.pr_ready = false;
-    derived.status = "blocked";
+    if (hasBlockingOutcome && validReviews.length > 0) {
+      findings.push("review evidence contains conflicting outcomes");
+    }
+    derived = {
+      independent_reviewed: false,
+      review_gate_ready: false,
+      status: "blocked",
+    };
   }
   if (
     status &&
     (status.independent_reviewed !== derived.independent_reviewed ||
-      status.pr_ready !== derived.pr_ready ||
-      status.status !== derived.status)
+      status.review_gate_ready !== derived.review_gate_ready ||
+      status.status !== derived.status ||
+      Object.hasOwn(status, "pr_ready"))
   ) {
     findings.push("review_status must agree with receipt-derived review readiness");
   }
-  return { validReviews, validUnavailable, derived };
+  return {
+    validReviews,
+    validChangesRequested,
+    validUnavailable,
+    derived,
+  };
 }
 
 function externalInputReceipts(scenarioId) {
@@ -845,28 +928,10 @@ function validateScenarioCatalog(catalog = readJson(SCENARIOS_FILE)) {
         errors.push(`${location}.expected.${field} must be a unique string array`);
       }
     }
-    if (expected.review !== undefined) {
-      if (
-        !expected.review ||
-        typeof expected.review !== "object" ||
-        Array.isArray(expected.review)
-      ) {
-        errors.push(`${location}.expected.review must be an object`);
-      } else {
-        for (const key of Object.keys(expected.review)) {
-          if (!new Set(["required", "result"]).has(key)) {
-            errors.push(`${location}.expected.review contains unsupported field ${key}`);
-          }
-        }
-        if (expected.review.required !== true) {
-          errors.push(`${location}.expected.review.required must equal true`);
-        }
-        if (!new Set(["passed", "unavailable"]).has(expected.review.result)) {
-          errors.push(
-            `${location}.expected.review.result must be passed or unavailable`,
-          );
-        }
-      }
+    if (!REVIEW_EXPECTATIONS.has(expected.review)) {
+      errors.push(
+        `${location}.expected.review must be exactly not-required, passed, or blocked`,
+      );
     }
     const mustActivateNames = asArray(expected.must_activate);
     const mustNotActivateNames = asArray(expected.must_not_activate);
@@ -1120,6 +1185,15 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
         );
       }
       if (
+        !GIT_OBJECT_FORMATS.has(item.materialized_git_object_format) ||
+        gitObjectFormatForId(item.materialized_git_head) !==
+          item.materialized_git_object_format
+      ) {
+        findings.push(
+          "materialized_git_object_format must match materialized_git_head",
+        );
+      }
+      if (
         item.materialized_project_tree_sha256 !==
         expectedBaseline.project_tree_sha256
       ) {
@@ -1147,8 +1221,14 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
       }
       if (!GIT_COMMIT_ID.test(item.final_git_head ?? "")) {
         findings.push(
-          "final_git_head must be the exact 40-character post-run Git commit",
+          "final_git_head must be the exact post-run Git commit",
         );
+      }
+      if (
+        !GIT_OBJECT_FORMATS.has(item.final_git_object_format) ||
+        gitObjectFormatForId(item.final_git_head) !== item.final_git_object_format
+      ) {
+        findings.push("final_git_object_format must match final_git_head");
       }
       if (item.final_baseline_ancestor !== true) {
         findings.push(
@@ -1591,6 +1671,8 @@ function buildScaffold(catalog = readJson(SCENARIOS_FILE)) {
         expectedMaterializationSha256(scenario.id),
       materialized_git_head:
         expectedFixtureBaseline(scenario.id).git_head,
+      materialized_git_object_format:
+        gitObjectFormatForId(expectedFixtureBaseline(scenario.id).git_head),
       materialized_project_tree_sha256:
         expectedFixtureBaseline(scenario.id).project_tree_sha256,
       materialized_project_state_sha256:
@@ -1602,6 +1684,7 @@ function buildScaffold(catalog = readJson(SCENARIOS_FILE)) {
             expectedFixtureBaseline(scenario.id).project_tree_sha256,
         }),
       final_git_head: "replace-with-final-git-head",
+      final_git_object_format: "replace-with-final-git-object-format",
       final_project_tree_sha256:
         "replace-with-final-project-tree-sha256",
       final_project_state_sha256:
@@ -1647,8 +1730,8 @@ function buildScaffold(catalog = readJson(SCENARIOS_FILE)) {
         review_unavailable_receipts: [],
         review_status: {
           independent_reviewed: false,
-          pr_ready: false,
-          status: "blocked",
+          review_gate_ready: false,
+          status: scenario.expected?.review ?? "not-required",
         },
       },
       evidence: {
@@ -1686,6 +1769,10 @@ function summarizeRoutingRates(
       /^noncanonical artifact status was observed:/,
       /^required observable output was absent:/,
       /^required source claim was not accounted for:/,
+      /^required passed review outcome was not observed$/,
+      /^review outcome was blocked$/,
+      /^expected blocked review outcome was not observed$/,
+      /^review evidence contains conflicting outcomes$/,
     ].some((pattern) => pattern.test(finding));
   const usedSessions = new Set();
   const groups = new Map();
@@ -1763,6 +1850,8 @@ function summarizeRoutingRates(
       requiredSkills: new Map(),
       forbiddenSkills: new Map(),
       routes: new Map(),
+      activationReceiptOutcomes: new Map(),
+      reviewOutcomes: new Map(),
       matchedConstraints: 0,
       constraints: 0,
       matchedScenarios: 0,
@@ -1774,6 +1863,33 @@ function summarizeRoutingRates(
     }
     for (const item of record.cases) {
       const scenario = scenarios.get(item?.scenario_id);
+      const activationReceiptOutcome =
+        item.observed.activation_status?.status ??
+        (asArray(item.observed.activation_receipts).length > 0
+          ? "recorded"
+          : "missing");
+      const activationOutcomeKey = `${scenario.id}\0${activationReceiptOutcome}`;
+      const activationOutcome =
+        group.activationReceiptOutcomes.get(activationOutcomeKey) ?? {
+          scenario_id: scenario.id,
+          outcome: activationReceiptOutcome,
+          observed: 0,
+          attempts: 0,
+        };
+      activationOutcome.observed += 1;
+      activationOutcome.attempts += 1;
+      group.activationReceiptOutcomes.set(activationOutcomeKey, activationOutcome);
+      const reviewOutcome = item.observed.review_status?.status ?? "missing";
+      const reviewOutcomeKey = `${scenario.id}\0${reviewOutcome}`;
+      const reviewOutcomeCount = group.reviewOutcomes.get(reviewOutcomeKey) ?? {
+        scenario_id: scenario.id,
+        outcome: reviewOutcome,
+        observed: 0,
+        attempts: 0,
+      };
+      reviewOutcomeCount.observed += 1;
+      reviewOutcomeCount.attempts += 1;
+      group.reviewOutcomes.set(reviewOutcomeKey, reviewOutcomeCount);
       const activated = new Set(item.observed.activated_skills);
       let scenarioMatched = true;
       let scenarioConstraints = 0;
@@ -1842,6 +1958,30 @@ function summarizeRoutingRates(
         opportunities: item.opportunities,
         rate: rate(item.matched, item.opportunities),
       }));
+  const outcomeRates = (items) => {
+    const values = [...items.values()];
+    const attemptsByScenario = new Map();
+    for (const item of values) {
+      attemptsByScenario.set(
+        item.scenario_id,
+        (attemptsByScenario.get(item.scenario_id) ?? 0) + item.attempts,
+      );
+    }
+    return values
+      .sort(
+        (left, right) =>
+          left.scenario_id.localeCompare(right.scenario_id) ||
+          left.outcome.localeCompare(right.outcome),
+      )
+      .map((item) => ({
+        ...item,
+        attempts: attemptsByScenario.get(item.scenario_id),
+        rate: rate(
+          item.observed,
+          attemptsByScenario.get(item.scenario_id),
+        ),
+      }));
+  };
   return {
     ok: errors.length === 0,
     errors,
@@ -1877,6 +2017,10 @@ function summarizeRoutingRates(
           group.forbiddenSkills,
           "not_activated",
         ),
+        activation_receipt_outcomes: outcomeRates(
+          group.activationReceiptOutcomes,
+        ),
+        review_outcomes: outcomeRates(group.reviewOutcomes),
         routes: [...group.routes.values()]
           .sort(
             (left, right) =>

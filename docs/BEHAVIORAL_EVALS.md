@@ -316,7 +316,7 @@ denominator. The command consumes existing records and does not launch models
 or create a harness. Like the underlying records, the rate does not
 authenticate a collector's truthfulness.
 
-New scaffolds use run-record schema version 2, which requires
+New scaffolds use run-record schema version 3, which requires
 `source_claim_dispositions` and the other expanded observation fields in every
 case. Schema-version-1 records described the smaller pre-flexible-intake
 contract and are rejected; generate a fresh scaffold and rerun the current

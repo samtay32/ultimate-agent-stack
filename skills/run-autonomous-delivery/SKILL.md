@@ -120,10 +120,11 @@ Do not say "done" until all applicable conditions hold:
    keep review and PR readiness blocked, and report the limitation without
    manufacturing approval evidence.
    Record a passed local result only through the portable `review record`
-   command, naming the exact clean Git head and a contained non-empty hashed
-   result file. Check `review status --run RUN` and stack `status --run RUN`.
-   If delegation or review is unavailable, use `review unavailable` with a
-   bounded reason and details; that receipt is a blocker and can never satisfy
+   command, naming the exact clean Git head and a structured JSON result file
+   under `.agent-stack/runs/reviews/<safe-id>.json` with a bounded summary and
+   findings. Check `review status --run RUN` and stack `status --run RUN`.
+   If delegation or review is unavailable, use `review unavailable --run RUN
+   --reason REASON --details TEXT --coordinator-token TOKEN`; that receipt is a blocker and can never satisfy
    the independent-review claim. Local pre-PR receipts remain separate from
    protected GitHub review receipts.
 9. **Open or update the PR.** Use a draft while material work remains. Include intent, decisions, test evidence, migration/rollback notes, screenshots or recordings when visual behavior changed, and known risks.

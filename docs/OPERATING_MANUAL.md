@@ -316,17 +316,22 @@ GitHub review receipt:
 ```bash
 node .agent-stack/bin/agent-stack.mjs review record \
   --run RUN --reviewer-kind KIND --reviewer-id ID \
-  --result passed --result-file PATH --coordinator-token TOKEN
+  --result passed \
+  --result-file .agent-stack/runs/reviews/<safe-id>.json \
+  --coordinator-token TOKEN
 node .agent-stack/bin/agent-stack.mjs review status --run RUN
 node .agent-stack/bin/agent-stack.mjs status --run RUN
 ```
 
-Use `review unavailable --run RUN --reason REASON --details TEXT` when the
-independent reviewer cannot act. Unavailable, missing, failed,
+Use `review unavailable --run RUN --reason REASON --details TEXT
+--coordinator-token TOKEN` when the independent reviewer cannot act.
+Unavailable, missing, failed,
 changes-requested, empty, altered, stale, dirty-tree, wrong-run,
 wrong-commit, or same-agent evidence remains blocked and cannot become
 PR-ready. A local receipt claims only `agent-recorded`; it does not authenticate
-an external provider or authorize a push, merge, or release.
+an external provider or authorize a push, merge, or release. `review status`
+exposes `review_gate_ready`, while full `status --run` also requires current
+successful verification before its nested `readiness.pr_ready` is true.
 
 For deterministic live evaluation, keep the serialized request plus context at
 or below 2 KiB (a practical target is at most 512 input tokens). Do not include

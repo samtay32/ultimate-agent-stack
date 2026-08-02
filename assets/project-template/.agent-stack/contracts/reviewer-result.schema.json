@@ -1,40 +1,26 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/samtay32/ultimate-agent-stack/schemas/review-receipt.schema.json",
-  "title": "Ultimate Agent Stack local review receipt",
+  "$id": "https://github.com/samtay32/ultimate-agent-stack/schemas/reviewer-result.schema.json",
+  "title": "Ultimate Agent Stack structured reviewer result",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schema_version",
-    "receipt_id",
     "run_id",
     "git_commit",
-    "git_object_format",
-    "coordinator_id",
     "reviewer_kind",
     "reviewer_id",
     "result",
-    "result_file",
-    "result_file_sha256",
-    "recorded_at",
-    "claim"
+    "summary",
+    "findings",
+    "reviewed_at"
   ],
   "properties": {
     "schema_version": { "const": 1 },
-    "receipt_id": {
-      "type": "string",
-      "pattern": "^[a-f0-9]{64}$"
-    },
     "run_id": { "type": "string", "minLength": 1, "maxLength": 200 },
     "git_commit": {
       "type": "string",
       "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$"
-    },
-    "git_object_format": { "enum": ["sha1", "sha256"] },
-    "coordinator_id": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 120
     },
     "reviewer_kind": {
       "type": "string",
@@ -47,21 +33,24 @@
       "maxLength": 256
     },
     "result": { "enum": ["passed", "changes-requested"] },
-    "result_file": {
+    "summary": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 512,
-      "pattern": "^\\.agent-stack/runs/(?!.*(?:^|/)\\.(?:\\.?)(?:/|$)).+\\.json$"
+      "maxLength": 2000
     },
-    "result_file_sha256": {
-      "type": "string",
-      "pattern": "^sha256:[a-f0-9]{64}$"
+    "findings": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1000
+      }
     },
-    "recorded_at": {
+    "reviewed_at": {
       "type": "string",
       "format": "date-time",
       "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?Z$"
-    },
-    "claim": { "const": "agent-recorded" }
+    }
   }
 }

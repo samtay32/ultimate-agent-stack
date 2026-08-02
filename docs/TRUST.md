@@ -91,14 +91,19 @@ but they cannot independently prove that a native harness tool call occurred.
 The portable CLI also keeps local pre-PR review receipts under
 `.agent-stack/review-receipts/` and unavailable-review receipts under
 `.agent-stack/review-unavailable/`. They are deliberately separate from the
-protected GitHub review receipt helper. A local `review status --run RUN` result
-is only ready when a passed receipt names the exact current clean Git commit,
-the result file is contained, non-empty, and hash-matches, and the reviewer
-identity and kind are distinct from each other and the coordinator. The CLI
-fails closed for missing, failed, unavailable, stale, altered, dirty, empty,
-wrong-run, wrong-commit, or same-agent evidence. This protects the stack's
-generated readiness artifacts; it does not constrain arbitrary model text or
-prove that an external reviewer performed the work.
+protected GitHub review receipt helper. A local result file must be a bounded
+structured artifact under `.agent-stack/runs/reviews/<safe-id>.json`; it is
+cross-checked against the exact run, current Git head, reviewer fields, and
+result before a receipt is written. A local `review status --run RUN` result
+reports `review_gate_ready` only when a passed receipt names the exact current
+clean Git commit, the artifact is non-empty and hash-matches, and the reviewer
+identity is distinct from the coordinator. Reviewer kind and identity may be
+the same label. The CLI fails closed for missing, failed, unavailable, stale,
+altered, dirty, empty, malformed, wrong-run, wrong-commit, or same-agent
+evidence. This protects stack-generated status/evidence/evaluator/readiness
+artifacts; it does not constrain arbitrary model text or prove that an external
+reviewer performed the work. `status --run RUN` is the broader project gate
+and requires current successful verification before `readiness.pr_ready`.
 
 Linear uses separate protected helpers for bounded reads and the two optional
 write operations. Writes are disabled by default. An approved write requires
