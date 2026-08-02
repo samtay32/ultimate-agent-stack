@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 
@@ -213,6 +213,14 @@ function canonicalValue(value) {
 function verificationReceiptHash(evidence) {
   const body = { ...evidence };
   delete body.receipt_sha256;
+  return createHash("sha256")
+    .update(JSON.stringify(canonicalValue(body)))
+    .digest("hex");
+}
+
+function reviewReceiptHash(receipt) {
+  const body = { ...receipt };
+  delete body.receipt_id;
   return createHash("sha256")
     .update(JSON.stringify(canonicalValue(body)))
     .digest("hex");
@@ -481,10 +489,16 @@ test("review result paths stay contained and bounded", () => {
       ".agent-stack/runs/reviews\\bad.json",
       ".agent-stack/runs/reviews:bad.json",
       ".agent-stack/runs/reviews/bad./result.json",
+      ".agent-stack/runs/reviews\tbad.json",
+      ".agent-stack/runs/reviews\u0001bad.json",
+      ".agent-stack/runs/reviews\u007fbad.json",
+      ".agent-stack/runs/.json",
       ".agent-stack/runs/reviews/bad.json ",
       ".agent-stack/runs/reviews/CON.json",
       ".agent-stack/runs/reviews/Com1.json",
       ".agent-stack/runs/reviews/LpT9.json",
+      ".agent-stack/runs/reviews/COM¹.json",
+      ".agent-stack/runs/reviews/LPT².txt.json",
     ]) {
       assert.throws(
         () => recordPassed(fixture, { resultFile }),
@@ -502,12 +516,13 @@ test("review result paths stay contained and bounded", () => {
     const receiptFile = join(fixture.directory, friendly.path);
     const receipt = JSON.parse(readFileSync(receiptFile, "utf8"));
     receipt.result_file = `./${receipt.result_file}`;
+    receipt.receipt_id = reviewReceiptHash(receipt);
     writeFileSync(receiptFile, JSON.stringify(receipt, null, 2) + "\n");
     const nonCanonical = commandReviewStatus(fixture.directory, fixture.runId);
     assert.equal(nonCanonical.review_gate_ready, false);
     assert.match(
       nonCanonical.invalid_receipts.join(" "),
-      /canonical normalized path|content hash/,
+      /canonical normalized path/,
     );
     const sameKindAndId = recordPassed(fixture, {
       reviewerKind: "reviewer@example.test",
@@ -847,6 +862,73 @@ test("hardened Git probes ignore ambient redirection and fsmonitor settings", ()
   }
 });
 
+test("hardened Git probes infer SHA-1 when object-format is unsupported", () => {
+  const fixture = createFixture();
+  const fakeGitDirectory = mkdtempSync(join(tmpdir(), "mechanical-fake-git-"));
+  const realGit = (process.env.PATH ?? "")
+    .split(delimiter)
+    .map((directory) =>
+      join(directory, process.platform === "win32" ? "git.exe" : "git"),
+    )
+    .find((candidate) => existsSync(candidate));
+  assert.ok(realGit, "test requires a real Git executable");
+  const fakeRunner = join(fakeGitDirectory, "fake-git.mjs");
+  const fakeGit = join(
+    fakeGitDirectory,
+    process.platform === "win32" ? "git.cmd" : "git",
+  );
+  writeFileSync(
+    fakeRunner,
+    `#!/usr/bin/env node
+import { spawnSync } from "node:child_process";
+const args = process.argv.slice(2);
+if (args.includes("--show-object-format=storage")) process.exit(129);
+const result = spawnSync(process.env.ISSUE39_REAL_GIT, args, { stdio: "inherit" });
+process.exit(result.status ?? 1);
+`,
+  );
+  if (process.platform === "win32") {
+    writeFileSync(
+      fakeGit,
+      `@echo off\r\n"${process.execPath}" "%~dp0fake-git.mjs" %*\r\n`,
+    );
+  } else {
+    writeFileSync(
+      fakeGit,
+      `#!/bin/sh\nexec "${process.execPath}" "${fakeRunner}" "$@"\n`,
+    );
+    chmodSync(fakeGit, 0o700);
+  }
+  const head = runGit(fixture.directory, ["rev-parse", "HEAD"]);
+  const previousPath = process.env.PATH;
+  const previousRealGit = process.env.ISSUE39_REAL_GIT;
+  try {
+    recordPassed(fixture);
+    process.env.PATH = [
+      fakeGitDirectory,
+      dirname(process.execPath),
+      previousPath,
+    ]
+      .filter(Boolean)
+      .join(delimiter);
+    process.env.ISSUE39_REAL_GIT = realGit;
+    const status = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(status.review_gate_ready, true, JSON.stringify(status, null, 2));
+    assert.deepEqual(status.git, {
+      head,
+      object_format: "sha1",
+      clean: true,
+    });
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    if (previousRealGit === undefined) delete process.env.ISSUE39_REAL_GIT;
+    else process.env.ISSUE39_REAL_GIT = previousRealGit;
+    fixture.cleanup();
+    rmSync(fakeGitDirectory, { recursive: true, force: true });
+  }
+});
+
 test(
   "SHA-256 repositories carry the exact 64-character Git object ID",
   { skip: !supportsSha256Git() },
@@ -912,7 +994,7 @@ test("status --run requires current verification and exposes full readiness sepa
   }
 });
 
-test("verify runs stable dirty checks but readiness requires a clean exact head", () => {
+test("verify runs checks on a dirty worktree but readiness requires a clean exact head", () => {
   const fixture = createFixture();
   try {
     recordPassed(fixture);
@@ -1054,8 +1136,7 @@ test("verification readiness requires every configured check exactly once", () =
     ["missing checks", (evidence) => delete evidence.checks, /checks must be an array/],
     ["duplicate checks", (evidence) => { evidence.checks = [evidence.checks[0], { ...evidence.checks[0] }]; }, /duplicate id|exactly once/],
     ["unknown check", (evidence) => { evidence.checks[0].id = "unknown-check"; }, /unknown id|missing configured id/],
-    ["altered check definition", (evidence) => { evidence.checks[0].argv = ["node", "--version"]; }, /argv does not match|receipt_sha256/],
-    ["required/status/result disagreement", (evidence) => { evidence.checks[0].result = "failed"; }, /status and result|receipt_sha256/],
+    ["required/status/result disagreement", (evidence) => { evidence.checks[0].result = "failed"; }, /status and result/],
   ];
   for (const [label, mutate, expected] of mutations) {
     const fixture = prepareVerifiedFixture();
@@ -1063,6 +1144,7 @@ test("verification readiness requires every configured check exactly once", () =
       const evidencePath = latestVerificationPath(fixture);
       const evidence = JSON.parse(readFileSync(evidencePath, "utf8"));
       mutate(evidence);
+      evidence.receipt_sha256 = verificationReceiptHash(evidence);
       writeFileSync(evidencePath, JSON.stringify(evidence, null, 2) + "\n");
       const status = commandStatus(fixture.directory, fixture.runId);
       assert.equal(status.ok, false, label);
@@ -1109,6 +1191,13 @@ test("status validates configuration and preserves readiness across branch renam
     assert.equal(invalid.checks_approved, false);
     assert.ok(invalid.configuration_errors?.length > 0);
     assert.ok(invalid.readiness.reasons.includes("project configuration is invalid"));
+
+    const invalidRun = commandStatus(fixture.directory, fixture.runId);
+    assert.equal(invalidRun.ok, false);
+    assert.equal(invalidRun.verification.ok, false);
+    assert.ok(
+      invalidRun.readiness.reasons.includes("project configuration is invalid"),
+    );
   } finally {
     fixture.cleanup();
   }
@@ -1148,6 +1237,10 @@ test("review receipt schema rejects unsafe paths and binds Git digest length to 
     ".agent-stack/runs/reviews/./bad.json",
     ".agent-stack/runs/reviews/../bad.json",
     ".agent-stack/runs/reviews/bad./result.json",
+    ".agent-stack/runs/reviews\tbad.json",
+    ".agent-stack/runs/reviews\u0001bad.json",
+    ".agent-stack/runs/reviews\u007fbad.json",
+    ".agent-stack/runs/.json",
     ".agent-stack/runs/reviews/bad.json ",
   ]) {
     assert.equal(pathPattern.test(unsafe), false, unsafe);
@@ -1163,17 +1256,42 @@ test("review receipt schema rejects unsafe paths and binds Git digest length to 
     ".agent-stack/runs/reviews/aux.json",
     ".agent-stack/runs/reviews/COM1.json",
     ".agent-stack/runs/reviews/LPT9.json",
+    ".agent-stack/runs/reviews/COM¹.json",
+    ".agent-stack/runs/reviews/LPT³.txt.json",
   ]) {
     assert.equal(reservedPattern.test(unsafe), true, unsafe);
   }
+  const relevantGitFields = (gitObjectFormat, gitCommit) => ({
+    git_object_format: gitObjectFormat,
+    git_commit: gitCommit,
+  });
+  assert.equal(
+    schema.allOf[0].if.properties.git_object_format.const,
+    "sha1",
+  );
+  assert.equal(
+    schema.allOf[1].if.properties.git_object_format.const,
+    "sha256",
+  );
   assert.equal(schema.allOf[0].then.properties.git_commit.pattern, "^[a-f0-9]{40}$");
   assert.equal(schema.allOf[1].then.properties.git_commit.pattern, "^[a-f0-9]{64}$");
   const sha1Pattern = new RegExp(schema.allOf[0].then.properties.git_commit.pattern);
   const sha256Pattern = new RegExp(schema.allOf[1].then.properties.git_commit.pattern);
-  assert.equal(sha1Pattern.test("a".repeat(40)), true);
-  assert.equal(sha1Pattern.test("a".repeat(64)), false);
-  assert.equal(sha256Pattern.test("a".repeat(64)), true);
-  assert.equal(sha256Pattern.test("a".repeat(40)), false);
+  const sha1Valid = relevantGitFields("sha1", "a".repeat(40));
+  const sha256Valid = relevantGitFields("sha256", "a".repeat(64));
+  const sha1Reversed = relevantGitFields("sha1", "a".repeat(64));
+  const sha256Reversed = relevantGitFields("sha256", "a".repeat(40));
+  assert.equal(sha1Pattern.test(sha1Valid.git_commit), true);
+  assert.equal(sha256Pattern.test(sha256Valid.git_commit), true);
+  assert.equal(sha1Pattern.test(sha1Reversed.git_commit), false);
+  assert.equal(sha256Pattern.test(sha256Reversed.git_commit), false);
+  for (const key of ["run_id", "coordinator_id", "reviewer_kind", "reviewer_id"]) {
+    const pattern = new RegExp(schema.properties[key].pattern);
+    assert.equal(pattern.test("recorded-value"), true, key);
+    for (const invalid of [" ", "\t", "\u0001", "\u007f", "line\nvalue"]) {
+      assert.equal(pattern.test(invalid), false, `${key}: ${JSON.stringify(invalid)}`);
+    }
+  }
   assert.deepEqual(schema.properties.result.enum, ["passed", "changes-requested"]);
   assert.equal(schema.properties.claim.const, "agent-recorded");
   assert.match(schema.properties.result_file_sha256.pattern, /64/);

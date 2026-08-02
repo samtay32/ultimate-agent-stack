@@ -1218,10 +1218,16 @@ test("evaluator rejects noncanonical portable reviewer-result paths", () => {
     ".agent-stack/runs/reviews\\bad.json",
     ".agent-stack/runs/reviews:bad.json",
     ".agent-stack/runs/reviews/bad./result.json",
+    ".agent-stack/runs/reviews\tbad.json",
+    ".agent-stack/runs/reviews\u0001bad.json",
+    ".agent-stack/runs/reviews\u007fbad.json",
+    ".agent-stack/runs/.json",
     ".agent-stack/runs/reviews/bad.json ",
     ".agent-stack/runs/reviews/CON.json",
     ".agent-stack/runs/reviews/Com1.json",
     ".agent-stack/runs/reviews/LPT9.json",
+    ".agent-stack/runs/reviews/COM¹.json",
+    ".agent-stack/runs/reviews/LPT³.txt.json",
     `./.agent-stack/runs/reviews/direct-delivery-passed.json`,
   ]) {
     const record = passingRecord();

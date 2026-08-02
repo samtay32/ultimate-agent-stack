@@ -128,7 +128,7 @@ gate: it also requires healthy configuration and the latest successful
 stack-generated verification for the exact current clean Git head. Only then
 may its nested `readiness.pr_ready` be true.
 
-The ordinary `verify` command may run configured checks on a stable dirty
+The ordinary `verify` command may run configured checks on a dirty
 worktree; `status --run RUN` still requires a clean exact-head verification.
 Verification records the checkout real path so evidence cannot be replayed in
 another checkout. This does not authenticate the writer or prevent same-path

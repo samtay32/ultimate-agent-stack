@@ -344,7 +344,7 @@ function boundedReceiptString(value, maximum) {
     typeof value === "string" &&
     value.trim().length > 0 &&
     value.length <= maximum &&
-    !/[\r\n\0]/.test(value)
+    !/[\u0000-\u001f\u007f]/.test(value)
   );
 }
 
@@ -357,7 +357,11 @@ function validReceiptTimestamp(value) {
 }
 
 function reviewerResultPath(value) {
-  if (typeof value !== "string" || value.includes(":")) {
+  if (
+    typeof value !== "string" ||
+    value.includes(":") ||
+    /[\u0000-\u001f\u007f]/.test(value)
+  ) {
     return false;
   }
   const components = value.split("/");
@@ -366,12 +370,13 @@ function reviewerResultPath(value) {
     value.length <= REVIEW_RESULT_FILE_MAX_CHARS &&
     value.startsWith(".agent-stack/runs/") &&
     value.endsWith(".json") &&
+    !value.endsWith("/.json") &&
     safeScenarioPath(value) &&
     components.every(
       (component) =>
         component.length > 0 &&
         !/[. ]$/.test(component) &&
-        !/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i.test(component),
+        !/^(?:con|prn|aux|nul|com(?:[1-9]|[¹²³])|lpt(?:[1-9]|[¹²³]))(?:\..*)?$/i.test(component),
     )
   );
 }

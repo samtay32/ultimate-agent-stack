@@ -25,7 +25,12 @@
       "type": "string",
       "pattern": "^[a-f0-9]{64}$"
     },
-    "run_id": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^(?=.*\\S)(?!.*[\\u0000-\\u001F\\u007F]).+$"
+    },
     "git_commit": {
       "type": "string",
       "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$"
@@ -34,18 +39,21 @@
     "coordinator_id": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 120
+      "maxLength": 120,
+      "pattern": "^(?=.*\\S)(?!.*[\\u0000-\\u001F\\u007F]).+$"
     },
     "reviewer_kind": {
       "type": "string",
       "minLength": 1,
       "maxLength": 120,
+      "pattern": "^(?=.*\\S)(?!.*[\\u0000-\\u001F\\u007F]).+$",
       "description": "Non-empty reviewer category. It may equal reviewer_id. Runtime validation forbids coordinator-like kinds; portable JSON Schema does not express that policy."
     },
     "reviewer_id": {
       "type": "string",
       "minLength": 1,
       "maxLength": 256,
+      "pattern": "^(?=.*\\S)(?!.*[\\u0000-\\u001F\\u007F]).+$",
       "description": "Non-empty recorded reviewer identity. Runtime validation requires it to differ from coordinator_id; portable JSON Schema cannot enforce cross-field inequality."
     },
     "result": { "enum": ["passed", "changes-requested"] },
@@ -54,7 +62,7 @@
       "minLength": 1,
       "maxLength": 512,
       "description": "Canonical project-relative UTF-8 JSON artifact path under .agent-stack/runs/; runtime validation also rejects platform device aliases and requires exact normalization.",
-      "pattern": "^(?!.*\\\\)(?!.*:)(?!.*//)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*(?:^|/)[^/]*[. ](?:/|$))\\.agent-stack/runs/.+\\.json$"
+      "pattern": "^(?!.*\\\\)(?!.*:)(?!.*[\\u0000-\\u001F\\u007F])(?!.*//)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*(?:^|/)\\.json$)(?!.*(?:^|/)[^/]*[. ](?:/|$))\\.agent-stack/runs/.+\\.json$"
     },
     "result_file_sha256": {
       "type": "string",
@@ -95,7 +103,7 @@
       "properties": {
         "result_file": {
           "not": {
-            "pattern": "(?:^|/)(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.[^/]*)?(?:/|$)"
+            "pattern": "(?:^|/)(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM](?:[1-9]|[¹²³])|[lL][pP][tT](?:[1-9]|[¹²³]))(?:\\.[^/]*)?(?:/|$)"
           }
         }
       }

@@ -108,6 +108,7 @@ const MAX_STATUS_EVIDENCE_PATHS = 128;
 const MAX_STATUS_REASONS = 32;
 const GIT_OBJECT_ID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 const GIT_OBJECT_FORMATS = new Set(["sha1", "sha256"]);
+const RECEIPT_CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 
 function gitObjectFormatForId(value) {
   if (typeof value !== "string") {
@@ -4102,7 +4103,7 @@ function boundedReceiptText(value, label, maximum) {
     typeof value !== "string" ||
     value.trim().length === 0 ||
     value.length > maximum ||
-    /[\r\n\0]/.test(value)
+    RECEIPT_CONTROL_CHARACTERS.test(value)
   ) {
     throw new StackError(
       `${label} must be a non-empty single-line string of at most ${maximum} characters`,
@@ -4136,14 +4137,19 @@ function reviewUnavailableReceiptId(receipt) {
 }
 
 function normalizeReviewerResultPath(value) {
-  if (typeof value !== "string" || value.includes("\\")) {
+  if (
+    typeof value !== "string" ||
+    value.includes("\\") ||
+    RECEIPT_CONTROL_CHARACTERS.test(value)
+  ) {
     return null;
   }
   const normalized = value.replace(/^\.\//, "");
   if (
     !normalized.startsWith(`${RUNS_PATH}/`) ||
     !normalized.endsWith(".json") ||
-    normalized.length > 512
+    normalized.length > 512 ||
+    basename(normalized) === ".json"
   ) {
     return null;
   }
@@ -4156,7 +4162,7 @@ function normalizeReviewerResultPath(value) {
         component === ".." ||
         component.includes(":") ||
         /[. ]$/.test(component) ||
-        /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i.test(component),
+        /^(?:con|prn|aux|nul|com(?:[1-9]|[¹²³])|lpt(?:[1-9]|[¹²³]))(?:\..*)?$/i.test(component),
     )
   ) {
     return null;
@@ -4194,7 +4200,10 @@ function validateReviewerResultArtifact(artifact, expected = {}) {
     ["reviewer_id", 256],
   ]) {
     contractString(errors, artifact[key], `reviewer result artifact ${key}`, maximum);
-    if (typeof artifact[key] === "string" && /[\r\n\0]/.test(artifact[key])) {
+    if (
+      typeof artifact[key] === "string" &&
+      RECEIPT_CONTROL_CHARACTERS.test(artifact[key])
+    ) {
       errors.push(`reviewer result artifact ${key} must be a single-line value`);
     }
   }
@@ -4318,7 +4327,7 @@ function validateReviewReceipt(receipt) {
     contractString(errors, receipt[key], `review receipt ${key}`, maximum);
     if (
       typeof receipt[key] === "string" &&
-      /[\r\n\0]/.test(receipt[key])
+      RECEIPT_CONTROL_CHARACTERS.test(receipt[key])
     ) {
       errors.push(`review receipt ${key} must be a single-line value`);
     }
@@ -4423,7 +4432,7 @@ function validateReviewUnavailableReceipt(receipt) {
     contractString(errors, receipt[key], `review unavailable receipt ${key}`, maximum);
     if (
       typeof receipt[key] === "string" &&
-      /[\r\n\0]/.test(receipt[key])
+      RECEIPT_CONTROL_CHARACTERS.test(receipt[key])
     ) {
       errors.push(`review unavailable receipt ${key} must be a single-line value`);
     }
@@ -9519,9 +9528,18 @@ function verificationReadiness(target, config, git) {
   const configuredChecks = Array.isArray(config?.quality?.checks)
     ? config.quality.checks
     : null;
-  const configuredChecksHash = config
-    ? currentChecksHash(config, canonicalTarget ?? target)
-    : null;
+  let configuredChecksHash = null;
+  if (config) {
+    try {
+      configuredChecksHash = currentChecksHash(
+        config,
+        canonicalTarget ?? target,
+      );
+    } catch (error) {
+      reasons.push("project configuration is invalid");
+      reasons.push(error.message);
+    }
+  }
   if (config) {
     try {
       evidencePath = config.quality?.evidence_directory ?? RUNS_PATH;
@@ -9565,7 +9583,10 @@ function verificationReadiness(target, config, git) {
     }
     if (!/^[a-f0-9]{64}$/.test(evidence.checks_hash ?? "")) {
       evidenceErrors.push("latest verification checks_hash is missing or malformed");
-    } else if (evidence.checks_hash !== configuredChecksHash) {
+    } else if (
+      configuredChecksHash !== null &&
+      evidence.checks_hash !== configuredChecksHash
+    ) {
       evidenceErrors.push(
         "latest verification checks_hash does not match the current configured checks",
       );
@@ -9789,6 +9810,25 @@ function loadState(target) {
   return state;
 }
 
+function gitProbeIdentity(headResult, objectFormatResult) {
+  const head = headResult.status === 0 ? headResult.stdout.trim() : null;
+  const probedObjectFormat =
+    objectFormatResult.status === 0
+      ? objectFormatResult.stdout.trim()
+      : null;
+  const objectFormat = GIT_OBJECT_FORMATS.has(probedObjectFormat)
+    ? probedObjectFormat
+    : gitObjectFormatForId(head);
+  return {
+    head,
+    object_format: objectFormat,
+    valid:
+      GIT_OBJECT_ID.test(head ?? "") &&
+      GIT_OBJECT_FORMATS.has(objectFormat) &&
+      gitObjectFormatForId(head) === objectFormat,
+  };
+}
+
 function gitSnapshot(target) {
   if (!isGitRepository(target)) {
     return null;
@@ -9811,44 +9851,25 @@ function gitSnapshot(target) {
     "--show-object-format=storage",
   ]);
   const statusOk = statusResult.status === 0;
-  const headBefore =
-    headBeforeResult.status === 0 ? headBeforeResult.stdout.trim() : null;
-  const headAfter =
-    headAfterResult.status === 0 ? headAfterResult.stdout.trim() : null;
-  const head = headAfter ?? headBefore;
-  const objectFormatBefore =
-    objectFormatBeforeResult.status === 0
-      ? objectFormatBeforeResult.stdout.trim()
-      : null;
-  const objectFormatAfter =
-    objectFormatAfterResult.status === 0
-      ? objectFormatAfterResult.stdout.trim()
-      : null;
-  let objectFormat = null;
-  if (GIT_OBJECT_FORMATS.has(objectFormatAfter)) {
-    objectFormat = objectFormatAfter;
-  } else if (GIT_OBJECT_FORMATS.has(objectFormatBefore)) {
-    objectFormat = objectFormatBefore;
-  } else if (head?.length === 40) {
-    objectFormat = "sha1";
-  } else if (head?.length === 64) {
-    objectFormat = "sha256";
-  }
+  const beforeIdentity = gitProbeIdentity(
+    headBeforeResult,
+    objectFormatBeforeResult,
+  );
+  const afterIdentity = gitProbeIdentity(
+    headAfterResult,
+    objectFormatAfterResult,
+  );
+  const head = afterIdentity.head ?? beforeIdentity.head;
+  const objectFormat = afterIdentity.object_format ?? beforeIdentity.object_format;
   const identityChanged =
-    headBefore !== null &&
-    headAfter !== null &&
-    (headBefore !== headAfter || objectFormatBefore !== objectFormatAfter);
+    beforeIdentity.head !== afterIdentity.head ||
+    beforeIdentity.object_format !== afterIdentity.object_format;
   const statusLines = statusOk
     ? statusResult.stdout.split("\n").filter(Boolean)
     : ["<git status failed>"];
   const clean =
-    headBeforeResult.status === 0 &&
-    headAfterResult.status === 0 &&
-    objectFormatBeforeResult.status === 0 &&
-    objectFormatAfterResult.status === 0 &&
-    GIT_OBJECT_ID.test(head ?? "") &&
-    GIT_OBJECT_FORMATS.has(objectFormat) &&
-    gitObjectFormatForId(head) === objectFormat &&
+    beforeIdentity.valid &&
+    afterIdentity.valid &&
     !identityChanged &&
     statusOk &&
     statusLines.length === 0;
