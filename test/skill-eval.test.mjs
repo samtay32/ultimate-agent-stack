@@ -1235,6 +1235,26 @@ test("reviewer-result snapshots are exact bounded self-contained evidence", () =
   }
 });
 
+test("duplicate reviewer-result artifact paths count as one structural finding", () => {
+  const record = passingRecord();
+  const direct = record.cases.find(
+    (item) => item.scenario_id === "direct-delivery",
+  );
+  direct.observed.review_result_artifacts.push(
+    structuredClone(direct.observed.review_result_artifacts[0]),
+  );
+  const result = evaluateRecord(record, catalog);
+  const evaluated = result.cases.find(
+    (item) => item.scenario_id === "direct-delivery",
+  );
+  assert.equal(
+    evaluated.findings.filter((finding) => /duplicates artifact path/.test(finding))
+      .length,
+    1,
+  );
+  assert.equal(evaluated.review.status, "blocked");
+});
+
 test("evaluator rejects noncanonical portable reviewer-result paths", () => {
   for (const path of [
     ".agent-stack/runs/reviews\\bad.json",

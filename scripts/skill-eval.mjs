@@ -450,7 +450,6 @@ function validateReviewResultArtifacts(value, findings) {
       if (pathEntries.length > 0) {
         issue(`duplicates artifact path ${entry.path}`);
         entry.valid = false;
-        invalidCount += 1;
       }
       pathEntries.push(entry);
       byPath.set(entry.path, pathEntries);
