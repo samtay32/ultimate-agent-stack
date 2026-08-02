@@ -862,72 +862,106 @@ test("hardened Git probes ignore ambient redirection and fsmonitor settings", ()
   }
 });
 
-test("hardened Git probes infer SHA-1 when object-format is unsupported", () => {
-  const fixture = createFixture();
-  const fakeGitDirectory = mkdtempSync(join(tmpdir(), "mechanical-fake-git-"));
-  const realGit = (process.env.PATH ?? "")
-    .split(delimiter)
-    .map((directory) =>
-      join(directory, process.platform === "win32" ? "git.exe" : "git"),
-    )
-    .find((candidate) => existsSync(candidate));
-  assert.ok(realGit, "test requires a real Git executable");
-  const fakeRunner = join(fakeGitDirectory, "fake-git.mjs");
-  const fakeGit = join(
-    fakeGitDirectory,
-    process.platform === "win32" ? "git.cmd" : "git",
-  );
-  writeFileSync(
-    fakeRunner,
-    `#!/usr/bin/env node
+test(
+  "hardened Git probes infer SHA-1 when object-format is unsupported",
+  {
+    skip:
+      process.platform === "win32"
+        ? "requires a native git.exe shim; .cmd files are not executable with shell:false"
+        : false,
+  },
+  () => {
+    const fixture = createFixture();
+    const fakeGitDirectory = mkdtempSync(join(tmpdir(), "mechanical-fake-git-"));
+    const realGit = (process.env.PATH ?? "")
+      .split(delimiter)
+      .map((directory) => join(directory, "git"))
+      .find((candidate) => existsSync(candidate));
+    assert.ok(realGit, "test requires a real Git executable");
+    const fakeRunner = join(fakeGitDirectory, "fake-git.mjs");
+    const fakeGit = join(fakeGitDirectory, "git");
+    writeFileSync(
+      fakeRunner,
+      `#!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 const args = process.argv.slice(2);
 if (args.includes("--show-object-format=storage")) process.exit(129);
 const result = spawnSync(process.env.ISSUE39_REAL_GIT, args, { stdio: "inherit" });
 process.exit(result.status ?? 1);
 `,
-  );
-  if (process.platform === "win32") {
-    writeFileSync(
-      fakeGit,
-      `@echo off\r\n"${process.execPath}" "%~dp0fake-git.mjs" %*\r\n`,
     );
-  } else {
     writeFileSync(
       fakeGit,
       `#!/bin/sh\nexec "${process.execPath}" "${fakeRunner}" "$@"\n`,
     );
     chmodSync(fakeGit, 0o700);
-  }
-  const head = runGit(fixture.directory, ["rev-parse", "HEAD"]);
-  const previousPath = process.env.PATH;
-  const previousRealGit = process.env.ISSUE39_REAL_GIT;
-  try {
-    recordPassed(fixture);
-    process.env.PATH = [
-      fakeGitDirectory,
-      dirname(process.execPath),
-      previousPath,
-    ]
-      .filter(Boolean)
-      .join(delimiter);
-    process.env.ISSUE39_REAL_GIT = realGit;
-    const status = commandReviewStatus(fixture.directory, fixture.runId);
-    assert.equal(status.review_gate_ready, true, JSON.stringify(status, null, 2));
-    assert.deepEqual(status.git, {
-      head,
-      object_format: "sha1",
-      clean: true,
-    });
-  } finally {
-    if (previousPath === undefined) delete process.env.PATH;
-    else process.env.PATH = previousPath;
-    if (previousRealGit === undefined) delete process.env.ISSUE39_REAL_GIT;
-    else process.env.ISSUE39_REAL_GIT = previousRealGit;
-    fixture.cleanup();
-    rmSync(fakeGitDirectory, { recursive: true, force: true });
-  }
-});
+    const head = runGit(fixture.directory, ["rev-parse", "HEAD"]);
+    const previousPath = process.env.PATH;
+    const previousRealGit = process.env.ISSUE39_REAL_GIT;
+    try {
+      recordPassed(fixture);
+      process.env.PATH = [
+        fakeGitDirectory,
+        dirname(process.execPath),
+        previousPath,
+      ]
+        .filter(Boolean)
+        .join(delimiter);
+      process.env.ISSUE39_REAL_GIT = realGit;
+      const status = commandReviewStatus(fixture.directory, fixture.runId);
+      assert.equal(status.review_gate_ready, true, JSON.stringify(status, null, 2));
+      assert.deepEqual(status.git, {
+        head,
+        object_format: "sha1",
+        clean: true,
+      });
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+      if (previousRealGit === undefined) delete process.env.ISSUE39_REAL_GIT;
+      else process.env.ISSUE39_REAL_GIT = previousRealGit;
+      fixture.cleanup();
+      rmSync(fakeGitDirectory, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "hardened Git probes use the SHA-1 fallback on an older Windows Git",
+  { skip: process.platform !== "win32" },
+  (t) => {
+    const fixture = createFixture();
+    try {
+      const probe = spawnSync(
+        "git",
+        [
+          "-C",
+          fixture.directory,
+          "rev-parse",
+          "--show-object-format=storage",
+        ],
+        { encoding: "utf8", shell: false },
+      );
+      if (probe.status === 0) {
+        t.skip(
+          "installed Git supports --show-object-format=storage; no native shim is available without a Windows toolchain",
+        );
+        return;
+      }
+      const head = runGit(fixture.directory, ["rev-parse", "HEAD"]);
+      recordPassed(fixture);
+      const status = commandReviewStatus(fixture.directory, fixture.runId);
+      assert.equal(status.review_gate_ready, true, JSON.stringify(status, null, 2));
+      assert.deepEqual(status.git, {
+        head,
+        object_format: "sha1",
+        clean: true,
+      });
+    } finally {
+      fixture.cleanup();
+    }
+  },
+);
 
 test(
   "SHA-256 repositories carry the exact 64-character Git object ID",
