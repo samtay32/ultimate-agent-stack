@@ -4,13 +4,35 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ## Unreleased
 
+## 0.10.1 - 2026-08-03
+
 ### Changed
 
+- Always-loaded delivery guidance is smaller and routes optional skills only
+  when the current work needs them.
+- Live-evaluation evidence binds the operator-supplied harness and model
+  identity verbatim instead of accepting generic substituted labels.
 - Local `agent-recorded` review receipts remain inspectable audit evidence but
   cannot establish mechanical reviewer independence. A protected GitHub review
   receipt is a separate authenticated gate when external review is configured.
+
+### Fixed
+
+- Failed, missing, stale, conflicting, or locally invented reviewer evidence
+  cannot unlock an independent-review or PR-ready claim.
+- Review status fails closed with a structured blocked result when Git state is
+  unavailable instead of crashing.
 - The protected Qodo receipt gate recognizes bounded clean-completion wording
   and complete zero-count summaries while preserving exact-head checks.
+- Cursor delivery guidance again runs the guarded local preflight before work.
+
+### Upgrade impact
+
+This is a compatible patch release. The standard upgrade flow proposes changed
+managed instructions without overwriting local customizations. Reconcile those
+proposals, then rerun project verification and any configured protected review
+for the current clean Git head. Existing local reviewer artifacts remain
+diagnostic and cannot establish mechanical independent-review readiness.
 
 ## 0.10.0 - 2026-08-02
 
