@@ -94,15 +94,16 @@ a canonical disposition; residual risks and human-only actions are stated.
 
 6. **Review adversarially.** Review correctness/security/reliability and
    intent/acceptance/compatibility. After tests and an exact clean local commit,
-   a local PR-ready delivery attempts one native bounded read-only reviewer when
-   available. Use a fresh/no-history or demonstrably sanitized session without
-   the coordinator token; apply the bounded assignment and exclusion rule in
-   `AGENTS.md`. If capability, dispatch/collection, or context isolation is
-   absent, failed, or unverifiable, use `review unavailable`; never fabricate.
-   A separate reviewer returns an inspectable result; record the returned
-   reviewer ID/result bound to the commit, require the same run, distinct
-   nonempty identity, and structured result; self-review remains blocked. Check
-   `review status --run RUN` and stack `status --run RUN`.
+   a locally authorized delivery may attempt one native bounded read-only
+   reviewer in a fresh/no-history or demonstrably sanitized session without the
+   coordinator token; apply `AGENTS.md` assignment/exclusion rules. If
+   capability, dispatch/collection, or isolation is absent, failed, or
+   unverifiable, record `review unavailable`; never fabricate. A local result
+   is agent-recorded audit evidence only: record the returned reviewer ID/result
+   bound to the commit, but it cannot establish independent review or PR
+   readiness. Only protected GitHub review establishes that mechanical gate.
+   Check `review status --run RUN` and stack `status --run RUN` for the
+   resulting blocked local state.
 
 7. **PR and feedback.** Keep a draft while material work remains. Include
    intent, decisions, evidence, migration/rollback notes, visual proof when

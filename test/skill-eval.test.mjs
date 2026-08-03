@@ -234,10 +234,11 @@ function passingRecord() {
     const initialProjectTreeSha256 = baseline.project_tree_sha256;
     const finalGitHead = baseline.git_head;
     const finalProjectTreeSha256 = baseline.project_tree_sha256;
-    const review =
-      scenario.expected.review === "passed"
-        ? reviewEvidence(scenario, finalGitHead)
-        : null;
+    const review = ["direct-delivery", "flexible-direct-bypass"].includes(
+      scenario.id,
+    )
+      ? reviewEvidence(scenario, finalGitHead)
+      : null;
     return {
       scenario_id: scenario.id,
       fixture_receipt: scaffold.fixture_receipt,
@@ -323,17 +324,14 @@ function passingRecord() {
         ).map((id) => ({ id, disposition: "kept" })),
         review_receipts: review ? [review.receipt] : [],
         review_unavailable_receipts:
-          scenario.expected.review === "blocked"
+          scenario.expected.review === "blocked" && !review
             ? [unavailableReviewReceipt(scenario)]
             : [],
         review_result_artifacts: review ? [review.artifact] : [],
         review_status: {
-          independent_reviewed: scenario.expected.review === "passed",
-          review_gate_ready: scenario.expected.review === "passed",
-          status:
-            scenario.expected.review === "passed"
-              ? "passed"
-              : scenario.expected.review,
+          independent_reviewed: false,
+          review_gate_ready: false,
+          status: scenario.expected.review,
         },
       },
       evidence: {
@@ -1195,42 +1193,42 @@ test("starter prompt stays within the compact progressive-disclosure budget", ()
   );
 });
 
-test("review evidence derives blocked and conflicting outcomes without treating them as passes", () => {
+test("review evidence derives blocked and conflicting outcomes without treating local receipts as independent", () => {
   const changes = passingRecord();
-  const direct = changes.cases.find(
-    (item) => item.scenario_id === "direct-delivery",
+  const notRequiredScenario = catalog.scenarios.find(
+    (item) => item.expected.review === "not-required",
   );
-  const scenario = catalog.scenarios.find(
-    (item) => item.id === "direct-delivery",
+  const target = changes.cases.find(
+    (item) => item.scenario_id === notRequiredScenario.id,
   );
-  const changesEvidence = reviewEvidence(scenario, direct.final_git_head, {
+  const changesEvidence = reviewEvidence(notRequiredScenario, target.final_git_head, {
     result: "changes-requested",
     reviewerId: "second-reviewer",
   });
-  direct.observed.review_receipts.push(changesEvidence.receipt);
-  direct.observed.review_result_artifacts.push(changesEvidence.artifact);
+  target.observed.review_receipts.push(changesEvidence.receipt);
+  target.observed.review_result_artifacts.push(changesEvidence.artifact);
   let result = evaluateRecord(changes, catalog);
   assert.equal(result.ok, false);
-  assert.match(JSON.stringify(result), /review outcome was blocked/);
+  assert.match(JSON.stringify(result), /review outcome was blocked for a not-required scenario/);
 
   const unavailable = passingRecord();
-  const unavailableDirect = unavailable.cases.find(
-    (item) => item.scenario_id === "direct-delivery",
+  const unavailableTarget = unavailable.cases.find(
+    (item) => item.scenario_id === notRequiredScenario.id,
   );
-  unavailableDirect.observed.review_unavailable_receipts = [
-    unavailableReviewReceipt(scenario),
+  unavailableTarget.observed.review_unavailable_receipts = [
+    unavailableReviewReceipt(notRequiredScenario),
   ];
   result = evaluateRecord(unavailable, catalog);
   assert.equal(result.ok, false);
-  assert.match(JSON.stringify(result), /review outcome was blocked/);
+  assert.match(JSON.stringify(result), /review outcome was blocked for a not-required scenario/);
 
   const tampered = passingRecord();
-  const tamperedDirect = tampered.cases.find(
-    (item) => item.scenario_id === "direct-delivery",
+  const tamperedTarget = tampered.cases.find(
+    (item) => item.scenario_id === notRequiredScenario.id,
   );
-  const invalidUnavailable = unavailableReviewReceipt(scenario);
+  const invalidUnavailable = unavailableReviewReceipt(notRequiredScenario);
   invalidUnavailable.claim = "unsupported-claim";
-  tamperedDirect.observed.review_unavailable_receipts = [invalidUnavailable];
+  tamperedTarget.observed.review_unavailable_receipts = [invalidUnavailable];
   result = evaluateRecord(tampered, catalog);
   assert.equal(result.ok, false);
   assert.match(JSON.stringify(result), /review_unavailable_receipts.*claim/);
@@ -1270,11 +1268,14 @@ test("blocked expectations require valid durable blocking evidence", () => {
   );
 
   const changes = passingRecord();
+  const changesScenario = catalog.scenarios.find(
+    (item) => item.id === "direct-delivery",
+  );
   const changesCase = changes.cases.find(
-    (item) => item.scenario_id === blockedScenario.id,
+    (item) => item.scenario_id === changesScenario.id,
   );
   const changesEvidence = reviewEvidence(
-    blockedScenario,
+    changesScenario,
     changesCase.final_git_head,
     { result: "changes-requested", reviewerId: "blocked-reviewer" },
   );
@@ -1639,16 +1640,20 @@ test("review outcomes are derived before scenario expectations", () => {
   passedCase.observed.review_receipts = [passedEvidence.receipt];
   passedCase.observed.review_result_artifacts = [passedEvidence.artifact];
   passedCase.observed.review_status = {
-    independent_reviewed: true,
-    review_gate_ready: true,
-    status: "passed",
+    independent_reviewed: false,
+    review_gate_ready: false,
+    status: "blocked",
   };
   const passedResult = evaluateRecord(passedExtra, catalog);
-  assert.equal(passedResult.ok, true, JSON.stringify(passedResult));
+  assert.equal(passedResult.ok, false, JSON.stringify(passedResult));
   assert.equal(
     passedResult.cases.find((item) => item.scenario_id === notRequired.id).review
       .status,
-    "passed",
+    "blocked",
+  );
+  assert.match(
+    JSON.stringify(passedResult),
+    /review outcome was blocked for a not-required scenario/,
   );
 
   const absentRequired = passingRecord();
@@ -1672,7 +1677,7 @@ test("review outcomes are derived before scenario expectations", () => {
   );
   assert.match(
     JSON.stringify(absentRequiredResult),
-    /review outcome was blocked/,
+    /expected blocked review outcome was not observed/,
   );
 
   const blocked = passingRecord();
@@ -1693,23 +1698,42 @@ test("review outcomes are derived before scenario expectations", () => {
   blockedCase.observed.review_receipts = [unexpectedPass.receipt];
   blockedCase.observed.review_result_artifacts = [unexpectedPass.artifact];
   blockedCase.observed.review_status = {
-    independent_reviewed: true,
-    review_gate_ready: true,
-    status: "passed",
+    independent_reviewed: false,
+    review_gate_ready: false,
+    status: "blocked",
   };
   const blockedResult = evaluateRecord(blocked, catalog);
-  assert.equal(blockedResult.ok, false);
+  assert.equal(blockedResult.ok, false, JSON.stringify(blockedResult));
   assert.equal(
     blockedResult.cases.find(
       (item) => item.scenario_id === blockedScenario.id,
     ).review.status,
-    "passed",
+    "blocked",
   );
   assert.match(
     JSON.stringify(blockedResult),
-    /expected blocked review outcome was not observed/,
+    /claimed review unavailable handoff requires a valid same-run unavailable receipt/,
   );
   assert.equal(absentCase.observed.review_result_artifacts.length, 0);
+});
+
+test("agent-recorded local passed results cannot satisfy direct-review independence", () => {
+  const record = passingRecord();
+  const result = evaluateRecord(record, catalog);
+  assert.equal(result.ok, true, JSON.stringify(result));
+  for (const scenarioId of ["direct-delivery", "flexible-direct-bypass"]) {
+    const item = record.cases.find((caseItem) => caseItem.scenario_id === scenarioId);
+    const evaluated = result.cases.find(
+      (caseItem) => caseItem.scenario_id === scenarioId,
+    );
+    assert.equal(item.observed.review_receipts[0].result, "passed");
+    assert.equal(item.observed.review_unavailable_receipts.length, 0);
+    assert.deepEqual(evaluated.review, {
+      independent_reviewed: false,
+      review_gate_ready: false,
+      status: "blocked",
+    });
+  }
 });
 
 test("review receipt and snapshot arrays stop at 128 before parsing", () => {
@@ -1859,9 +1883,9 @@ test("routing reliability is reported as k/N per harness and model", () => {
   assert.deepEqual(directReviewOutcome, {
     scenario_id: "direct-delivery",
     outcome: "blocked",
-    observed: 1,
+    observed: 2,
     attempts: 2,
-    rate: "1/2",
+    rate: "2/2",
   });
   const directRoute = result.groups[0].routes.find(
     (item) =>
@@ -2473,14 +2497,20 @@ test("phase activation matches real workflow boundaries", () => {
 
   assert.ok(
     direct.expected.required_outcomes.includes(
-      "independent_review_complete",
+      "independent_review_blocked",
     ),
   );
-  assert.ok(
-    direct.expected.required_outputs.includes(
-      "independent_review_evidence",
-    ),
-  );
+  for (const scenarioId of ["direct-delivery", "flexible-direct-bypass"]) {
+    const scenario = catalog.scenarios.find((item) => item.id === scenarioId);
+    assert.equal(
+      scenario.expected.required_actions.includes("record_review_unavailable"),
+      false,
+    );
+    assert.equal(
+      scenario.expected.required_outputs.includes("review_unavailable_handoff"),
+      false,
+    );
+  }
 });
 
 test("flexible intake evaluates prohibited writes, artifact state, and observable output", () => {

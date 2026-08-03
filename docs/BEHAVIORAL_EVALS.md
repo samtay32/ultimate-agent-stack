@@ -75,10 +75,12 @@ snapshot contains exactly the project-relative `path` and exact UTF-8
 `content` copied from that case's reviewer-result file, including any final
 newline. There is exactly one snapshot for every review receipt result file;
 paths are unique and contents are bounded at 4 MiB. Direct delivery and the
-flexible direct bypass require a passed receipt whose commit equals the exact
-final head. The reviewer-unavailable edge case must remain blocked. These
-records claim only `agent-recorded` and do not authenticate a harness tool call
-or external review provider.
+flexible direct bypass retain implementation, tests, an exact final head, and
+draft evidence while independent review remains blocked. A local passed receipt
+is structurally inspectable audit evidence only; it cannot establish mechanical
+independence. The reviewer-unavailable edge case also remains blocked. These
+records claim only `agent-recorded`; only the protected GitHub review receipt
+provides the separate authenticated review gate.
 
 The CLI `evidence activation-status` and `review status` results include stable
 project-relative `evidence_graph_path`, review receipt and unavailable

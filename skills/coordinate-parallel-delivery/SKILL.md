@@ -62,9 +62,12 @@ mechanical receipt evidence. The primary agent may use the portable CLI's
 `evidence activation-status --run RUN --require SKILL` to derive exact-run
 activation from durable receipts. A worker's message, a skill name in a prompt,
 or a failed/empty delegation cannot create activation proof. If no real
-independent reviewer returns an inspectable result, record `review unavailable
---run RUN --reason REASON --details TEXT --coordinator-token TOKEN` and keep
-readiness blocked; do not convert the worker's failure into a passed review.
+reviewer result is available, local receipt evidence remains agent-recorded
+audit evidence and cannot establish mechanical independence. Record
+`review unavailable --run RUN
+   --reason REASON --details TEXT --coordinator-token TOKEN` for unavailable
+   delegation and keep readiness blocked; only protected GitHub review can
+   satisfy that separate gate.
 
 ## Fast Decision Rule
 

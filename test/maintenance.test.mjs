@@ -489,7 +489,7 @@ test("PR-ready review guidance attempts native delegation before unavailable", (
   );
   assert.match(
     runDeliverySkill,
-    /bounded assignment and exclusion rule[\s\S]*AGENTS\.md/i,
+    /AGENTS\.md[\s\S]*assignment[\s\S]*exclusion|assignment[\s\S]*exclusion[\s\S]*AGENTS\.md/i,
   );
 });
 
@@ -845,22 +845,23 @@ test("discovery fast path is self-contained and avoids verbose follow-up work", 
   );
 });
 
-test("independent review fails closed without a real separate result", () => {
+test("local review receipts are audit evidence, not mechanical independence", () => {
   for (const source of [
     projectAgents,
-    handoffTemplate,
     runDeliverySkill,
     verifyChangeSkill,
     coordinateDeliverySkill,
-    delegationContract,
+    readme,
+    operatingManual,
+    trustGuide,
+    behavioralEvals,
   ]) {
-    assert.match(source, /separate reviewer|worker or thread ID/i);
+    assert.match(source, /agent-recorded/i);
     assert.match(
       source,
-      /returns?\s+an inspectable\s+result|returned result|worker result/i,
+      /cannot\s+(?:prove|authenticate|establish)|does not authenticate|always keeps/i,
     );
-    assert.match(source, /self-review/i);
-    assert.match(source, /blocked|incomplete/i);
+    assert.match(source, /protected\s+GitHub\s+review/i);
   }
   for (const source of [
     projectAgents,

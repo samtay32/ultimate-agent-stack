@@ -4,6 +4,12 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ## Unreleased
 
+### Changed
+
+- Local `agent-recorded` review receipts remain inspectable audit evidence but
+  cannot establish mechanical reviewer independence or PR readiness; the
+  protected GitHub review receipt remains the separate authenticated gate.
+
 ## 0.10.0 - 2026-08-02
 
 ### Added

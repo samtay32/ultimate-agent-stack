@@ -296,12 +296,15 @@ test("legacy activation graph entries remain readable but do not satisfy current
   }
 });
 
-test("review record emits a deterministic exact-head local receipt", () => {
+test("a structurally valid local passed receipt remains audit evidence, not independent review", () => {
   const fixture = createFixture();
   try {
-    const result = recordPassed(fixture);
+    const result = recordPassed(fixture, {
+      reviewerId: "/root/independent_review",
+    });
     assert.equal(result.ok, true);
     assert.equal(result.receipt.claim, "agent-recorded");
+    assert.notEqual(result.receipt.reviewer_id, fixture.coordinatorId);
     assert.equal(result.receipt.git_commit, runGit(fixture.directory, ["rev-parse", "HEAD"]));
     assert.equal(
       result.receipt.result_file,
@@ -311,8 +314,13 @@ test("review record emits a deterministic exact-head local receipt", () => {
     assert.equal(result.receipt.git_object_format, "sha1");
     assert.ok(existsSync(join(fixture.directory, result.path)));
     const status = commandReviewStatus(fixture.directory, fixture.runId);
-    assert.equal(status.independent_reviewed, true);
-    assert.equal(status.review_gate_ready, true);
+    assert.equal(status.independent_reviewed, false);
+    assert.equal(status.review_gate_ready, false);
+    assert.equal(status.status, "blocked");
+    assert.match(
+      status.reasons.join(" "),
+      /local review receipt is agent-recorded and cannot prove distinct reviewer delegation/,
+    );
     assert.equal(status.receipts.length, 1);
     assert.equal(status.evidence_graph_path, ".agent-stack/evidence-graph.json");
     assert.equal(status.review_receipts_directory, ".agent-stack/review-receipts");
@@ -727,7 +735,7 @@ test("receipt validation errors remain global when a receipt run id is altered",
       resultFile: ".agent-stack/runs/reviews/other-run.json",
       coordinatorToken: fixture.token,
     });
-    assert.equal(commandReviewStatus(fixture.directory, fixture.runId).review_gate_ready, true);
+    assert.equal(commandReviewStatus(fixture.directory, fixture.runId).review_gate_ready, false);
 
     writeArtifact(
       "altered-run.json",
@@ -865,7 +873,7 @@ test("hardened Git probes ignore ambient redirection and fsmonitor settings", ()
     assert.equal(existsSync(marker), false);
     assert.equal(
       commandReviewStatus(fixture.directory, fixture.runId).review_gate_ready,
-      true,
+      false,
     );
   } finally {
     for (const [name, value] of Object.entries(prior)) {
@@ -924,7 +932,7 @@ process.exit(result.status ?? 1);
         .join(delimiter);
       process.env.ISSUE39_REAL_GIT = realGit;
       const status = commandReviewStatus(fixture.directory, fixture.runId);
-      assert.equal(status.review_gate_ready, true, JSON.stringify(status, null, 2));
+      assert.equal(status.review_gate_ready, false, JSON.stringify(status, null, 2));
       assert.deepEqual(status.git, {
         head,
         object_format: "sha1",
@@ -966,7 +974,7 @@ test(
       const head = runGit(fixture.directory, ["rev-parse", "HEAD"]);
       recordPassed(fixture);
       const status = commandReviewStatus(fixture.directory, fixture.runId);
-      assert.equal(status.review_gate_ready, true, JSON.stringify(status, null, 2));
+      assert.equal(status.review_gate_ready, false, JSON.stringify(status, null, 2));
       assert.deepEqual(status.git, {
         head,
         object_format: "sha1",
@@ -989,7 +997,7 @@ test(
     assert.equal(recorded.receipt.git_object_format, "sha256");
     assert.equal(
       commandReviewStatus(fixture.directory, fixture.runId).review_gate_ready,
-      true,
+      false,
     );
   } finally {
     fixture.cleanup();
@@ -1008,7 +1016,7 @@ test("status --run requires current verification and exposes full readiness sepa
     recordPassed(fixture);
     const before = commandStatus(fixture.directory, fixture.runId);
     assert.equal(before.ok, false);
-    assert.equal(before.review.review_gate_ready, true);
+    assert.equal(before.review.review_gate_ready, false);
     assert.equal(before.readiness.pr_ready, false);
     assert.equal(before.verification.ok, false);
     assert.match(
@@ -1028,16 +1036,20 @@ test("status --run requires current verification and exposes full readiness sepa
     );
     commandVerify(fixture.directory);
     const after = commandStatus(fixture.directory, fixture.runId);
-    assert.equal(after.ok, true, JSON.stringify(after, null, 2));
-    assert.equal(after.readiness.review_gate_ready, true);
-    assert.equal(after.readiness.pr_ready, true);
+    assert.equal(after.ok, false, JSON.stringify(after, null, 2));
+    assert.equal(after.readiness.review_gate_ready, false);
+    assert.equal(after.readiness.pr_ready, false);
+    assert.match(
+      after.readiness.reasons.join(" "),
+      /local review receipt is agent-recorded and cannot prove distinct reviewer delegation/,
+    );
     assert.deepEqual(after.review.git, after.verification.git);
     const cliAfter = spawnSync(
       process.execPath,
       [PACKAGE_CLI, "status", "--target", fixture.directory, "--run", fixture.runId],
       { encoding: "utf8" },
     );
-    assert.equal(cliAfter.status, 0, cliAfter.stderr);
+    assert.equal(cliAfter.status, 1, cliAfter.stderr);
   } finally {
     fixture.cleanup();
   }
@@ -1089,7 +1101,8 @@ test("verification evidence contains tamper-detection hashes and exact check res
     assert.equal(evidence.checks[0].result, "passed");
     assert.equal(evidence.checks[0].returncode, 0);
     const status = commandStatus(fixture.directory, fixture.runId);
-    assert.equal(status.ok, true, JSON.stringify(status, null, 2));
+    assert.equal(status.ok, false, JSON.stringify(status, null, 2));
+    assert.equal(status.verification.ok, true);
     assert.deepEqual(status.review.git, status.verification.git);
   } finally {
     fixture.cleanup();
@@ -1224,7 +1237,8 @@ test("status validates configuration and preserves readiness across branch renam
     const renamed = runGit(fixture.directory, ["branch", "-m", "renamed-for-readiness"]);
     assert.equal(renamed, "");
     const status = commandStatus(fixture.directory, fixture.runId);
-    assert.equal(status.ok, true, JSON.stringify(status, null, 2));
+    assert.equal(status.ok, false, JSON.stringify(status, null, 2));
+    assert.equal(status.verification.ok, true);
     assert.deepEqual(status.review.git, {
       head: status.verification.git.head,
       object_format: status.verification.git.object_format,

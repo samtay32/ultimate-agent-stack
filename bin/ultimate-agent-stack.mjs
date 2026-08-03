@@ -4961,13 +4961,18 @@ function commandReviewStatus(target, runId, capturedGit = undefined) {
   if (passed.length === 0) {
     blockedReasons.push("no passed exact-head independent review exists");
   }
+  if (validReceipts.length > 0) {
+    blockedReasons.push(
+      "local review receipt is agent-recorded and cannot prove distinct reviewer delegation",
+    );
+  }
   if (changesRequested.length > 0) {
     blockedReasons.push("a reviewer requested changes");
   }
   if (invalidReceipts.length > 0) {
     blockedReasons.push("review evidence is invalid, stale, altered, or dirty");
   }
-  const independentReviewed = blockedReasons.length === 0;
+  const independentReviewed = false;
   return {
     ok: independentReviewed,
     command: "review status",
@@ -4989,7 +4994,7 @@ function commandReviewStatus(target, runId, capturedGit = undefined) {
     reasons: [...new Set(blockedReasons)],
     current_errors: [...new Set(currentErrors)],
     boundary:
-      "Local pre-PR review status is derived from durable receipt files and exact current Git state. Protected GitHub review receipts are a separate gate.",
+      "Local pre-PR receipts are inspectable agent-recorded audit evidence and cannot establish mechanical reviewer independence. Protected GitHub review receipts are the separate authenticated gate.",
   };
 }
 

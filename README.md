@@ -121,12 +121,12 @@ blocker, never a successful review claim.
 The distinct-physical-agent boundary remains agent-recorded and
 non-authenticated.
 
-`review status --run RUN` reports `review_gate_ready` and
-`independent_reviewed` within that agent-recorded boundary; it does not by
-itself claim the project is PR-ready. `status --run RUN` is the full project
-gate: it also requires healthy configuration and the latest successful
-stack-generated verification for the exact current clean Git head. Only then
-may its nested `readiness.pr_ready` be true.
+`review status --run RUN` preserves the local structural result but keeps
+`independent_reviewed` and `review_gate_ready` false: agent-recorded receipts
+cannot prove distinct reviewer delegation. `status --run RUN` consequently
+keeps local-only review blocked even after current successful verification.
+The protected GitHub review receipt is the separate authenticated independence
+gate.
 
 The ordinary `verify` command may run configured checks on a dirty
 worktree; `status --run RUN` still requires a clean exact-head verification.

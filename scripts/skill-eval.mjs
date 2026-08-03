@@ -964,19 +964,29 @@ function validateReviewEvidence(
   const hasBlockingOutcome =
     validChangesRequested.length > 0 || validUnavailable.length > 0;
   const hasInvalidOutcome = invalidReviewCount > 0 || invalidUnavailableCount > 0;
+  const hasAgentRecordedPassedReview = validReviews.length > 0;
+  const claimsUnavailableHandoff =
+    (Array.isArray(observed.performed_actions) &&
+      observed.performed_actions.includes("record_review_unavailable")) ||
+    (Array.isArray(observed.observable_outputs) &&
+      observed.observable_outputs.includes("review_unavailable_handoff"));
+  if (claimsUnavailableHandoff && validUnavailable.length === 0) {
+    findings.push(
+      "claimed review unavailable handoff requires a valid same-run unavailable receipt",
+    );
+  }
   if (validReviews.length > 0 && hasBlockingOutcome) {
     findings.push("review evidence contains conflicting outcomes");
   }
-  const reviewStatus = hasBlockingOutcome || hasInvalidOutcome
+  const reviewStatus =
+    hasBlockingOutcome || hasInvalidOutcome || hasAgentRecordedPassedReview
     ? "blocked"
-    : validReviews.length > 0
-      ? "passed"
-      : expected === "not-required"
-        ? "not-required"
-        : "blocked";
+    : expected === "not-required"
+      ? "not-required"
+      : "blocked";
   const derived = {
-    independent_reviewed: reviewStatus === "passed",
-    review_gate_ready: reviewStatus === "passed",
+    independent_reviewed: false,
+    review_gate_ready: false,
     status: reviewStatus,
   };
   if (expected === "not-required" && reviewStatus === "blocked") {
@@ -987,7 +997,11 @@ function validateReviewEvidence(
     } else {
       findings.push("required passed review outcome was not observed");
     }
-  } else if (expected === "blocked" && !hasBlockingOutcome) {
+  } else if (
+    expected === "blocked" &&
+    !hasBlockingOutcome &&
+    !hasAgentRecordedPassedReview
+  ) {
     findings.push("expected blocked review outcome was not observed");
   }
   if (
