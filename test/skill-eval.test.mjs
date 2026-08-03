@@ -1235,7 +1235,7 @@ test("reviewer-result snapshots are exact bounded self-contained evidence", () =
   }
 });
 
-test("duplicate reviewer-result artifact paths count as one structural finding", () => {
+test("duplicate artifact-path finding is emitted once", () => {
   const record = passingRecord();
   const direct = record.cases.find(
     (item) => item.scenario_id === "direct-delivery",
@@ -1244,6 +1244,7 @@ test("duplicate reviewer-result artifact paths count as one structural finding",
     structuredClone(direct.observed.review_result_artifacts[0]),
   );
   const result = evaluateRecord(record, catalog);
+  assert.equal(result.ok, false);
   const evaluated = result.cases.find(
     (item) => item.scenario_id === "direct-delivery",
   );
