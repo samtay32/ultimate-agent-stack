@@ -695,6 +695,14 @@ test("discovery fast path is self-contained and avoids verbose follow-up work", 
     projectAgents,
     /--skill develop-project-brief[\s\S]{0,120}\.agents\/skills\/develop-project-brief\/SKILL\.md/,
   );
+  assert.match(
+    projectAgents,
+    /Choose one non-secret local `RUN_ID` of at most 200 characters[\s\S]{0,80}letters, digits, dot, underscore, and hyphen[\s\S]{0,160}Reuse it exactly[\s\S]{0,120}controller, brief[\s\S]{0,120}review receipt/,
+  );
+  assert.match(
+    projectAgents,
+    /agent-recorded correlation label, not a\s+harness-authenticated identity/,
+  );
   for (const source of [projectAgents, runDeliverySkill, starterPrompt]) {
     assert.match(source, /Do not inspect CLI\s+source or help/i);
     assert.match(source, /do not checkpoint[\s\S]{0,120}activation(?:-status|\/readiness)[\s\S]{0,80}readiness|do not checkpoint[\s\S]{0,120}activation\/readiness status/i);

@@ -107,6 +107,12 @@ controller following `start`; replace only the quoted identity/token
 placeholders with values exposed to the current session. Do not inspect CLI
 source or help to rediscover it:
 
+Choose one non-secret local `RUN_ID` of at most 200 characters using only
+letters, digits, dot, underscore, and hyphen. Reuse it exactly for the
+controller, brief, and every later activation or review receipt in that
+delivery/session. It is an agent-recorded correlation label, not a
+harness-authenticated identity.
+
 ```bash
 node .agent-stack/bin/agent-stack.mjs evidence activate --skill run-autonomous-delivery --skill-path .agents/skills/run-autonomous-delivery/SKILL.md --mode file-read --harness "EXACT_HARNESS_ID" --model "EXACT_MODEL_ID" --run "RUN_ID" --event "activate-run-autonomous-delivery" --coordinator-token "TOKEN"
 ```
