@@ -466,11 +466,25 @@ test("live smoke guidance supplies an exact candidate doctor runner", () => {
 
 test("PR-ready review guidance attempts native delegation before unavailable", () => {
   for (const source of [projectAgents, runDeliverySkill]) {
-    assert.match(source, /locally authorized PR-ready delivery[\s\S]*tests[\s\S]*exact clean local\s+commit/i);
-    assert.match(source, /harness exposes native\s+subagent\/reviewer delegation[\s\S]*one\s+bounded read-only reviewer/i);
-    assert.match(source, /without\s+the coordinator token[\s\S]*returned reviewer ID and result bound\s+to that commit[\s\S]*record it/i);
-    assert.match(source, /review[\s`]+unavailable[\s\S]*the capability is absent or dispatch\/collection\s+actually\s+fails[\s\S]*never invent a successful receipt/i);
+    assert.match(source, /fresh\/no-history|demonstrably sanitized session/i);
+    assert.match(source, /bounded\s+read-only\s+reviewer/i);
+    assert.match(source, /without\s+the coordinator token|coordinator token/i);
+    assert.match(source, /isolation[\s\S]*(?:absent|failed|cannot be prevented|prevented\/verified|unverifiable)[\s\S]*review[\s`]+unavailable/i);
+    assert.match(source, /returned\s+reviewer\s+ID[\s\S]*result\s+bound\s+to\s+(?:the|that)\s+commit/i);
+    assert.match(source, /never\s+(?:invent|fabricate)/i);
   }
+  assert.match(
+    projectAgents,
+    /checkout locator[\s\S]*exact\s+commit[\s\S]*intent\/acceptance\s+summary[\s\S]*read-only\s+scope/i,
+  );
+  assert.match(
+    projectAgents,
+    /parent\s+transcript(?:\/command)?\s+output[\s\S]*coordinator\s+state\/token[\s\S]*credentials[\s\S]*environment\s+secrets/i,
+  );
+  assert.match(
+    runDeliverySkill,
+    /bounded assignment and exclusion rule[\s\S]*AGENTS\.md/i,
+  );
 });
 
 test("review closure validates claims and has one disposition vocabulary", () => {

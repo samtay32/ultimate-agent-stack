@@ -97,12 +97,16 @@ review and PR readiness false. A separate reviewer must return an inspectable
 result; self-review is not independent, so its readiness stays blocked. Local receipts are separate from
 protected GitHub reviews and do not authenticate physical identity.
 
-For a locally authorized PR-ready delivery, after tests and an exact clean local
-commit, if the harness exposes native subagent/reviewer delegation, dispatch one
-bounded read-only reviewer without the coordinator token. Retain the exact
-returned reviewer ID and result bound to that commit and record it. Use `review
-unavailable` only when the capability is absent or dispatch/collection actually
-fails; never invent a successful receipt.
+For locally authorized PR-ready delivery, after tests and exact clean commit, if
+native reviewer delegation exists, dispatch one bounded read-only reviewer in a
+fresh/no-history or demonstrably sanitized session without coordinator token.
+Assignment may contain only checkout locator, exact commit, intent/acceptance
+summary, read-only scope; exclude parent transcript/command output, coordinator
+state/token, credentials, environment secrets. If isolation cannot be
+prevented/verified, use `review unavailable`; keep readiness blocked. Record only
+returned reviewer ID/result bound to that commit; unavailable is only for absent
+capability, dispatch/collection failure, or unverifiable isolation. Never invent a
+receipt; prose cannot authenticate isolation.
 
 Keep live evaluation prompts and serialized context at or below 2 KiB. Paid
 live-model tests are not part of deterministic package validation.
