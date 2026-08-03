@@ -237,9 +237,11 @@ flowchart LR
     P --> L
     L --> V["Small working slices"]
     V --> T["Project tests and checks"]
-    T --> Q{"Protected review required?"}
-    Q -- "Yes" --> R["Protected review"]
-    R --> C["Inspect the cited code and evidence"]
+    T --> A["Bounded local review audit"]
+    A --> DRAFT["Draft PR + evidence"]
+    DRAFT --> Q{"Protected review required?"}
+    Q -- "Yes" --> PROTECTED["Protected review"]
+    PROTECTED --> C["Inspect the cited code and evidence"]
     C --> F{"Claim established?"}
     F -- "True and in scope" --> V
     F -- "False or duplicate" --> E["Rebut with evidence"]
@@ -247,7 +249,7 @@ flowchart LR
     E --> G{"Closure policy satisfied?"}
     H --> G
     G -- "Yes" --> D["Merge-ready result + evidence"]
-    G -- "No" --> R
+    G -- "No" --> PROTECTED
     Q -- "No" --> D
 ```
 
@@ -396,7 +398,7 @@ The core workflow depends on capabilities, not vendor names.
 | Capability | Built-in path | Optional adapter |
 |---|---|---|
 | Coding agent | Portable project rules and serial execution | Native Codex, Claude Code, Gemini, OpenCode, Cursor, or other supported features |
-| Local review audit | Repository standards and intent review | CodeRabbit or an approved GitHub human |
+| Review capability | Agent-recorded local review audit | Protected CodeRabbit or approved GitHub human review |
 | Project knowledge | Repository checkpoint, evidence, and Git history | Project-scoped local or separately approved remote GBrain |
 | Project telemetry | Repository and deployment evidence | Reviewed read-only product, error, service, or AI provider |
 | Work tracking | Portable repository ledger and evidence graph | Scoped Linear reading plus optional receipted issue/comment creation; other reviewed providers can implement the same contract |

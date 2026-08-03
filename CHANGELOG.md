@@ -7,8 +7,8 @@ All notable changes to Ultimate Agent Stack are documented here.
 ### Changed
 
 - Local `agent-recorded` review receipts remain inspectable audit evidence but
-  cannot establish mechanical reviewer independence or PR readiness; the
-  protected GitHub review receipt remains the separate authenticated gate.
+  cannot establish mechanical reviewer independence. A protected GitHub review
+  receipt is a separate authenticated gate when external review is configured.
 
 ## 0.10.0 - 2026-08-02
 
@@ -16,9 +16,9 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 - Durable, tamper-evident skill-activation receipts and exact-run activation
   status derived from those receipts.
-- Local pre-PR independent-review and reviewer-unavailable receipts bound to a
-  distinct reviewer, exact run, clean Git commit, result artifact, and content
-  hash.
+- Local pre-PR review-audit and reviewer-unavailable receipts bound to a
+  recorded reviewer identity distinct from the coordinator, exact run, clean
+  Git commit, result artifact, and content hash.
 - Portable `evidence activation-status`, `review record`, `review unavailable`,
   and `review status` CLI commands.
 
@@ -26,9 +26,9 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 - Behavioral run records use schema version 3, keep all 28 scenarios in the
   denominator, and derive activation and review outcomes from durable evidence.
-- Full PR readiness now requires both a passed exact-head independent review and
-  current successful verification; local receipts remain separate from protected
-  GitHub review receipts.
+- Builtin local readiness requires a passed exact-head local audit and current
+  successful verification. Authenticated protected review remains separate and
+  is required only by configured external-review policy.
 - Git identity probes ignore ambient configuration and support SHA-1 and SHA-256
   repositories without adding runtime dependencies.
 
@@ -49,7 +49,7 @@ valid. The normal upgrade flow installs the new receipt contracts and proposes
 changed managed files for explicit reconciliation without overwriting local
 customizations. Older run evidence cannot satisfy the new receipt-derived
 readiness gate; after upgrading, reconcile proposals and rerun project
-verification and independent review for current work.
+verification, local review audit, and any configured protected review.
 
 ## 0.9.2 - 2026-08-02
 
@@ -364,7 +364,7 @@ verification and independent review for current work.
   quality baseline are both missing, and runtime diagnostics distinguish
   output-capture overflow from ordinary command failure.
 - The README is now a shorter plain-language front door for non-coders and
-  coders, with direct onboarding, conditional independent review, replaceable
+  coders, with direct onboarding, conditional review policy, replaceable
   adapters, honest safety boundaries, and links to the full technical record.
 - Package validation relies on packed-tarball duplicate detection instead of an
   unreliable npm `files` negation pattern.
