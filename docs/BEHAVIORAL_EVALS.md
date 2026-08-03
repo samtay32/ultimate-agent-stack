@@ -92,7 +92,9 @@ separate routing measure.
 
 For CLI compatibility, `local_review_audit_passed` remains present but is always
 false. `local_review_artifact_valid` reports only exact-head artifact integrity;
-it is not a review-success, dispatch, identity, or readiness signal.
+`local_review_artifact_outcome` separately reports the bounded local result
+classification. Neither field is a review-success, dispatch, identity, or
+readiness signal.
 
 The CLI `evidence activation-status` and `review status` results include stable
 project-relative `evidence_graph_path`, review receipt and unavailable

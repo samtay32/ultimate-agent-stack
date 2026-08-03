@@ -318,6 +318,7 @@ test("an invented distinct local result stays artifact metadata, never a passed 
     assert.ok(existsSync(join(fixture.directory, result.path)));
     const status = commandReviewStatus(fixture.directory, fixture.runId);
     assert.equal(status.local_review_artifact_valid, true);
+    assert.equal(status.local_review_artifact_outcome, "passed");
     assert.equal(status.local_review_audit_passed, false);
     assert.deepEqual(status.local_review_artifact_reasons, []);
     assert.match(status.boundary, /local_review_audit_passed is retained for compatibility and always false/);
@@ -344,9 +345,11 @@ test("missing review evidence remains blocked", () => {
   try {
     const status = commandReviewStatus(fixture.directory, fixture.runId);
     assert.equal(status.local_review_audit_passed, false);
+    assert.equal(status.local_review_artifact_valid, false);
+    assert.equal(status.local_review_artifact_outcome, "missing");
     assert.equal(status.independent_reviewed, false);
     assert.equal(status.review_gate_ready, false);
-    assert.match(status.reasons.join(" "), /no reviewer result receipt/);
+    assert.match(status.reasons.join(" "), /no reviewer result evidence/);
     assert.equal(status.evidence_graph_path, ".agent-stack/evidence-graph.json");
     assert.equal(status.review_receipts_directory, ".agent-stack/review-receipts");
     assert.equal(status.review_unavailable_directory, ".agent-stack/review-unavailable");
@@ -362,10 +365,16 @@ test("failed review evidence remains blocked", () => {
   try {
     recordPassed(fixture, { result: "changes-requested" });
     const status = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(status.local_review_artifact_valid, true);
+    assert.equal(status.local_review_artifact_outcome, "changes-requested");
     assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.independent_reviewed, false);
     assert.equal(status.review_gate_ready, false);
     assert.match(status.reasons.join(" "), /requested changes/);
+    const projectStatus = commandStatus(fixture.directory, fixture.runId);
+    assert.equal(projectStatus.ok, false);
+    assert.equal(projectStatus.readiness.review_gate_ready, false);
+    assert.equal(projectStatus.readiness.pr_ready, false);
   } finally {
     fixture.cleanup();
   }
@@ -377,6 +386,8 @@ test("empty review result files invalidate an otherwise valid receipt", () => {
     recordPassed(fixture);
     writeFileSync(fixture.resultFile, "");
     const status = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(status.local_review_artifact_valid, false);
+    assert.equal(status.local_review_artifact_outcome, "invalid");
     assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.independent_reviewed, false);
     assert.match(status.invalid_receipts.join(" "), /non-empty|hash/);
@@ -392,6 +403,8 @@ test("stale exact-head review receipts are rejected", () => {
     writeFileSync(join(fixture.directory, "later.txt"), "later\n");
     commit(fixture.directory, "advance after review");
     const status = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(status.local_review_artifact_valid, false);
+    assert.equal(status.local_review_artifact_outcome, "invalid");
     assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.independent_reviewed, false);
     assert.match(status.invalid_receipts.join(" "), /stale|current HEAD/);
@@ -423,6 +436,8 @@ test("a checkpoint commit after a local result makes its artifact stale", () => 
       recorded.receipt.git_commit,
     );
     const status = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(status.local_review_artifact_valid, false);
+    assert.equal(status.local_review_artifact_outcome, "invalid");
     assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.independent_reviewed, false);
     assert.match(status.invalid_receipts.join(" "), /stale|current HEAD/);
@@ -494,6 +509,8 @@ test("dirty trees invalidate review readiness", () => {
     recordPassed(fixture);
     writeFileSync(join(fixture.directory, "uncommitted.txt"), "dirty\n");
     const status = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(status.local_review_artifact_valid, false);
+    assert.equal(status.local_review_artifact_outcome, "invalid");
     assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.independent_reviewed, false);
     assert.match(status.invalid_receipts.join(" "), /clean Git/);
@@ -530,10 +547,16 @@ test("unavailable reviewer evidence is a durable blocker", () => {
     });
     assert.equal(unavailable.receipt.status, "unavailable");
     const status = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(status.local_review_artifact_valid, true);
+    assert.equal(status.local_review_artifact_outcome, "unavailable");
     assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.independent_reviewed, false);
     assert.equal(status.review_gate_ready, false);
     assert.match(status.reasons.join(" "), /unavailable/);
+    const projectStatus = commandStatus(fixture.directory, fixture.runId);
+    assert.equal(projectStatus.ok, false);
+    assert.equal(projectStatus.readiness.review_gate_ready, false);
+    assert.equal(projectStatus.readiness.pr_ready, false);
   } finally {
     fixture.cleanup();
   }
@@ -546,7 +569,7 @@ test("wrong-run and wrong-commit receipts never satisfy the requested run", () =
     const status = commandReviewStatus(wrongRun.directory, wrongRun.runId);
     assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.independent_reviewed, false);
-    assert.match(status.reasons.join(" "), /no reviewer result receipt/);
+    assert.match(status.reasons.join(" "), /no reviewer result evidence/);
   } finally {
     wrongRun.cleanup();
   }
@@ -730,9 +753,11 @@ test("valid passed review plus unavailable or changes-requested evidence remains
       unavailableFixture.directory,
       unavailableFixture.runId,
     );
+    assert.equal(status.local_review_artifact_valid, true);
+    assert.equal(status.local_review_artifact_outcome, "conflict");
     assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.review_gate_ready, false);
-    assert.match(status.reasons.join(" "), /unavailable/);
+    assert.match(status.reasons.join(" "), /conflicting outcomes/);
   } finally {
     unavailableFixture.cleanup();
   }
@@ -771,9 +796,11 @@ test("valid passed review plus unavailable or changes-requested evidence remains
       conflictingFixture.directory,
       conflictingFixture.runId,
     );
+    assert.equal(status.local_review_artifact_valid, true);
+    assert.equal(status.local_review_artifact_outcome, "conflict");
     assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.review_gate_ready, false);
-    assert.match(status.reasons.join(" "), /requested changes/);
+    assert.match(status.reasons.join(" "), /conflicting outcomes/);
   } finally {
     conflictingFixture.cleanup();
   }

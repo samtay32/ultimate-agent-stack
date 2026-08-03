@@ -4972,27 +4972,43 @@ function commandReviewStatus(target, runId, capturedGit = undefined) {
   const changesRequested = validReceipts.filter(
     (receipt) => receipt.result === "changes-requested",
   );
+  const validEvidenceCount = validReceipts.length + unavailable.length;
   const localArtifactReasons = [];
-  if (unavailable.length > 0) {
-    localArtifactReasons.push("local reviewer result was recorded as unavailable");
-  }
-  if (selectedEntries.length === 0) {
-    localArtifactReasons.push("no reviewer result receipt exists for this run");
-  }
-  if (passed.length === 0) {
-    localArtifactReasons.push("no reported passed reviewer result artifact exists");
-  }
-  if (changesRequested.length > 0) {
-    localArtifactReasons.push("a reported local reviewer result requested changes");
+  if (validEvidenceCount === 0) {
+    localArtifactReasons.push("no reviewer result evidence exists for this run");
   }
   if (invalidReceipts.length > 0) {
     localArtifactReasons.push(
       "local reviewer result artifact evidence is invalid, stale, altered, or dirty",
     );
   }
+  if (git.clean !== true) {
+    localArtifactReasons.push("current Git checkout is dirty");
+  }
   const localReviewArtifactValid =
-    git.clean === true && localArtifactReasons.length === 0;
+    validEvidenceCount > 0 && localArtifactReasons.length === 0;
+  const localReviewArtifactOutcome =
+    invalidReceipts.length > 0 || git.clean !== true
+      ? "invalid"
+      : validReceipts.length > 0 && unavailable.length > 0
+        ? "conflict"
+        : passed.length > 0 && changesRequested.length > 0
+          ? "conflict"
+          : passed.length > 0
+            ? "passed"
+            : changesRequested.length > 0
+              ? "changes-requested"
+              : unavailable.length > 0
+                ? "unavailable"
+                : "missing";
   const blockedReasons = [...localArtifactReasons];
+  if (localReviewArtifactOutcome === "changes-requested") {
+    blockedReasons.push("a reported local reviewer result requested changes");
+  } else if (localReviewArtifactOutcome === "unavailable") {
+    blockedReasons.push("local reviewer result was recorded as unavailable");
+  } else if (localReviewArtifactOutcome === "conflict") {
+    blockedReasons.push("local reviewer result evidence contains conflicting outcomes");
+  }
   if (validReceipts.length > 0) {
     blockedReasons.push(
       "agent-recorded local reviewer result cannot prove dispatch, identity, or independence",
@@ -5016,6 +5032,7 @@ function commandReviewStatus(target, runId, capturedGit = undefined) {
     invalid_receipts: invalidReceipts,
     local_review_artifact_valid: localReviewArtifactValid,
     local_review_artifact_reasons: localArtifactReasons,
+    local_review_artifact_outcome: localReviewArtifactOutcome,
     local_review_audit_passed: false,
     local_review_audit_reasons: localArtifactReasons,
     independent_reviewed: independentReviewed,
