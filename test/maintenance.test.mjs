@@ -468,18 +468,24 @@ test("PR-ready review guidance attempts native delegation before unavailable", (
   for (const source of [projectAgents, runDeliverySkill]) {
     assert.match(source, /fresh\/no-history|demonstrably sanitized session/i);
     assert.match(source, /bounded\s+read-only\s+reviewer/i);
-    assert.match(source, /without\s+the coordinator token|coordinator token/i);
-    assert.match(source, /isolation[\s\S]*(?:absent|failed|cannot be prevented|prevented\/verified|unverifiable)[\s\S]*review[\s`]+unavailable/i);
-    assert.match(source, /returned\s+reviewer\s+ID[\s\S]*result\s+bound\s+to\s+(?:the|that)\s+commit/i);
+    assert.match(source, /coordinator (?:state\/)?token/i);
+    assert.match(
+      source,
+      /(?:isolation[\s\S]*(?:absent|failed|cannot be prevented|prevented\/verified|unverifiable)[\s\S]*review[\s`]+unavailable|(?:absent, failed, or unverifiable|absent\/failed\/unverifiable)[\s\S]*isolation[\s\S]*review[\s`]+unavailable)/i,
+    );
+    assert.match(
+      source,
+      /returned\s+(?:reviewer\s+)?ID[\s\S]*result[\s\S]*(?:bound\s+to|to)\s+(?:the\s+|that\s+)?commit/i,
+    );
     assert.match(source, /never\s+(?:invent|fabricate)/i);
   }
   assert.match(
     projectAgents,
-    /checkout locator[\s\S]*exact\s+commit[\s\S]*intent\/acceptance\s+summary[\s\S]*read-only\s+scope/i,
+    /checkout locator[\s\S]*(?:exact\s+)?commit[\s\S]*intent\/acceptance(?:\s+summary)?[\s\S]*(?:read-only|review)\s+scope/i,
   );
   assert.match(
     projectAgents,
-    /parent\s+transcript(?:\/command)?\s+output[\s\S]*coordinator\s+state\/token[\s\S]*credentials[\s\S]*environment\s+secrets/i,
+    /parent\s+transcript(?:\/command)?(?:\s+|\/)output[\s\S]*coordinator\s+state\/token[\s\S]*credentials[\s\S]*environment\s+secrets/i,
   );
   assert.match(
     runDeliverySkill,
@@ -664,7 +670,7 @@ test("flexible intake stays ordered, proportionate, and source preserving", () =
 
 test("always-loaded delivery policy stays compact and routes detail to phase references", () => {
   const words = (source) => source.trim().split(/\s+/).length;
-  assert.ok(Buffer.byteLength(projectAgents) < 10_000);
+  assert.ok(Buffer.byteLength(projectAgents) < 9_800);
   assert.ok(words(projectAgents) <= 1_600);
   assert.ok(Buffer.byteLength(runDeliverySkill) < 9_000);
   assert.ok(words(runDeliverySkill) <= 1_150);
