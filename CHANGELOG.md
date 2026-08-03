@@ -4,6 +4,28 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ## Unreleased
 
+## 0.10.0 - 2026-08-02
+
+### Added
+
+- Durable, tamper-evident skill-activation receipts and exact-run activation
+  status derived from those receipts.
+- Local pre-PR independent-review and reviewer-unavailable receipts bound to a
+  distinct reviewer, exact run, clean Git commit, result artifact, and content
+  hash.
+- Portable `evidence activation-status`, `review record`, `review unavailable`,
+  and `review status` CLI commands.
+
+### Changed
+
+- Behavioral run records use schema version 3, keep all 28 scenarios in the
+  denominator, and derive activation and review outcomes from durable evidence.
+- Full PR readiness now requires both a passed exact-head independent review and
+  current successful verification; local receipts remain separate from protected
+  GitHub review receipts.
+- Git identity probes ignore ambient configuration and support SHA-1 and SHA-256
+  repositories without adding runtime dependencies.
+
 ### Fixed
 
 - Verification evidence now binds tamper detection to before/after clean exact
@@ -13,6 +35,15 @@ All notable changes to Ultimate Agent Stack are documented here.
   when project or check approval is incomplete.
 - Portable reviewer-result paths reject traversal, alternate separators,
   stream syntax, trailing dot/space components, and Windows device aliases.
+
+### Upgrade impact
+
+This is a compatible minor release. Existing project configuration remains
+valid. The normal upgrade flow installs the new receipt contracts and proposes
+changed managed files for explicit reconciliation without overwriting local
+customizations. Older run evidence cannot satisfy the new receipt-derived
+readiness gate; after upgrading, reconcile proposals and rerun project
+verification and independent review for current work.
 
 ## 0.9.2 - 2026-08-02
 
