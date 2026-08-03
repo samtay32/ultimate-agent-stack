@@ -899,7 +899,11 @@ test("local review receipts are audit evidence, not mechanical independence", ()
 test("delivery policy finalizes tracked work before the local review audit", () => {
   assert.match(
     deliveryPolicy,
-    /write every authorized tracked product,[\s\S]{0,180}checkpoint\/handoff,[\s\S]{0,180}before the final\s+exact clean commit/i,
+    /write every authorized tracked product,[\s\S]{0,180}checkpoint\/handoff[\s\S]{0,180}Commit them to the intended final clean HEAD[\s\S]{0,180}Run full configured verification against that exact clean HEAD/i,
+  );
+  assert.match(
+    deliveryPolicy,
+    /If verification or repair changes tracked state or HEAD, commit and rerun\s+verification on the new exact clean HEAD/i,
   );
   assert.match(
     deliveryPolicy,
@@ -911,8 +915,13 @@ test("delivery policy finalizes tracked work before the local review audit", () 
   );
   assert.match(
     deliveryPolicy,
-    /review record[\s\S]{0,180}--run RUN --reviewer-kind KIND --reviewer-id ID[\s\S]{0,180}--result-file \.agent-stack\/runs\/reviews\/<safe-id>\.json/i,
+    /review record[\s\S]{0,180}--run RUN --reviewer-kind KIND --reviewer-id ID[\s\S]{0,180}--result passed[\s\S]{0,180}--result-file \.agent-stack\/runs\/reviews\/final-review\.json/i,
   );
+  assert.match(
+    deliveryPolicy,
+    /Use `--result changes-requested` and a different safe literal filename/i,
+  );
+  assert.doesNotMatch(deliveryPolicy, /passed\|changes-requested|<safe-id>/);
   assert.match(deliveryPolicy, /shipped\s+reviewer-result contract/i);
   assert.match(
     deliveryPolicy,
@@ -920,11 +929,11 @@ test("delivery policy finalizes tracked work before the local review audit", () 
   );
   assert.match(
     deliveryPolicy,
-    /review status --run RUN[\s\S]{0,180}local_review_audit_passed:true/i,
+    /review status --run RUN[\s\S]{0,180}status --run RUN[\s\S]{0,180}local_review_audit_passed:true/i,
   );
   assert.match(
     deliveryPolicy,
-    /If it is false or stale, report blocked truthfully/i,
+    /report any false, stale, or blocked condition\s+truthfully/i,
   );
   assert.match(deliveryPolicy, /rather\s+than inspecting CLI source or help/i);
 });

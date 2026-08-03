@@ -428,6 +428,57 @@ test("a checkpoint commit after review makes the final local audit stale", () =>
   }
 });
 
+test("terminal verification and local audit bind the same clean final head", () => {
+  const fixture = createFixture();
+  try {
+    commandApproveChecks(
+      fixture.directory,
+      "Inspected the bounded fixture verification commands",
+    );
+    commit(fixture.directory, "approve fixture verification checks");
+    const checkpoint = commandCheckpoint(fixture.directory, {
+      objective: "Record the final delivery handoff before verification",
+      summary: "Tracked checkpoint evidence is committed before the local audit.",
+      status: "complete",
+      completed: ["Prepared the final delivery checkpoint"],
+      decisions: ["Verify the final clean head before local audit"],
+      nextSteps: [],
+      blockers: [],
+      evidence: ["package.json"],
+      token: fixture.token,
+    });
+    assert.equal(checkpoint.ok, true);
+    commit(fixture.directory, "commit final checkpoint before verification");
+    const finalHead = runGit(fixture.directory, ["rev-parse", "HEAD"]);
+
+    const verification = commandVerify(fixture.directory);
+    assert.equal(verification.ok, true);
+    const verificationEvidence = JSON.parse(
+      readFileSync(join(fixture.directory, verification.evidence), "utf8"),
+    );
+    assert.equal(verificationEvidence.git_before.head, finalHead);
+    assert.equal(verificationEvidence.git_after.head, finalHead);
+    const recorded = recordPassed(fixture);
+    assert.equal(recorded.receipt.git_commit, finalHead);
+    assert.equal(runGit(fixture.directory, ["rev-parse", "HEAD"]), finalHead);
+    assert.equal(runGit(fixture.directory, ["status", "--porcelain"]), "");
+
+    const review = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(review.local_review_audit_passed, true);
+    const status = commandStatus(fixture.directory, fixture.runId);
+    assert.equal(status.ok, true, JSON.stringify(status, null, 2));
+    assert.equal(status.verification.ok, true);
+    assert.deepEqual(status.verification.git, review.git);
+    assert.equal(
+      status.verification.reasons.some((reason) => /stale/i.test(reason)),
+      false,
+    );
+    assert.equal(status.readiness.pr_ready, true);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("dirty trees invalidate review readiness", () => {
   const fixture = createFixture();
   try {

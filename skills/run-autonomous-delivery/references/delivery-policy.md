@@ -74,12 +74,20 @@ Use repository artifacts rather than chat memory:
 
 ## Final Local Audit Sequence
 
-For DIRECT and end-to-end delivery, write every authorized tracked product,
-test, draft-evidence, checkpoint/handoff, and stack artifact before the final
-exact clean commit. Run verification, then commit all authorized tracked
-changes. Only after that commit, attempt one native bounded read-only reviewer
-when the harness supports it. The reviewer ID is the exact returned
-worker/thread/session ID, and reviewer kind describes that actual capability.
+For DIRECT and end-to-end delivery:
+
+1. Write every authorized tracked product, test, draft-evidence,
+   checkpoint/handoff, and stack artifact.
+2. Commit them to the intended final clean HEAD.
+3. Run full configured verification against that exact clean HEAD.
+4. If verification or repair changes tracked state or HEAD, commit and rerun
+   verification on the new exact clean HEAD.
+5. Only then attempt one native bounded read-only reviewer when the harness
+   supports it, serialize its returned result, and record the audit against
+   that same unchanged HEAD.
+
+The reviewer ID is the exact returned worker/thread/session ID, and reviewer
+kind describes that actual capability.
 
 Give the reviewer only the sanitized assignment allowed by `AGENTS.md`. The
 coordinator may serialize its returned inspectable result into the shipped
@@ -94,19 +102,23 @@ Record the returned result against that exact final clean head:
 ```bash
 node .agent-stack/bin/agent-stack.mjs review record \
   --run RUN --reviewer-kind KIND --reviewer-id ID \
-  --result passed|changes-requested \
-  --result-file .agent-stack/runs/reviews/<safe-id>.json \
+  --result passed \
+  --result-file .agent-stack/runs/reviews/final-review.json \
   --coordinator-token TOKEN
 node .agent-stack/bin/agent-stack.mjs review status --run RUN
 ```
 
+Use `--result changes-requested` and a different safe literal filename only
+when that is the returned result.
+
 After `review record`, make no tracked write or commit. Any changed HEAD or
 tracked tree makes the audit stale; repeat the audit against the new final
-head. Immediately before the final answer, run `review status --run RUN` and
-claim a recorded/passed local audit only when `local_review_audit_passed:true`.
-If it is false or stale, report blocked truthfully; receipt validation,
-candidate doctor, or prose is not a substitute. Use the commands above rather
-than inspecting CLI source or help to guess alternatives.
+head. Immediately before the final answer, run both `review status --run RUN`
+and `status --run RUN`. Claim a recorded/passed local audit only when
+`local_review_audit_passed:true`; report any false, stale, or blocked condition
+truthfully. Receipt validation, candidate doctor, or prose is not a substitute.
+Use the commands above rather than inspecting CLI source or help to guess
+alternatives.
 
 ## Recovery
 
