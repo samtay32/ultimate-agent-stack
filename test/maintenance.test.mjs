@@ -627,7 +627,10 @@ test("always-loaded delivery policy stays compact and routes detail to phase ref
     ["close-review-loop/references/review-closure-policy.md", reviewClosurePolicy],
   ];
   for (const [path, reference] of routes) {
-    assert.match(`${projectAgents}\n${runDeliverySkill}`, new RegExp(path.replace(/[.]/g, "\\.")));
+    assert.ok(
+      `${projectAgents}\n${runDeliverySkill}`.includes(path),
+      `${path} must remain reachable from always-loaded policy`,
+    );
     assert.ok(reference.length > 200, `${path} must retain its routed policy`);
   }
   assert.match(deliveryPolicy, /Human-owned unless pre-authorized/);
