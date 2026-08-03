@@ -106,6 +106,7 @@ node .agent-stack/bin/agent-stack.mjs review record \
   --result-file .agent-stack/runs/reviews/final-review.json \
   --coordinator-token TOKEN
 node .agent-stack/bin/agent-stack.mjs review status --run RUN
+node .agent-stack/bin/agent-stack.mjs status --run RUN
 ```
 
 Use `--result changes-requested` and a different safe literal filename only

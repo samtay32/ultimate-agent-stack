@@ -897,6 +897,11 @@ test("local review receipts are audit evidence, not mechanical independence", ()
 });
 
 test("delivery policy finalizes tracked work before the local review audit", () => {
+  const finalCommandBlock = deliveryPolicy.match(
+    /Record the returned result against that exact final clean head:\n\n```bash\n([\s\S]*?)\n```/,
+  );
+  assert.ok(finalCommandBlock, "delivery policy must include the final audit command block");
+  const finalCommands = finalCommandBlock[1];
   assert.match(
     deliveryPolicy,
     /write every authorized tracked product,[\s\S]{0,180}checkpoint\/handoff[\s\S]{0,180}Commit them to the intended final clean HEAD[\s\S]{0,180}Run full configured verification against that exact clean HEAD/i,
@@ -914,23 +919,21 @@ test("delivery policy finalizes tracked work before the local review audit", () 
     /must not invent a result or replace a missing\s+reviewer with self, primary, coordinator, or generic labels/i,
   );
   assert.match(
-    deliveryPolicy,
-    /review record[\s\S]{0,180}--run RUN --reviewer-kind KIND --reviewer-id ID[\s\S]{0,180}--result passed[\s\S]{0,180}--result-file \.agent-stack\/runs\/reviews\/final-review\.json/i,
+    finalCommands,
+    /review record[\s\S]{0,180}--run RUN --reviewer-kind KIND --reviewer-id ID[\s\S]{0,180}--result passed[\s\S]{0,180}--result-file \.agent-stack\/runs\/reviews\/final-review\.json[\s\S]{0,180}review status --run RUN[\s\S]{0,180}status --run RUN/i,
   );
   assert.match(
     deliveryPolicy,
     /Use `--result changes-requested` and a different safe literal filename/i,
   );
-  assert.doesNotMatch(deliveryPolicy, /passed\|changes-requested|<safe-id>/);
+  assert.doesNotMatch(finalCommands, /passed\|changes-requested|<safe-id>/);
   assert.match(deliveryPolicy, /shipped\s+reviewer-result contract/i);
   assert.match(
     deliveryPolicy,
     /After `review record`, make no tracked write or\s+commit[\s\S]{0,160}audit stale/i,
   );
-  assert.match(
-    deliveryPolicy,
-    /review status --run RUN[\s\S]{0,180}status --run RUN[\s\S]{0,180}local_review_audit_passed:true/i,
-  );
+  assert.match(finalCommands, /review status --run RUN[\s\S]{0,180}status --run RUN/i);
+  assert.match(deliveryPolicy, /local_review_audit_passed:true/i);
   assert.match(
     deliveryPolicy,
     /report any false, stale, or blocked condition\s+truthfully/i,
