@@ -5,97 +5,60 @@ description: Orchestrate a software request from raw intent through a verified p
 
 # Run Autonomous Delivery
 
-Own the execution loop. Keep the human at the intent and authority boundaries, not in the middle of routine engineering.
+Own the delivery loop. Keep the human at intent and authority boundaries, not
+in routine engineering. Read [Delivery Policy](references/delivery-policy.md)
+for tiers, authority, durable state, recovery, and convergence. Load each later
+phase skill and reference only when that phase becomes the immediate next step.
+This controller owns routine implementation and verification.
 
-## Definition of Done
+## Done means
 
-Do not say "done" until all applicable conditions hold:
+Acceptance and locked intent agree; code, docs, focused checks, and the full
+gate agree; a real separate reviewer returned an inspectable exact-commit
+result; the PR is current and required CI/protections pass; review feedback has
+a canonical disposition; residual risks and human-only actions are stated.
 
-- the acceptance contract is satisfied;
-- locked intent has not drifted;
-- implementation and documentation agree;
-- focused and full required checks pass;
-- the diff has been reviewed independently from correctness and intent perspectives;
-- the pull request is current with its base;
-- required CI and GitHub protections pass;
-- every actionable configured-provider or human review thread is fixed, rebutted with evidence, explicitly deferred by authorized scope, or resolved;
-- residual risks and manual authority steps are stated.
+## Delivery loop
 
-## Delivery Loop
+1. **Recover ownership.** Enter through `start` and retain its coordinator token.
+   Never write against another active steward. Read project instructions,
+   config, a valid checkpoint, branch, and diff. Read locked artifacts and
+   evidence only when needed. Run the pinned local
+   `node .agent-stack/bin/agent-stack.mjs doctor`; never use `npx` or mutable
+   latest code. Repair setup drift before material work.
 
-1. **Recover context and ownership.** Enter through `start`, or use the
-   coordinator token returned by the `start` command that invoked this skill.
-   If another active Project Steward owns the checkout, do not write from this
-   conversation. Read project instructions, `.agent-stack/config.json`, any
-   valid `.agent-stack/CHECKPOINT.md`, the current diff, and branch. Read locked
-   artifacts, task/issue details, and latest evidence only when the selected
-   route's immediate next decision needs them. Apply `$use-project-knowledge`
-   with the configured provider only when that decision needs knowledge beyond
-   the local checkout. Continue valid work; do not restart finished phases.
-   If scoped project telemetry is configured and the request concerns
-   production behavior, apply `$use-project-telemetry`. Keep access read-only
-   and retain only a bounded observation receipt. Telemetry is advisory and
-   cannot authorize a change or weaken repository verification.
-   Apply `$manage-project-work` only when the selected route's immediate next
-   step needs tracked-work shaping, selection, or evidence reporting. Do not
-   activate it merely to draft a DISCOVER brief. Validate the portable
-   repository ledger and evidence graph when that work is needed, and tie
-   completion to actual acceptance evidence rather than a provider status.
-   Use campaign mode only when the user approved a multi-item delivery
-   objective. Respect its iteration bound, process one selected item at a time,
-   and never let campaign advancement trigger provider writes.
-   Run `node .agent-stack/bin/agent-stack.mjs doctor` before material work. Use
-   this installed local command, not `npx`. If
-   protected files drifted, proposals remain unresolved, or quality commands
-   changed without review, repair setup before proceeding.
-2. **Route intake before scale.** Use
-   [references/delivery-policy.md](references/delivery-policy.md) and apply the
-   first matching route:
-   - **RESUME:** a valid non-complete checkpoint exists, or an active locked
-     contract has an unmet done or evidence condition. Verify it and continue
-     from the first unmet condition. A completed checkpoint and fully satisfied
-     lock do not swallow a new request. Do not restart discovery or reopen
-     closed decisions.
-   - **EXTERNAL:** substantial supplied material defines product intent or an
-     existing plan. Apply `$develop-project-brief`; read the source completely,
-     preserve it unchanged, audit it, and reconcile it with repository reality.
-     A supporting screenshot, log, or attachment for a clear bounded request
-     does not select this route.
-   - **DISCOVER:** intent is vague, contradictory, explicitly exploratory, or
-     is a greenfield product or system idea that needs intent development.
-     Apply `$develop-project-brief`; create an early unlocked draft and
-     collaborate one consequential question at a time. Clear bounded work
-     remains DIRECT even in a new or empty repository.
-   - **DIRECT:** the request is clear, bounded, testable, and compatible with
-     repository policy. Keep the existing micro-brief or compact shaping path.
-     Do not require `BRIEF.md`.
-   A request explicitly limited to brief refinement, source audit, or
-   reconciliation invokes `$develop-project-brief` directly instead of this
-   controller and stops before delivery. Explanation-only work invokes neither
-   skill.
-   For a vague, greenfield DISCOVER request, take the compact discovery path:
-   read this controller and `develop-project-brief` with its
-   `brief-contract.md` reference, then create the DRAFT brief, validate only
-   that changed artifact, and ask one consequential question. The durable DRAFT
-   is sufficient until the user answers: do not checkpoint, run
-   activation-status or readiness commands, print a full diff, or re-read
-   receipt output. Use only `git diff --check` and concise `git status --short`
-   if needed. Record only the required controller and brief activations using
-   the exact compact recipe in `AGENTS.md`. Do not inspect CLI source or help to
-   rediscover that recipe; do not read every artifact, skill, or reference;
-   do not activate optional provider, telemetry, work-management, or parallel
-   skills unless the next step requires them. Summarize command results instead
-   of pasting large command output into the conversation.
-3. **Shape, secure, and lock.** For an approved working brief, invoke
-   `$shape-project` to promote it into the canonical delivery, architecture,
-   security, verification, and decision contracts. Invoke `$shape-project`
-   directly for proportionate DIRECT work when needed. If the user requested
-   only a brief, stop after its approval without starting implementation.
-   Apply `$secure-launch` to classify exposure and derive only applicable
-   launch gates. Discover answers from the repository and authoritative
-   sources before asking. Read closed product decisions before proposing an
-   alternative. After EXTERNAL or DISCOVER promotion, lock all five canonical
-   contracts explicitly:
+2. **Route intake** using the first match: **RESUME** a non-complete checkpoint
+   or active lock with an unmet done or evidence condition; **EXTERNAL** when
+   substantial supplied material defines intent; **DISCOVER** vague,
+   contradictory, exploratory, or greenfield intent; otherwise **DIRECT** clear
+   bounded testable work. A supporting screenshot, log, or attachment does not
+   change clear work to EXTERNAL, and clear bounded work remains DIRECT in a new
+   repository. Completed state does not hijack a new request.
+
+   EXTERNAL and DISCOVER apply `$develop-project-brief`; preserve supplied
+   sources and reconcile them with repository reality. A request explicitly
+   limited to brief refinement, source audit, or reconciliation invokes that
+   skill directly and stops before delivery. Explanation-only work invokes
+   neither. DIRECT uses a proportionate micro-brief and needs no BRIEF.
+
+   For vague DISCOVER, read only this controller, the brief skill, and
+   `../develop-project-brief/references/brief-contract.md`; create and validate
+   the DRAFT, record the controller and brief activation receipts using the
+   exact recipe in `AGENTS.md`, ask one consequential question, and end the
+   turn. Do not inspect CLI source or help. Do not checkpoint or run
+   activation/readiness status, print a full diff, or re-read receipt output. Use only
+   `git diff --check` and concise `git status --short` if needed. Keep DISCOVER
+   serial; optional provider, knowledge, telemetry, work, and parallel skills
+   load only when the selected route's immediate next decision needs them.
+
+3. **Shape and secure.** For an approved brief, use `$shape-project` and its
+   [shaping contract](../shape-project/references/shaping-contract.md), then
+   `$secure-launch` and its
+   [security readiness](../secure-launch/references/security-readiness.md).
+   Artifact status is only `DRAFT` or `APPROVED`; lock state is protected CLI
+   state.
+   A failed or rejected guard never authorizes editing prerequisites. For
+   promoted EXTERNAL/DISCOVER work, lock all five contracts explicitly:
 
    ```bash
    node .agent-stack/bin/agent-stack.mjs lock \
@@ -106,111 +69,67 @@ Do not say "done" until all applicable conditions hold:
      --artifact .agent-stack/artifacts/DECISIONS.md
    ```
 
-   For proportionate DIRECT T0/T1 work, the bare `lock` command keeps the
-   configured smaller artifact selection.
+   DIRECT T0/T1 work uses the configured smaller bare `lock` selection.
 
-4. **Choose the execution strategy.** After routing and shaping, apply
-   `$coordinate-parallel-delivery` only when the immediate next step has two or
-   more independent work tracks. Keep DISCOVER brief work and its next question
-   serial. The primary agent owns every assignment and integration and never
-   makes the user manage workers.
-5. **Plan vertical slices.** Each slice must be user-observable or operationally demonstrable, independently verifiable, small enough for one focused context, and explicit about blockers.
-6. **Implement.** Own implementation in this controller one slice at a time.
-   Preserve the `$build-vertical-slice` quality contract: each slice is
-   demonstrable, focused checks pass, the repository remains runnable, and
-   docs or migrations stay current. End-to-end delivery does not require a
-   nested native activation of that phase skill. A request explicitly limited
-   to implementation may invoke `$build-vertical-slice` directly.
-7. **Verify.** Own verification in this controller. Run focused checks during
-   development and the deterministic full gate before review, and produce the
-   `$verify-change` evidence matrix with its binary readiness result.
-   End-to-end delivery does not require a nested native activation of that
-   phase skill. A request explicitly limited to verification may invoke
-   `$verify-change` directly.
-8. **Review adversarially.** Review two axes independently:
-   - standards: correctness, security, reliability, performance, maintainability, operations;
-   - intent: acceptance criteria, non-goals, UX, migrations, documentation, compatibility.
-   This independent pre-PR review does not activate `$close-review-loop`.
-   It is complete only after a real separate reviewer returns an inspectable
-   result for the exact commit. Primary-agent self-review is not independent.
-   If reviewer dispatch or result collection fails, preserve the tested work,
-   keep review and PR readiness blocked, and report the limitation without
-   manufacturing approval evidence.
-   Record a passed local result only through the portable `review record`
-   command, naming the exact clean Git head and a structured JSON result file
-   under `.agent-stack/runs/reviews/<safe-id>.json` with a bounded summary and
-   findings. `reviewer_id` must be nonempty and distinct from the coordinator
-   identity; `reviewer_kind` must be nonempty and may be the same string/label
-   as `reviewer_id`. These recorded fields do not authenticate distinct
-   physical-agent or provider identity. Check `review status --run RUN` and
-   stack `status --run RUN`.
-   If delegation or review is unavailable, use `review unavailable --run RUN
-   --reason REASON --details TEXT --coordinator-token TOKEN`; that receipt is a blocker and can never satisfy
-   the independent-review claim. Local pre-PR receipts remain separate from
-   protected GitHub review receipts.
-9. **Open or update the PR.** Use a draft while material work remains. Include intent, decisions, test evidence, migration/rollback notes, screenshots or recordings when visual behavior changed, and known risks.
-10. **Close feedback.** Apply `$close-review-loop` with the configured review
-    provider only for an existing pull request or an external provider or human
-    review thread. Repair in bounded batches, re-run the full gate, push,
-    re-trigger review when the provider supports it, and repeat until the
-    closure contract is met.
-11. **Checkpoint and preserve learning.** After verified milestones, use
-    `checkpoint --coordinator-token TOKEN` to record the objective, concise
-    summary, completed work, decisions, next steps, blockers, and existing
-    evidence paths. This repository handoff—not raw chat—is the continuity
-    record. Apply `$use-project-knowledge` after the final gate only when a
-    durable lesson worth preserving exists.
-    Capture only redacted, provenance-backed verified learning. Record reusable
-    procedures as non-executable skill candidates.
-12. **Hand off.** Write the completed checkpoint, release the coordinator
-    lease, then state the outcome, PR, evidence, decisions, residual risks, and
-    only actions requiring human authority.
+4. **Plan and implement vertical slices.** Apply
+   `$coordinate-parallel-delivery` only after routing when two independent
+   immediate tracks justify it; follow its
+   [delegation contract](../coordinate-parallel-delivery/references/delegation-contract.md).
+   The primary remains coordinator and integrator. Otherwise stay serial.
+   Implement one demonstrable slice at a time, keep the repository runnable,
+   and update tests, docs, and migrations. A request explicitly limited to
+   implementation may invoke `$build-vertical-slice`; end-to-end delivery does not
+   require its nested native activation.
 
-Before any destructive, irreversible, credential, financial, deployment,
-merge, or publication action, pause and obtain explicit human confirmation.
-The answer "use the recommendation" never authorizes one of these high-impact
-operations.
+5. **Verify.** Run focused checks, then the deterministic full gate. Produce the
+   `$verify-change`
+   [evidence matrix](../verify-change/references/verification-matrix.md) and
+   binary readiness result. A request explicitly limited to verification may
+   invoke `$verify-change`; end-to-end delivery does not require its nested
+   native activation. Missing or skipped required checks fail.
 
-For portable behavioral evaluation, keep the live request and serialized
-context at or below 2 KiB (target about 512 input tokens). Do not include a
-repository dump or expected skill names. This is a bounded prompt contract,
-not a universal model token meter; paid live-model tests are not part of the
-package gate.
+6. **Review adversarially.** Review correctness/security/reliability and
+   intent/acceptance/compatibility. A real separate reviewer returns an inspectable
+   result for the exact clean commit; primary-agent self-review is
+   not independent. Record a passed result only with `review record`, the same
+   run, distinct nonempty reviewer identity, and bounded structured result file.
+   If dispatch or collection fails, use `review unavailable`, preserve tested
+   work, and keep review and PR readiness blocked. Local receipts do not
+   authenticate physical identity and remain separate from protected GitHub
+   reviews. Check `review status --run RUN` and stack `status --run RUN`.
 
-## Control Rules
+7. **PR and feedback.** Keep a draft while material work remains. Include
+   intent, decisions, evidence, migration/rollback notes, visual proof when
+   applicable, and risks. Apply `$close-review-loop` only for an existing pull request
+   or provider/human review thread, using its
+   [Review Closure Policy](../close-review-loop/references/review-closure-policy.md).
+   Validate claims, repair bounded batches, run the full gate, push, and repeat.
 
-- Make reasonable, reversible, evidence-backed implementation choices without interrupting the user.
-- A question asking the user to accept a recommendation ends the turn. Never
-  continue as if the agent's own recommendation were approval.
-- A prior explicit instruction such as "use the recommendation" is approval for
-  that recommendation and should not trigger the same question again.
-- Ask one consequential question at a time for a new or ambiguous project.
-  Recommend the safest default in plain language, provide at most one genuinely
-  safe alternative when useful, explain the consequence, and accept "use the
-  recommendation." Do not ask the user to choose frameworks, commands, or
-  implementation details the repository can answer.
-- A non-technical instruction does not authorize weakening checks, security,
-  data safety, architecture constraints, or release controls. Preserve the
-  requested outcome through a safe mechanism.
-- One repair loop must produce new evidence. Stop after five non-converging repair loops and report the smallest blocking decision with attempted remedies.
-- Never weaken tests, checks, permissions, or acceptance criteria to manufacture green.
-- Never hide pre-existing failures. Prove they predate the change and record them separately.
-- Apply `$coordinate-parallel-delivery` only after routing when two or more
-  independent immediate work tracks justify it. Parallel work is bounded,
-  non-recursive, authority-preserving, isolated for writes, and always
-  integrated by the primary agent. Keep DISCOVER brief work serial and fall
-  back to serial work when any condition is unavailable.
-- Treat tokens, elapsed time, and tool calls as costs. Optimize verified outcomes, not agent activity.
-- Persist decisions and evidence in the repository so a fresh session can resume.
-- Preserve user-supplied sources unchanged. Persist only bounded redacted
-  provenance and claim dispositions unless a repository copy is both needed
-  and authorized.
-- Artifact status is only `DRAFT` or `APPROVED`; lock state exists only in the
-  protected CLI state. A rejected guard does not authorize editing its
-  prerequisites. Claims that something was added, fully read, reviewed,
-  locked, or made ready require the corresponding path and command/result
-  evidence.
-- Keep work-item and evidence-graph references current at verified transitions;
-  do not copy remote payloads into repository state.
-- Never give the coordinator token to a subagent. A subagent is a bounded
-  worker behind the Project Steward, not another coordinator.
+8. **Checkpoint and hand off.** At verified milestones, checkpoint concise
+   decisions, completed work, next steps, blockers, and existing evidence
+   paths—not raw chat. After the final gate, preserve only redacted verified
+   durable learning when useful. Release the lease and report outcome, PR,
+   evidence, risks, and human-only actions.
+
+## Control rules
+
+- Make reversible evidence-backed choices without interruption. Ask one
+  consequential question at a time. A question asking the user to accept a
+  recommendation ends the turn; a prior explicit instruction such as "use the
+  recommendation" is approval and should not trigger the same question again.
+- Pause before destructive, irreversible, credential, financial, deployment,
+  merge, release, or publication action unless explicitly authorized.
+- Never weaken tests, security, permissions, or acceptance criteria, hide
+  pre-existing failures, or claim evidence that does not exist.
+- Preserve supplied sources unchanged and locked decisions unless the product
+  owner authorizes the audited unlock/change/relock path.
+- Never give the coordinator token to a subagent. Delegation is bounded,
+  non-recursive, authority-preserving, isolated for writes, and verified by the
+  primary. Fall back to serial work if any condition is unavailable.
+- Each repair loop must produce new evidence and reduce findings. Stop after
+  five non-converging loops and report the blocker.
+- Keep live evaluation prompts and serialized context at or below 2 KiB
+  (target about 512 input tokens). Do not include repository dumps or expected
+  skill names. Paid live tests are outside deterministic package validation.
+- Stack enforcement covers stack-generated status, evidence, evaluation, and
+  readiness artifacts—not arbitrary model statements or untrusted project code.

@@ -158,6 +158,18 @@ const delegationContract = readFileSync(
   ),
   "utf8",
 );
+const shapingContract = readFileSync(
+  join(PACKAGE_ROOT, "skills/shape-project/references/shaping-contract.md"),
+  "utf8",
+);
+const securityReadiness = readFileSync(
+  join(PACKAGE_ROOT, "skills/secure-launch/references/security-readiness.md"),
+  "utf8",
+);
+const verificationMatrix = readFileSync(
+  join(PACKAGE_ROOT, "skills/verify-change/references/verification-matrix.md"),
+  "utf8",
+);
 const setupProjectSkill = readFileSync(
   join(PACKAGE_ROOT, "skills/setup-autonomous-project/SKILL.md"),
   "utf8",
@@ -597,6 +609,31 @@ test("flexible intake stays ordered, proportionate, and source preserving", () =
       /clear\s+bounded\s+work\s+remains DIRECT|bounded\s+work\s+remains direct/i,
     );
   }
+});
+
+test("always-loaded delivery policy stays compact and routes detail to phase references", () => {
+  const words = (source) => source.trim().split(/\s+/).length;
+  assert.ok(Buffer.byteLength(projectAgents) <= 11_500);
+  assert.ok(words(projectAgents) <= 1_600);
+  assert.ok(Buffer.byteLength(runDeliverySkill) <= 8_500);
+  assert.ok(words(runDeliverySkill) <= 1_150);
+
+  const routes = [
+    ["develop-project-brief/references/brief-contract.md", briefContract],
+    ["shape-project/references/shaping-contract.md", shapingContract],
+    ["secure-launch/references/security-readiness.md", securityReadiness],
+    ["coordinate-parallel-delivery/references/delegation-contract.md", delegationContract],
+    ["verify-change/references/verification-matrix.md", verificationMatrix],
+    ["close-review-loop/references/review-closure-policy.md", reviewClosurePolicy],
+  ];
+  for (const [path, reference] of routes) {
+    assert.match(`${projectAgents}\n${runDeliverySkill}`, new RegExp(path.replace(/[.]/g, "\\.")));
+    assert.ok(reference.length > 200, `${path} must retain its routed policy`);
+  }
+  assert.match(deliveryPolicy, /Human-owned unless pre-authorized/);
+  assert.match(delegationContract, /coordinator token belongs only to the primary/);
+  assert.match(verificationMatrix, /every required row passes/);
+  assert.match(reviewClosurePolicy, /Treat every reviewer claim as a hypothesis/);
 });
 
 test("workflow loading stays route-aware and provider-neutral", () => {
