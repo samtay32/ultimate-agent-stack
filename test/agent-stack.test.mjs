@@ -272,6 +272,30 @@ function initializeGit(directory) {
   assert.equal(result.status, 0, result.stderr);
 }
 
+function commitFixture(directory, message) {
+  const staged = spawnSync("git", ["-C", directory, "add", "-A"], {
+    encoding: "utf8",
+    shell: false,
+  });
+  assert.equal(staged.status, 0, staged.stderr);
+  const committed = spawnSync(
+    "git",
+    [
+      "-C",
+      directory,
+      "-c",
+      "user.name=Receipt Test",
+      "-c",
+      "user.email=receipt-test@example.com",
+      "commit",
+      "-m",
+      message,
+    ],
+    { encoding: "utf8", shell: false },
+  );
+  assert.equal(committed.status, 0, committed.stderr);
+}
+
 function createJavaScriptFixture(directory) {
   writeJson(join(directory, "package.json"), {
     name: "fixture",
@@ -5001,6 +5025,100 @@ test(
     }
   },
 );
+
+test("verification fails closed when the approved check changes Git HEAD", () => {
+  const fixture = temporaryProject();
+  try {
+    configureFixture(fixture.directory);
+    writeFileSync(
+      join(fixture.directory, "commit-during-verify.mjs"),
+      [
+        "import { spawnSync } from 'node:child_process';",
+        "import { writeFileSync } from 'node:fs';",
+        "writeFileSync('during-verify.txt', 'committed during verification\\n');",
+        "const add = spawnSync('git', ['add', 'during-verify.txt'], { encoding: 'utf8' });",
+        "if (add.status !== 0) process.exit(add.status ?? 1);",
+        "const commit = spawnSync('git', ['-c', 'user.name=Receipt Test', '-c', 'user.email=receipt-test@example.com', 'commit', '-m', 'during verification'], { encoding: 'utf8' });",
+        "process.exit(commit.status ?? 1);",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    const configFile = join(fixture.directory, CONFIG_PATH);
+    const config = readJson(configFile);
+    config.quality.checks = [
+      {
+        id: "commit-during-verify",
+        argv: ["node", "commit-during-verify.mjs"],
+        required: true,
+        timeout_seconds: 30,
+      },
+    ];
+    writeJson(configFile, config);
+    commandApproveChecks(
+      fixture.directory,
+      "Inspected the approved commit-changing fixture check",
+    );
+    commitFixture(fixture.directory, "approve commit-changing check");
+
+    const verification = commandVerify(fixture.directory);
+    assert.equal(verification.ok, false);
+    assert.match(
+      verification.configuration_errors.join("\n"),
+      /Git identity changed during verification/,
+    );
+    const evidence = readJson(
+      join(fixture.directory, ".agent-stack", "runs", "latest.json"),
+    );
+    assert.notEqual(evidence.git_before.head, evidence.git_after.head);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("verification fails closed when a check changes configuration", () => {
+  const fixture = temporaryProject();
+  try {
+    configureFixture(fixture.directory);
+    writeFileSync(
+      join(fixture.directory, "config-during-verify.mjs"),
+      [
+        "import { readFileSync, writeFileSync } from 'node:fs';",
+        "const path = '.agent-stack/config.json';",
+        "const config = JSON.parse(readFileSync(path, 'utf8'));",
+        "config.quality.environment.allow = ['LC_ALL'];",
+        "writeFileSync(path, JSON.stringify(config, null, 2) + '\\n');",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    const configFile = join(fixture.directory, CONFIG_PATH);
+    const config = readJson(configFile);
+    config.quality.checks = [
+      {
+        id: "config-during-verify",
+        argv: ["node", "config-during-verify.mjs"],
+        required: true,
+        timeout_seconds: 30,
+      },
+    ];
+    writeJson(configFile, config);
+    commandApproveChecks(
+      fixture.directory,
+      "Inspected the approved configuration-changing fixture check",
+    );
+    commitFixture(fixture.directory, "approve configuration-changing check");
+
+    const verification = commandVerify(fixture.directory);
+    assert.equal(verification.ok, false);
+    assert.match(
+      verification.configuration_errors.join("\n"),
+      /configuration changed during verification|checks or environment changed/,
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
 
 test("environment allowlist accepts names and rejects credential-bearing names", () => {
   const valid = safeConfig();

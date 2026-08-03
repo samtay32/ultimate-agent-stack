@@ -64,12 +64,36 @@ Every scenario defines:
 - load-bearing source claim IDs that must each receive exactly one
   `kept | tightened | rejected | deferred` disposition.
 
+Activation and review claims are structured rather than free-form. Each live
+case records an exact `run_id`, durable `activation_receipts`, and a derived
+`activation_status`; `activated_skills` must exactly equal the skills derived
+from valid receipt content. Every observed case includes a bounded
+`review_result_artifacts` snapshot array; cases that record local review also
+record `review_receipts` or `review_unavailable_receipts` and a derived
+`review_status`. Each
+snapshot contains exactly the project-relative `path` and exact UTF-8
+`content` copied from that case's reviewer-result file, including any final
+newline. There is exactly one snapshot for every review receipt result file;
+paths are unique and contents are bounded at 4 MiB. Direct delivery and the
+flexible direct bypass require a passed receipt whose commit equals the exact
+final head. The reviewer-unavailable edge case must remain blocked. These
+records claim only `agent-recorded` and do not authenticate a harness tool call
+or external review provider.
+
+The CLI `evidence activation-status` and `review status` results include stable
+project-relative `evidence_graph_path`, review receipt and unavailable
+directory fields, plus bounded evaluated receipt/result paths. These paths are
+references for inspection only; they never expose machine-specific absolute
+paths or expand the agent-recorded identity boundary.
+
 The additive evidence fields do not turn model behavior into a deterministic
 security control. A run collector records `question_count`,
 `max_questions_in_turn`, `question_tags`, `written_paths`, artifact states,
 observable outputs, and source-claim dispositions from inspectable traces and
 fixture snapshots. The evaluator validates those records; it does not observe
-the filesystem or authenticate the collector on its own.
+the broader project filesystem or authenticate the collector on its own. It
+mechanically checks the exact self-contained reviewer-result snapshots recorded
+inside each case.
 
 The negative case makes false activation a first-class failure. Adding more
 positive examples cannot compensate for an agent starting work when it should
@@ -95,8 +119,14 @@ This command:
    dispositions;
 2. reads the actual skill frontmatter and rejects unknown skill names;
 3. requires all eight categories and at least one false-activation case;
-4. rejects prompts that disclose a `$skill-name` command;
+4. rejects prompts that disclose an expected skill name or exceed the 2 KiB
+   request-plus-context budget;
 5. prints a SHA-256 hash over the behavioral surface.
+
+The 2 KiB limit is a deterministic prompt/context boundary (roughly a 512-token
+target), not a claim that every live model runtime exposes hard token accounting.
+Keep repository dumps and expected skill names out of live prompts. Paid
+live-model tests are intentionally outside package validation.
 
 The behavioral surface includes skills and their references, entry prompts,
 installed project instructions, native harness adapters, core policy, plugin
@@ -279,8 +309,18 @@ sufficient. Record:
 Then evaluate it:
 
 ```bash
-npm run eval:behavior -- --input /safe/temporary/path/uas-run.json
+npm run eval:behavior -- \
+  --input /safe/temporary/path/uas-run.json
 ```
+
+The evaluator requires every case to contain its bounded
+`review_result_artifacts` array. Each entry must contain only a safe
+project-relative `.agent-stack/runs/...json` `path` and the exact UTF-8 JSON
+`content` copied from that case's reviewer-result file. It rejects missing,
+duplicate, unreferenced, non-string, empty, oversized, malformed,
+hash-mismatched, or field-mismatched snapshots before deriving a review
+outcome. The snapshot boundary is self-contained per disposable case, so no
+filesystem root or cross-record artifact directory is needed.
 
 Do not turn one run into a reliability claim. Once two or more current run
 records exist, aggregate the observations by harness and model:
@@ -300,11 +340,21 @@ denominator. The command consumes existing records and does not launch models
 or create a harness. Like the underlying records, the rate does not
 authenticate a collector's truthfulness.
 
-New scaffolds use run-record schema version 2, which requires
+The `review_outcomes` section reports each derived review outcome—
+`not-required`, `passed`, and `blocked`—with `observed` and `attempts` counts
+and an `observed/attempts` rate for each scenario and outcome. Its attempts
+denominator is the number of complete case observations for that scenario,
+including behaviorally observed receipt misses or blocked outcomes. This is a
+separate denominator from `scenario_route_accuracy`, whose `28-scenario`
+route-accuracy denominator counts one route attempt per complete scenario
+record; do not interpret review-outcome counts as route-accuracy counts.
+
+New scaffolds use run-record schema version 3, which requires
 `source_claim_dispositions` and the other expanded observation fields in every
-case. Schema-version-1 records described the smaller pre-flexible-intake
-contract and are rejected; generate a fresh scaffold and rerun the current
-behavior surface instead of silently interpreting absent evidence as success.
+case. Schema-version-1 and schema-version-2 records described smaller
+pre-current contracts and are rejected; generate a fresh schema-version-3
+scaffold and rerun the current behavior surface instead of silently
+interpreting absent evidence as success.
 
 The evaluator fails when a required scenario is missing, a forbidden skill
 activates, a required skill does not activate, a question rule is violated, a

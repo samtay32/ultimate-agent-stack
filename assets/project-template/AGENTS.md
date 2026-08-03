@@ -95,6 +95,38 @@ retain the exposed trace outside project state and report that the receipt was
 not persisted. This is agent-recorded trace evidence, not independent proof
 that a harness tool call occurred.
 
+For a bounded run, inspect the derived activation result with
+`node .agent-stack/bin/agent-stack.mjs evidence activation-status --run RUN
+--require SKILL`. The command derives its answer only from exact-run activation
+receipts; a skill name in a prompt or free-form output is not activation
+evidence. The coordinator may record a local pre-PR review with
+`review record --run RUN --reviewer-kind KIND --reviewer-id ID --result
+passed|changes-requested --result-file .agent-stack/runs/reviews/<safe-id>.json
+--coordinator-token TOKEN`, or record an unavailable reviewer with `review
+unavailable --run RUN --reason REASON --details TEXT --coordinator-token
+TOKEN`. The result file is a bounded structured JSON artifact containing its
+schema version, exact run and Git commit, reviewer fields, result, bounded
+summary/findings, and review timestamp. `review status --run RUN` reports
+`review_gate_ready` and `independent_reviewed` only within the explicit
+agent-recorded/non-authenticated boundary. Stack `status --run RUN` is the
+full gate: it additionally requires healthy project/config state and the latest
+successful verification for the exact current clean Git head before its
+nested `readiness.pr_ready` can be true. Local receipts under
+`.agent-stack/review-receipts/` are separate from protected GitHub review
+receipts; unavailable, stale, altered, wrong-run, wrong-commit, dirty, empty,
+failed, malformed, or evidence with the same recorded reviewer and coordinator
+identity blocks independent review. These
+receipts are bounded and atomic; they do not prove that an external harness or
+review provider acted. Receipt and verification-check hashes detect content
+alteration but cannot authenticate a provider, agent, or editor. Distinct
+physical-agent provenance remains agent-recorded and non-authenticated.
+
+Keep live test prompts and context at or below 2 KiB. Do not include repository
+dumps or expected skill names in a live prompt. The prompt is an intake request,
+not a substitute for structured stack-generated status, evidence, evaluator, or
+readiness artifacts. Do not run paid live-model tests as part of deterministic
+package validation.
+
 A question that asks the user to accept a recommendation ends the turn. Do not
 continue as though the recommendation approved itself. A prior explicit
 instruction such as "use the recommendation" is approval and should not trigger

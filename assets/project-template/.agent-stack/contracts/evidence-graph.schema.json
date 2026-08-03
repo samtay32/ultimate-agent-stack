@@ -223,6 +223,10 @@
         },
         "claim": {
           "const": "agent-recorded"
+        },
+        "receipt_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
         }
       }
     }

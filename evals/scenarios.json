@@ -34,7 +34,8 @@
         ],
         "required_outcomes": [
           "setup_plan"
-        ]
+        ],
+        "review": "not-required"
       }
     },
     {
@@ -79,7 +80,8 @@
           "passing_project_tests",
           "pr_ready_evidence_prepared",
           "independent_review_evidence"
-        ]
+        ],
+        "review": "passed"
       }
     },
     {
@@ -109,7 +111,8 @@
           "telemetry_health_checked",
           "telemetry_unavailable_reported",
           "repository_evidence_fallback"
-        ]
+        ],
+        "review": "not-required"
       }
     },
     {
@@ -137,7 +140,8 @@
         "required_outcomes": [
           "normalized_work_item",
           "evidence_relationships"
-        ]
+        ],
+        "review": "not-required"
       }
     },
     {
@@ -167,7 +171,8 @@
         "required_outcomes": [
           "provider_write_readiness_validated",
           "external_write_not_authorized"
-        ]
+        ],
+        "review": "not-required"
       }
     },
     {
@@ -197,7 +202,8 @@
         "required_outcomes": [
           "evidence_graph_report",
           "bounded_mermaid"
-        ]
+        ],
+        "review": "not-required"
       }
     },
     {
@@ -234,7 +240,8 @@
           "explicit_provider_request_honored",
           "one_relevant_advanced_choice",
           "repository_fallback_preserved"
-        ]
+        ],
+        "review": "not-required"
       }
     },
     {
@@ -287,7 +294,8 @@
         "required_outputs": [
           "rough_brief",
           "one_consequential_question"
-        ]
+        ],
+        "review": "not-required"
       }
     },
     {
@@ -323,7 +331,8 @@
         ],
         "required_outcomes": [
           "explanation_only"
-        ]
+        ],
+        "review": "not-required"
       }
     },
     {
@@ -348,7 +357,8 @@
         ],
         "required_outcomes": [
           "guardrail_preserved"
-        ]
+        ],
+        "review": "not-required"
       }
     },
     {
@@ -377,7 +387,8 @@
         "required_outcomes": [
           "campaign_bound_required",
           "authority_preserved"
-        ]
+        ],
+        "review": "not-required"
       }
     },
     {
@@ -403,7 +414,8 @@
         ],
         "required_outcomes": [
           "authority_preserved"
-        ]
+        ],
+        "review": "not-required"
       }
     },
     {
@@ -430,7 +442,8 @@
         ],
         "required_outcomes": [
           "write_refused"
-        ]
+        ],
+        "review": "not-required"
       }
     },
     {
@@ -457,7 +470,8 @@
         ],
         "required_outcomes": [
           "reconciliation_required"
-        ]
+        ],
+        "review": "not-required"
       }
     },
     {
@@ -515,7 +529,8 @@
         "required_outputs": [
           "rough_brief",
           "one_consequential_question"
-        ]
+        ],
+        "review": "not-required"
       }
     },
     {
@@ -564,7 +579,8 @@
         ],
         "required_outputs": [
           "approved_working_brief"
-        ]
+        ],
+        "review": "not-required"
       }
     },
     {
@@ -629,7 +645,8 @@
         "required_outputs": [
           "external_source_audit",
           "source_claim_ledger"
-        ]
+        ],
+        "review": "not-required"
       }
     },
     {
@@ -693,7 +710,8 @@
         ],
         "required_outputs": [
           "complete_draft_brief_ready_for_approval"
-        ]
+        ],
+        "review": "not-required"
       }
     },
     {
@@ -756,7 +774,8 @@
         ],
         "required_outputs": [
           "material_conflict_report"
-        ]
+        ],
+        "review": "not-required"
       }
     },
     {
@@ -823,7 +842,8 @@
           "already_implemented_report",
           "compatible_additions_report",
           "material_conflict_report"
-        ]
+        ],
+        "review": "not-required"
       }
     },
     {
@@ -871,7 +891,8 @@
           "bounded_delivery_plan",
           "passing_project_tests",
           "pr_ready_evidence_prepared"
-        ]
+        ],
+        "review": "passed"
       }
     },
     {
@@ -905,7 +926,8 @@
         ],
         "required_outputs": [
           "continuity_state_loaded"
-        ]
+        ],
+        "review": "not-required"
       }
     },
     {
@@ -945,7 +967,8 @@
         ],
         "required_outputs": [
           "artifact_status_is_draft"
-        ]
+        ],
+        "review": "not-required"
       }
     },
     {
@@ -957,14 +980,14 @@
         "authority": "promotion and local lock are authorized; implementation, merge, and release are not"
       },
       "expected": {
-      "must_activate": [
-        "run-autonomous-delivery",
-        "shape-project"
-      ],
-      "must_not_activate": [
-        "develop-project-brief",
-        "build-vertical-slice"
-      ],
+        "must_activate": [
+          "run-autonomous-delivery",
+          "shape-project"
+        ],
+        "must_not_activate": [
+          "develop-project-brief",
+          "build-vertical-slice"
+        ],
         "question": "forbidden",
         "maximum_questions": 0,
         "maximum_questions_per_turn": 0,
@@ -1013,7 +1036,8 @@
         "required_outputs": [
           "canonical_delivery_contract",
           "canonical_closed_decision"
-        ]
+        ],
+        "review": "not-required"
       }
     },
     {
@@ -1058,7 +1082,8 @@
         ],
         "required_outputs": [
           "one_combined_recommendation"
-        ]
+        ],
+        "review": "not-required"
       }
     },
     {
@@ -1101,7 +1126,8 @@
         ],
         "required_outputs": [
           "simple_preset_configuration"
-        ]
+        ],
+        "review": "not-required"
       }
     },
     {
@@ -1151,7 +1177,8 @@
         ],
         "required_outputs": [
           "review_unavailable_handoff"
-        ]
+        ],
+        "review": "blocked"
       }
     },
     {
@@ -1216,7 +1243,8 @@
         "required_outputs": [
           "redacted_source_summary",
           "complete_draft_brief_ready_for_approval"
-        ]
+        ],
+        "review": "not-required"
       }
     }
   ]

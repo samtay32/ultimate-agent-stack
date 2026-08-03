@@ -208,7 +208,7 @@ test("all canonical fixtures materialize with deterministic base and git state",
           projectTreeSha256: result.receipt.project_tree_sha256,
         }),
       );
-      assert.match(result.git.head, /^[a-f0-9]{40}$/);
+      assert.match(result.git.head, /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/);
       assert.equal(result.git.branch, "main");
       assert.deepEqual(
         {

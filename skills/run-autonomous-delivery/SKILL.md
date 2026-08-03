@@ -119,6 +119,18 @@ Do not say "done" until all applicable conditions hold:
    If reviewer dispatch or result collection fails, preserve the tested work,
    keep review and PR readiness blocked, and report the limitation without
    manufacturing approval evidence.
+   Record a passed local result only through the portable `review record`
+   command, naming the exact clean Git head and a structured JSON result file
+   under `.agent-stack/runs/reviews/<safe-id>.json` with a bounded summary and
+   findings. `reviewer_id` must be nonempty and distinct from the coordinator
+   identity; `reviewer_kind` must be nonempty and may be the same string/label
+   as `reviewer_id`. These recorded fields do not authenticate distinct
+   physical-agent or provider identity. Check `review status --run RUN` and
+   stack `status --run RUN`.
+   If delegation or review is unavailable, use `review unavailable --run RUN
+   --reason REASON --details TEXT --coordinator-token TOKEN`; that receipt is a blocker and can never satisfy
+   the independent-review claim. Local pre-PR receipts remain separate from
+   protected GitHub review receipts.
 9. **Open or update the PR.** Use a draft while material work remains. Include intent, decisions, test evidence, migration/rollback notes, screenshots or recordings when visual behavior changed, and known risks.
 10. **Close feedback.** Apply `$close-review-loop` with the configured review
     provider only for an existing pull request or an external provider or human
@@ -140,6 +152,12 @@ Before any destructive, irreversible, credential, financial, deployment,
 merge, or publication action, pause and obtain explicit human confirmation.
 The answer "use the recommendation" never authorizes one of these high-impact
 operations.
+
+For portable behavioral evaluation, keep the live request and serialized
+context at or below 2 KiB (target about 512 input tokens). Do not include a
+repository dump or expected skill names. This is a bounded prompt contract,
+not a universal model token meter; paid live-model tests are not part of the
+package gate.
 
 ## Control Rules
 

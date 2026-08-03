@@ -91,6 +91,55 @@ notable preserved local paths. Counts summarize ordinary outcomes. The CLI
 returns the complete per-file JSON result by default for scripts and maintainers
 that need every outcome.
 
+## Mechanical Activation and Review Receipts
+
+Activation and readiness are derived from stack-generated receipts, not from
+skill names or approval prose in a model response:
+
+```bash
+node .agent-stack/bin/agent-stack.mjs evidence activation-status \
+  --run RUN --require SKILL
+node .agent-stack/bin/agent-stack.mjs review status --run RUN
+node .agent-stack/bin/agent-stack.mjs status --run RUN
+```
+
+The coordinator can record a local pre-PR result only with a clean exact Git
+head and a structured JSON reviewer artifact such as
+`.agent-stack/runs/reviews/<safe-id>.json`. The artifact is bounded and must
+contain `schema_version`, the exact `run_id` and `git_commit`, reviewer kind and
+identity, `result`, a summary, bounded findings, and `reviewed_at`. A reviewer
+identity must be nonempty and distinct from the coordinator; reviewer kind and
+identity need not be different strings. Missing, failed, unavailable, altered,
+stale, dirty, empty, wrong-run, wrong-commit, malformed, or evidence with the
+same recorded reviewer and coordinator identity keeps the review gate blocked.
+Local receipts are separate from protected
+GitHub review receipts, and claim only `agent-recorded`; they do not
+authenticate a harness or external provider. Receipt and verification-check
+hashes detect content alteration but cannot authenticate a provider, agent, or
+editor. `review unavailable` is a durable
+blocker, never a successful review claim.
+The distinct-physical-agent boundary remains agent-recorded and
+non-authenticated.
+
+`review status --run RUN` reports `review_gate_ready` and
+`independent_reviewed` within that agent-recorded boundary; it does not by
+itself claim the project is PR-ready. `status --run RUN` is the full project
+gate: it also requires healthy configuration and the latest successful
+stack-generated verification for the exact current clean Git head. Only then
+may its nested `readiness.pr_ready` be true.
+
+The ordinary `verify` command may run configured checks on a dirty
+worktree; `status --run RUN` still requires a clean exact-head verification.
+Verification records the checkout real path so evidence cannot be replayed in
+another checkout. This does not authenticate the writer or prevent same-path
+recomputation.
+
+For deterministic live evaluation, keep the request plus serialized context at
+or below 2 KiB (target roughly 512 input tokens), with no repository dumps or
+expected skill names. This is a portable prompt-size target, not a claim that
+every model runtime exposes hard token accounting. Package checks do not run
+paid live-model tests.
+
 ## Continuing in Another Conversation
 
 You do not have to keep an entire project in one enormous chat. Before leaving,

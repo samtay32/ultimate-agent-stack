@@ -26,6 +26,7 @@ sandbox and the Markdown skills are not executable security controls.
 | Restrict reviewed telemetry to fixed endpoints, bounded responses, source-hash-protected health operations, and configured project/account identity | Treat read-only project telemetry as advisory evidence |
 | Validate repository work and evidence vocabulary, bounds, dependencies, and graph endpoints | Keep external work synchronized and require real acceptance evidence |
 | Redact coordinator bearer tokens from text/JSONL evidence exports and fail closed on a remaining recognizable token | Keep private raw traces out of pull requests and other shared evidence |
+| Derive exact-run activation status and exact-head local pre-PR readiness from bounded atomic receipts; reject missing, failed, unavailable, altered, stale, dirty, wrong-run, wrong-commit, empty, or evidence with the same recorded reviewer and coordinator identity | Do not treat a receipt, prompt text, or model claim as proof that a harness or external reviewer actually acted |
 | Restrict Linear reads to fixed queries and writes to issue/comment creation with explicit authority, idempotency, and receipts | Create separate upstream Linear keys with only their documented permissions |
 | Limit campaigns to one eligible repository item and at most 25 iterations | Stop for consequential decisions and verify each selected item normally |
 | Keep package publishing behind the protected release workflow | Stop after bounded non-improving repair loops and report the blocker |
@@ -86,6 +87,28 @@ recorded; those remain verification and review responsibilities.
 Skill activation entries are explicitly labeled `agent-recorded`. They make
 routing inspectable across harnesses that expose different transcript detail,
 but they cannot independently prove that a native harness tool call occurred.
+
+The portable CLI also keeps local pre-PR review receipts under
+`.agent-stack/review-receipts/` and unavailable-review receipts under
+`.agent-stack/review-unavailable/`. They are deliberately separate from the
+protected GitHub review receipt helper. A local result file must be a bounded
+structured artifact under `.agent-stack/runs/reviews/<safe-id>.json`; it is
+cross-checked against the exact run, current Git head, reviewer fields, and
+result before a receipt is written. A local `review status --run RUN` result
+reports `review_gate_ready` only when a passed receipt names the exact current
+clean Git commit, the artifact is non-empty and hash-matches, and `reviewer_id`
+is nonempty and distinct from `coordinator_id`. `reviewer_kind` must also be
+nonempty, and reviewer kind and identity may be the same string/label. The CLI
+fails closed for missing, failed, unavailable, stale,
+altered, dirty, empty, malformed, wrong-run, wrong-commit, or evidence with the
+same recorded reviewer and coordinator identity. This protects stack-generated
+status/evidence/evaluator/readiness
+artifacts. Receipt and verification-check hashes detect alteration but cannot
+authenticate a provider, agent, or editor. It does not constrain arbitrary model text or prove that an external
+reviewer performed the work. `status --run RUN` is the broader project gate
+and requires current successful verification before `readiness.pr_ready`.
+Distinct physical-agent provenance remains agent-recorded and
+non-authenticated.
 
 Linear uses separate protected helpers for bounded reads and the two optional
 write operations. Writes are disabled by default. An approved write requires

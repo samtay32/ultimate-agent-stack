@@ -20,6 +20,12 @@ session and never record an activation before it occurs or without the
 coordinator token and repository-write authority. For read-only work, do not
 mutate the repository; report that the receipt was not persisted.
 
+Use `evidence activation-status --run RUN --require SKILL` for exact-run
+receipt-derived activation and `review status --run RUN` for local pre-PR
+readiness. Never replace these artifacts with skill names or approval prose;
+unavailable review evidence remains blocked. Keep live evaluation request plus
+context at or below 2 KiB, without repository dumps or expected skill names.
+
 Apply `$use-project-knowledge` with the configured provider and repository
 fallback. Apply
 `$coordinate-parallel-delivery` to choose serial or bounded native subagent

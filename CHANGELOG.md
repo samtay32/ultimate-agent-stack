@@ -4,6 +4,16 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 ## Unreleased
 
+### Fixed
+
+- Verification evidence now binds tamper detection to before/after clean exact
+  Git identity, the configured checkout, and revalidated check/configuration
+  fingerprints before readiness can pass.
+- Status readiness uses the exact current clean head and exposes health reasons
+  when project or check approval is incomplete.
+- Portable reviewer-result paths reject traversal, alternate separators,
+  stream syntax, trailing dot/space components, and Windows device aliases.
+
 ## 0.9.2 - 2026-08-02
 
 ### Changed

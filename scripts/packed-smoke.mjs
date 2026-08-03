@@ -78,6 +78,9 @@ function main() {
       ".gitattributes",
       "assets/project-template/CLAUDE.md",
       "assets/project-template/.agent-stack/artifacts/BRIEF.md",
+      "assets/project-template/.agent-stack/contracts/review-receipt.schema.json",
+      "assets/project-template/.agent-stack/contracts/review-unavailable.schema.json",
+      "assets/project-template/.agent-stack/contracts/reviewer-result.schema.json",
       "skills/develop-project-brief/SKILL.md",
       "skills/develop-project-brief/references/brief-contract.md",
       "skills/develop-project-brief/references/intake-and-reconciliation.md",
@@ -139,7 +142,7 @@ function main() {
       fixtureList.scenarios.some(
         (item) =>
           !/^sha256:[a-f0-9]{64}$/.test(item.fixture_receipt) ||
-          !/^[a-f0-9]{40}$/.test(
+          !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(
             item.expected_baseline?.git_head ?? "",
           ) ||
           !/^sha256:[a-f0-9]{64}$/.test(
@@ -361,6 +364,30 @@ function main() {
           "campaign-state.schema.json",
         ],
         "bounded campaign contract",
+      ],
+      [
+        [
+          ".agent-stack",
+          "contracts",
+          "review-receipt.schema.json",
+        ],
+        "local review receipt contract",
+      ],
+      [
+        [
+          ".agent-stack",
+          "contracts",
+          "review-unavailable.schema.json",
+        ],
+        "unavailable review contract",
+      ],
+      [
+        [
+          ".agent-stack",
+          "contracts",
+          "reviewer-result.schema.json",
+        ],
+        "structured reviewer result contract",
       ],
       [
         [".codex", "agents", "uas_researcher.toml"],

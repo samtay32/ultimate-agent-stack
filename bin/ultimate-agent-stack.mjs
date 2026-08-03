@@ -94,6 +94,34 @@ const TELEMETRY_CREDENTIAL_ENVIRONMENTS = Object.freeze({
 });
 const GBRAIN_CHECKPOINT_SLUG = "projects/ultimate-agent-stack/checkpoint";
 const RUNS_PATH = ".agent-stack/runs";
+const REVIEW_RECEIPTS_PATH = ".agent-stack/review-receipts";
+const REVIEW_UNAVAILABLE_PATH = ".agent-stack/review-unavailable";
+const MAX_REVIEW_RECEIPTS = 1_000;
+const MAX_REVIEW_UNAVAILABLE_RECEIPTS = 1_000;
+const MAX_REVIEW_RECEIPT_BYTES = 32 * 1024;
+const MAX_ACTIVATION_RECEIPTS_PER_RUN = 128;
+const MAX_REVIEW_RESULT_FILE_BYTES = 4 * 1024 * 1024;
+const MAX_REVIEW_SUMMARY_CHARS = 2_000;
+const MAX_REVIEW_FINDINGS = 64;
+const MAX_REVIEW_FINDING_CHARS = 1_000;
+const MAX_STATUS_EVIDENCE_PATHS = 128;
+const MAX_STATUS_REASONS = 32;
+const GIT_OBJECT_ID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
+const GIT_OBJECT_FORMATS = new Set(["sha1", "sha256"]);
+const RECEIPT_CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
+
+function gitObjectFormatForId(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  if (value.length === 40 && /^[a-f0-9]{40}$/.test(value)) {
+    return "sha1";
+  }
+  if (value.length === 64 && /^[a-f0-9]{64}$/.test(value)) {
+    return "sha256";
+  }
+  return null;
+}
 const PROJECT_CLI_PATH = ".agent-stack/bin/agent-stack.mjs";
 const PROJECT_PROCESS_HELPER_PATH =
   ".agent-stack/lib/portable-process.mjs";
@@ -520,6 +548,7 @@ const EVIDENCE_RELATIONS = new Set([
   "supersedes",
 ]);
 const SKILL_ACTIVATION_MODES = new Set(["native", "file-read"]);
+const REVIEW_RESULTS = new Set(["passed", "changes-requested"]);
 const EXTERNAL_DATA_POLICIES = new Set([
   "local_only",
   "approved_providers",
@@ -608,6 +637,43 @@ function sortValue(value) {
 
 function stableJson(value) {
   return JSON.stringify(sortValue(value));
+}
+
+function activationReceiptSha256(activation) {
+  const canonical = { ...activation };
+  delete canonical.receipt_sha256;
+  return sha256(stableJson(canonical));
+}
+
+function verificationReceiptSha256(evidence) {
+  const canonical = { ...evidence };
+  delete canonical.receipt_sha256;
+  return sha256(stableJson(canonical));
+}
+
+function verificationConfigSha256(config) {
+  return sha256(stableJson(config));
+}
+
+function publicGitIdentity(git) {
+  if (!git || typeof git !== "object") {
+    return null;
+  }
+  return {
+    head: git.head ?? null,
+    object_format: git.object_format ?? null,
+    clean: git.clean === true,
+  };
+}
+
+function requiredVerificationTimestamp(errors, value, label) {
+  if (
+    typeof value !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value) ||
+    Number.isNaN(Date.parse(value))
+  ) {
+    errors.push(`${label} must be a non-null ISO-8601 UTC timestamp`);
+  }
 }
 
 function atomicText(file, value, mode = 0o600) {
@@ -2928,6 +2994,7 @@ function validateEvidenceGraph(graph) {
         "skill_path",
         "skill_sha256",
         "claim",
+        "receipt_sha256",
       ]),
       label,
     );
@@ -2965,6 +3032,16 @@ function validateEvidenceGraph(graph) {
     }
     if (activation.claim !== "agent-recorded") {
       errors.push(`${label}.claim must equal agent-recorded`);
+    }
+    if (activation.receipt_sha256 !== undefined) {
+      if (
+        typeof activation.receipt_sha256 !== "string" ||
+        !/^[a-f0-9]{64}$/.test(activation.receipt_sha256)
+      ) {
+        errors.push(`${label}.receipt_sha256 must be a lowercase SHA-256 digest`);
+      } else if (activation.receipt_sha256 !== activationReceiptSha256(activation)) {
+        errors.push(`${label}.receipt_sha256 must match its canonical content hash`);
+      }
     }
     if (
       [
@@ -3232,7 +3309,7 @@ function validateProviderReceipt(receipt) {
   if (
     receipt.revision !== null &&
     (typeof receipt.revision !== "string" ||
-      !/^[a-f0-9]{40}$/.test(receipt.revision))
+      !GIT_OBJECT_ID.test(receipt.revision ?? ""))
   ) {
     errors.push("provider receipt revision must be a full Git commit or null");
   }
@@ -3883,10 +3960,11 @@ function commandEvidenceActivate(
   if (!SKILL_ACTIVATION_MODES.has(mode)) {
     throw new StackError("--mode must be native or file-read");
   }
+  const normalizedRunId = requireRunId(runId);
   for (const [name, value, maximum] of [
     ["--harness", harness, 120],
     ["--model", model, 120],
-    ["--run", runId, 200],
+    ["--run", normalizedRunId, 200],
     ["--event", eventId, 200],
   ]) {
     const errors = [];
@@ -3914,7 +3992,7 @@ function commandEvidenceActivate(
   const activationKey = stableJson({
     harness,
     model,
-    run_id: runId,
+    run_id: normalizedRunId,
     event_id: eventId,
   });
   const id = `skill-activation-${sha256(activationKey).slice(0, 20)}`;
@@ -3923,7 +4001,7 @@ function commandEvidenceActivate(
     mode,
     harness,
     model,
-    run_id: runId,
+    run_id: normalizedRunId,
     event_id: eventId,
     skill_path: installed.path,
     skill_sha256: hashFile(installed.file),
@@ -3944,6 +4022,31 @@ function commandEvidenceActivate(
         "Activation event idempotency conflict: the same harness, model, run, and event ID was already recorded with different metadata.",
       );
     }
+    if (existing.receipt_sha256 === undefined) {
+      existing.receipt_sha256 = activationReceiptSha256(existing);
+      graph.updated_at = utcTimestamp();
+      const upgradedErrors = validateEvidenceGraph(graph);
+      if (upgradedErrors.length > 0) {
+        throw new StackError(
+          "Cannot upgrade the legacy activation receipt in an invalid evidence graph.",
+          2,
+          upgradedErrors,
+        );
+      }
+      atomicJson(graphFile, graph);
+      return {
+        ok: true,
+        recorded: true,
+        reason: "legacy-receipt-upgraded",
+        result: "legacy-receipt-upgraded",
+        command: "evidence activate",
+        path: EVIDENCE_GRAPH_PATH,
+        evidence_graph_path: EVIDENCE_GRAPH_PATH,
+        activation: existing,
+        boundary:
+          "Agent-recorded evidence is not independent proof of a harness tool call.",
+      };
+    }
     return {
       ok: true,
       recorded: false,
@@ -3957,11 +4060,20 @@ function commandEvidenceActivate(
         "Agent-recorded evidence is not independent proof of a harness tool call.",
     };
   }
+  const runActivationCount = graph.skill_activations.filter(
+    (activation) => activation.run_id === normalizedRunId,
+  ).length;
+  if (runActivationCount >= MAX_ACTIVATION_RECEIPTS_PER_RUN) {
+    throw new StackError(
+      `A run may contain at most ${MAX_ACTIVATION_RECEIPTS_PER_RUN} activation receipts`,
+    );
+  }
   const activation = {
     id,
     recorded_at: utcTimestamp(),
     ...activationPayload,
   };
+  activation.receipt_sha256 = activationReceiptSha256(activation);
   graph.skill_activations.push(activation);
   graph.updated_at = activation.recorded_at;
   const updatedErrors = validateEvidenceGraph(graph);
@@ -3983,6 +4095,901 @@ function commandEvidenceActivate(
     activation,
     boundary:
       "Agent-recorded evidence is not independent proof of a harness tool call.",
+  };
+}
+
+function boundedReceiptText(value, label, maximum) {
+  if (
+    typeof value !== "string" ||
+    value.trim().length === 0 ||
+    value.length > maximum ||
+    RECEIPT_CONTROL_CHARACTERS.test(value)
+  ) {
+    throw new StackError(
+      `${label} must be a non-empty single-line string of at most ${maximum} characters`,
+    );
+  }
+  SECRET_ASSIGNMENT.lastIndex = 0;
+  if (SECRET_LIKE_TEXT.test(value) || SECRET_ASSIGNMENT.test(value)) {
+    SECRET_ASSIGNMENT.lastIndex = 0;
+    throw new StackError(`${label} must not contain credential-like text`);
+  }
+  SECRET_ASSIGNMENT.lastIndex = 0;
+  return value;
+}
+
+function reviewReceiptId(receipt) {
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
+    return null;
+  }
+  const canonical = { ...receipt };
+  delete canonical.receipt_id;
+  return sha256(stableJson(canonical));
+}
+
+function reviewUnavailableReceiptId(receipt) {
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
+    return null;
+  }
+  const canonical = { ...receipt };
+  delete canonical.receipt_id;
+  return sha256(stableJson(canonical));
+}
+
+function normalizeReviewerResultPath(value) {
+  if (
+    typeof value !== "string" ||
+    value.includes("\\") ||
+    RECEIPT_CONTROL_CHARACTERS.test(value)
+  ) {
+    return null;
+  }
+  const normalized = value.replace(/^\.\//, "");
+  if (
+    !normalized.startsWith(`${RUNS_PATH}/`) ||
+    !normalized.endsWith(".json") ||
+    normalized.length > 512 ||
+    basename(normalized) === ".json"
+  ) {
+    return null;
+  }
+  const components = normalized.split("/");
+  if (
+    components.some(
+      (component) =>
+        component.length === 0 ||
+        component === "." ||
+        component === ".." ||
+        component.includes(":") ||
+        /[. ]$/.test(component) ||
+        /^(?:con|prn|aux|nul|com(?:[1-9]|[¹²³])|lpt(?:[1-9]|[¹²³]))(?:\..*)?$/i.test(component),
+    )
+  ) {
+    return null;
+  }
+  return normalized;
+}
+
+function validateReviewerResultArtifact(artifact, expected = {}) {
+  const errors = [];
+  if (!artifact || typeof artifact !== "object" || Array.isArray(artifact)) {
+    return ["reviewer result artifact must be an object"];
+  }
+  rejectUnknownKeys(
+    errors,
+    artifact,
+    new Set([
+      "schema_version",
+      "run_id",
+      "git_commit",
+      "reviewer_kind",
+      "reviewer_id",
+      "result",
+      "summary",
+      "findings",
+      "reviewed_at",
+    ]),
+    "reviewer result artifact",
+  );
+  if (artifact.schema_version !== 1) {
+    errors.push("reviewer result artifact schema_version must equal 1");
+  }
+  for (const [key, maximum] of [
+    ["run_id", 200],
+    ["reviewer_kind", 120],
+    ["reviewer_id", 256],
+  ]) {
+    contractString(errors, artifact[key], `reviewer result artifact ${key}`, maximum);
+    if (
+      typeof artifact[key] === "string" &&
+      RECEIPT_CONTROL_CHARACTERS.test(artifact[key])
+    ) {
+      errors.push(`reviewer result artifact ${key} must be a single-line value`);
+    }
+  }
+  if (!GIT_OBJECT_ID.test(artifact.git_commit ?? "")) {
+    errors.push("reviewer result artifact git_commit must be a full Git commit");
+  }
+  if (!REVIEW_RESULTS.has(artifact.result)) {
+    errors.push("reviewer result artifact result must be passed or changes-requested");
+  }
+  if (
+    typeof artifact.summary !== "string" ||
+    artifact.summary.trim().length === 0 ||
+    artifact.summary.length > MAX_REVIEW_SUMMARY_CHARS ||
+    /[\0]/.test(artifact.summary)
+  ) {
+    errors.push(
+      `reviewer result artifact summary must be non-empty and at most ${MAX_REVIEW_SUMMARY_CHARS} characters`,
+    );
+  }
+  contractStringArray(errors, artifact.findings, "reviewer result artifact findings", {
+    maximumItems: MAX_REVIEW_FINDINGS,
+    maximumLength: MAX_REVIEW_FINDING_CHARS,
+  });
+  if (Array.isArray(artifact.findings)) {
+    for (const [index, finding] of artifact.findings.entries()) {
+      if (typeof finding === "string" && finding.trim().length === 0) {
+        errors.push(`reviewer result artifact findings[${index}] must be non-empty`);
+      }
+      if (typeof finding === "string" && /[\r\n\0]/.test(finding)) {
+        errors.push(`reviewer result artifact findings[${index}] must be single-line`);
+      }
+    }
+  }
+  if (
+    typeof artifact.reviewed_at !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(
+      artifact.reviewed_at,
+    ) ||
+    Number.isNaN(Date.parse(artifact.reviewed_at))
+  ) {
+    errors.push("reviewer result artifact reviewed_at must be a UTC timestamp");
+  }
+  for (const key of [
+    "run_id",
+    "git_commit",
+    "reviewer_kind",
+    "reviewer_id",
+    "result",
+  ]) {
+    if (expected[key] !== undefined && artifact[key] !== expected[key]) {
+      errors.push(`reviewer result artifact ${key} does not match the CLI receipt claim`);
+    }
+  }
+  return errors;
+}
+
+function readReviewerResultArtifact(target, receipt, resultFile) {
+  let artifact;
+  try {
+    artifact = readJson(resultFile, "reviewer result artifact");
+  } catch (error) {
+    return {
+      artifact: null,
+      errors: [error.message],
+    };
+  }
+  return {
+    artifact,
+    errors: validateReviewerResultArtifact(artifact, {
+      run_id: receipt.run_id,
+      git_commit: receipt.git_commit,
+      reviewer_kind: receipt.reviewer_kind,
+      reviewer_id: receipt.reviewer_id,
+      result: receipt.result,
+    }),
+  };
+}
+
+function validateReviewReceipt(receipt) {
+  const errors = [];
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
+    return ["review receipt must be an object"];
+  }
+  rejectUnknownKeys(
+    errors,
+    receipt,
+    new Set([
+      "schema_version",
+      "receipt_id",
+      "run_id",
+      "git_commit",
+      "git_object_format",
+      "coordinator_id",
+      "reviewer_kind",
+      "reviewer_id",
+      "result",
+      "result_file",
+      "result_file_sha256",
+      "recorded_at",
+      "claim",
+    ]),
+    "review receipt",
+  );
+  if (receipt.schema_version !== 1) {
+    errors.push("review receipt schema_version must equal 1");
+  }
+  if (
+    typeof receipt.receipt_id !== "string" ||
+    !/^[a-f0-9]{64}$/.test(receipt.receipt_id)
+  ) {
+    errors.push("review receipt receipt_id must be a sha256 hex digest");
+  } else if (receipt.receipt_id !== reviewReceiptId(receipt)) {
+    errors.push("review receipt receipt_id must match its canonical content hash");
+  }
+  for (const [key, maximum] of [
+    ["run_id", 200],
+    ["coordinator_id", 120],
+    ["reviewer_kind", 120],
+    ["reviewer_id", 256],
+  ]) {
+    contractString(errors, receipt[key], `review receipt ${key}`, maximum);
+    if (
+      typeof receipt[key] === "string" &&
+      RECEIPT_CONTROL_CHARACTERS.test(receipt[key])
+    ) {
+      errors.push(`review receipt ${key} must be a single-line value`);
+    }
+  }
+  if (
+    typeof receipt.reviewer_id === "string" &&
+    typeof receipt.coordinator_id === "string" &&
+    receipt.reviewer_id.trim().toLowerCase() ===
+      receipt.coordinator_id.trim().toLowerCase()
+  ) {
+    errors.push("review receipt reviewer must be distinct from the coordinator");
+  }
+  if (
+    typeof receipt.reviewer_kind === "string" &&
+    new Set(["coordinator", "primary", "project-steward"]).has(
+      receipt.reviewer_kind.trim().toLowerCase(),
+    )
+  ) {
+    errors.push("review receipt reviewer kind cannot identify the coordinator");
+  }
+  if (!GIT_OBJECT_ID.test(receipt.git_commit ?? "")) {
+    errors.push("review receipt git_commit must be a full Git commit");
+  }
+  if (
+    !GIT_OBJECT_FORMATS.has(receipt.git_object_format) ||
+    gitObjectFormatForId(receipt.git_commit) !== receipt.git_object_format
+  ) {
+    errors.push("review receipt git_object_format must match its full Git commit");
+  }
+  if (!REVIEW_RESULTS.has(receipt.result)) {
+    errors.push("review receipt result must be passed or changes-requested");
+  }
+  const normalizedResultFile = normalizeReviewerResultPath(receipt.result_file);
+  if (!normalizedResultFile) {
+    errors.push(
+      "review receipt result_file must be a JSON reviewer-result artifact under .agent-stack/runs/",
+    );
+  } else if (normalizedResultFile !== receipt.result_file) {
+    errors.push("review receipt result_file must use its canonical normalized path");
+  }
+  if (
+    typeof receipt.result_file_sha256 !== "string" ||
+    !/^sha256:[a-f0-9]{64}$/.test(receipt.result_file_sha256)
+  ) {
+    errors.push("review receipt result_file_sha256 must be a prefixed SHA-256 digest");
+  }
+  if (
+    typeof receipt.recorded_at !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(
+      receipt.recorded_at,
+    ) ||
+    Number.isNaN(Date.parse(receipt.recorded_at))
+  ) {
+    errors.push("review receipt recorded_at must be a UTC timestamp");
+  }
+  if (receipt.claim !== "agent-recorded") {
+    errors.push("review receipt claim must equal agent-recorded");
+  }
+  return errors;
+}
+
+function validateReviewUnavailableReceipt(receipt) {
+  const errors = [];
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
+    return ["review unavailable receipt must be an object"];
+  }
+  rejectUnknownKeys(
+    errors,
+    receipt,
+    new Set([
+      "schema_version",
+      "receipt_id",
+      "run_id",
+      "coordinator_id",
+      "reason",
+      "details",
+      "recorded_at",
+      "claim",
+      "status",
+    ]),
+    "review unavailable receipt",
+  );
+  if (receipt.schema_version !== 1) {
+    errors.push("review unavailable receipt schema_version must equal 1");
+  }
+  if (
+    typeof receipt.receipt_id !== "string" ||
+    !/^[a-f0-9]{64}$/.test(receipt.receipt_id)
+  ) {
+    errors.push("review unavailable receipt receipt_id must be a sha256 hex digest");
+  } else if (receipt.receipt_id !== reviewUnavailableReceiptId(receipt)) {
+    errors.push(
+      "review unavailable receipt receipt_id must match its canonical content hash",
+    );
+  }
+  for (const [key, maximum] of [
+    ["run_id", 200],
+    ["coordinator_id", 120],
+    ["reason", 200],
+    ["details", 2_000],
+  ]) {
+    contractString(errors, receipt[key], `review unavailable receipt ${key}`, maximum);
+    if (
+      typeof receipt[key] === "string" &&
+      RECEIPT_CONTROL_CHARACTERS.test(receipt[key])
+    ) {
+      errors.push(`review unavailable receipt ${key} must be a single-line value`);
+    }
+  }
+  if (receipt.claim !== "agent-recorded") {
+    errors.push("review unavailable receipt claim must equal agent-recorded");
+  }
+  if (receipt.status !== "unavailable") {
+    errors.push("review unavailable receipt status must equal unavailable");
+  }
+  if (
+    typeof receipt.recorded_at !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(
+      receipt.recorded_at,
+    ) ||
+    Number.isNaN(Date.parse(receipt.recorded_at))
+  ) {
+    errors.push("review unavailable receipt recorded_at must be a UTC timestamp");
+  }
+  return errors;
+}
+
+function reviewReceiptDirectory(target, raw, label, maximum, validator) {
+  const errors = [];
+  let directory;
+  try {
+    directory = projectFileWithoutSymlinkComponents(target, raw, label);
+  } catch (error) {
+    return { entries: [], errors: [error.message] };
+  }
+  if (!existsSync(directory)) {
+    return { entries: [], errors: [] };
+  }
+  if (lstatSync(directory).isSymbolicLink() || !statSync(directory).isDirectory()) {
+    return { entries: [], errors: [`${raw} must be a real project directory`] };
+  }
+  const names = readdirSync(directory).sort();
+  const receiptNames = names.filter((name) => name !== ".gitkeep");
+  if (receiptNames.length > maximum) {
+    errors.push(`${raw} exceeds the ${maximum} receipt limit`);
+  }
+  const entries = [];
+  for (const name of receiptNames.slice(0, maximum + 1)) {
+    if (!/^[a-f0-9]{64}\.json$/.test(name)) {
+      errors.push(`${raw} contains an invalid receipt file name: ${name}`);
+      continue;
+    }
+    const relativePath = `${raw}/${name}`;
+    try {
+      const file = projectFileWithoutSymlinkComponents(
+        target,
+        relativePath,
+        label,
+      );
+      if (lstatSync(file).isSymbolicLink() || !statSync(file).isFile()) {
+        errors.push(`${relativePath} must be a real project file`);
+        continue;
+      }
+      if (statSync(file).size > MAX_REVIEW_RECEIPT_BYTES) {
+        errors.push(
+          `${relativePath} exceeds the ${MAX_REVIEW_RECEIPT_BYTES}-byte receipt limit`,
+        );
+        continue;
+      }
+      const receipt = readJson(file, label);
+      const receiptErrors = validator(receipt);
+      if (receipt.receipt_id !== name.slice(0, -5)) {
+        receiptErrors.push(`${relativePath} file name must match receipt_id`);
+      }
+      entries.push({ path: relativePath, file, receipt, errors: receiptErrors });
+    } catch (error) {
+      errors.push(`${relativePath}: ${error.message}`);
+    }
+  }
+  return { entries, errors };
+}
+
+function reviewReceiptCurrentErrors(target, receipt, git) {
+  const errors = [];
+  if (git?.identity_error) {
+    errors.push(git.identity_error);
+  }
+  if (!git || git.head === null || git.clean !== true) {
+    errors.push("review evidence requires a clean Git working tree");
+  }
+  if (git?.head !== receipt.git_commit) {
+    errors.push("review receipt git_commit is stale or does not match current HEAD");
+  }
+  if (git?.object_format !== receipt.git_object_format) {
+    errors.push("review receipt git_object_format is stale or does not match current Git");
+  }
+  let resultFile;
+  try {
+    resultFile = projectFileWithoutSymlinkComponents(
+      target,
+      receipt.result_file,
+      "review result file",
+    );
+  } catch (error) {
+    errors.push(error.message);
+    return errors;
+  }
+  if (!existsSync(resultFile)) {
+    errors.push("review result file is missing");
+    return errors;
+  }
+  if (lstatSync(resultFile).isSymbolicLink() || !statSync(resultFile).isFile()) {
+    errors.push("review result file must be a regular non-symlink file");
+    return errors;
+  }
+  const size = statSync(resultFile).size;
+  if (size === 0) {
+    errors.push("review result file must be non-empty");
+  }
+  if (size > MAX_REVIEW_RESULT_FILE_BYTES) {
+    errors.push(
+      `review result file exceeds the ${MAX_REVIEW_RESULT_FILE_BYTES}-byte limit`,
+    );
+  }
+  if (size > 0 && size <= MAX_REVIEW_RESULT_FILE_BYTES) {
+    const actual = `sha256:${hashFile(resultFile)}`;
+    if (actual !== receipt.result_file_sha256) {
+      errors.push("review result file hash does not match the receipt");
+    }
+    const artifactResult = readReviewerResultArtifact(target, receipt, resultFile);
+    errors.push(...artifactResult.errors);
+  }
+  return errors;
+}
+
+function statusEvidencePaths({
+  evaluatedReceiptPaths = [],
+  evaluatedResultPaths = [],
+} = {}) {
+  const bounded = (values) => {
+    const unique = [...new Set(values)].filter(
+      (value) => typeof value === "string" && value.length > 0,
+    );
+    return {
+      values: unique.slice(0, MAX_STATUS_EVIDENCE_PATHS),
+      truncated: unique.length > MAX_STATUS_EVIDENCE_PATHS,
+    };
+  };
+  const receipts = bounded(evaluatedReceiptPaths);
+  const results = bounded(evaluatedResultPaths);
+  return {
+    evidence_graph_path: EVIDENCE_GRAPH_PATH,
+    review_receipts_directory: REVIEW_RECEIPTS_PATH,
+    review_unavailable_directory: REVIEW_UNAVAILABLE_PATH,
+    evaluated_receipt_paths: receipts.values,
+    evaluated_receipt_paths_truncated: receipts.truncated,
+    evaluated_result_paths: results.values,
+    evaluated_result_paths_truncated: results.truncated,
+  };
+}
+
+function requireRunId(runId, label = "--run") {
+  return boundedReceiptText(runId, label, 200);
+}
+
+function activationReceiptContentErrors(target, activation) {
+  const errors = [];
+  if (typeof activation.receipt_sha256 !== "string") {
+    errors.push("legacy activation receipt lacks receipt_sha256 and cannot satisfy a current activation request");
+  } else if (activation.receipt_sha256 !== activationReceiptSha256(activation)) {
+    errors.push("activation receipt content hash is invalid");
+  }
+  try {
+    const installed = installedSkillFile(
+      target,
+      activation.skill,
+      activation.skill_path,
+    );
+    if (installed.path !== activation.skill_path) {
+      errors.push("activation receipt skill_path is not canonical");
+    }
+    if (hashFile(installed.file) !== activation.skill_sha256) {
+      errors.push("activation receipt installed skill hash does not match the receipt");
+    }
+  } catch (error) {
+    errors.push(error.message);
+  }
+  return errors;
+}
+
+function activationStatusForRun(target, runId, requiredSkills = []) {
+  const normalizedRunId = requireRunId(runId);
+  const required = [...new Set(requiredSkills)];
+  if (required.length > MAX_ACTIVATION_RECEIPTS_PER_RUN) {
+    throw new StackError(
+      `--require may contain at most ${MAX_ACTIVATION_RECEIPTS_PER_RUN} skills`,
+    );
+  }
+  for (const skill of required) {
+    if (!contractIdentifier(skill)) {
+      throw new StackError("--require values must be canonical skill names");
+    }
+  }
+  const graphFile = projectFileWithoutSymlinkComponents(
+    target,
+    EVIDENCE_GRAPH_PATH,
+    "evidence graph",
+  );
+  let graph;
+  try {
+    graph = readJson(graphFile, "evidence graph");
+  } catch (error) {
+    return {
+      ok: false,
+      command: "evidence activation-status",
+      ...statusEvidencePaths({ evaluatedReceiptPaths: [EVIDENCE_GRAPH_PATH] }),
+      run_id: normalizedRunId,
+      required_skills: required,
+      activated_skills: [],
+      missing_skills: required,
+      receipts: [],
+      errors: [error instanceof Error ? error.message : String(error)],
+      status: "blocked",
+      boundary:
+        "Activation status is derived only from durable agent-recorded receipts; it is not independent proof of a harness tool call.",
+    };
+  }
+  const graphErrors = validateEvidenceGraph(graph);
+  if (graphErrors.length > 0) {
+    return {
+      ok: false,
+      command: "evidence activation-status",
+      ...statusEvidencePaths({ evaluatedReceiptPaths: [EVIDENCE_GRAPH_PATH] }),
+      run_id: normalizedRunId,
+      required_skills: required,
+      activated_skills: [],
+      missing_skills: required,
+      receipts: [],
+      errors: graphErrors,
+      status: "blocked",
+      boundary:
+        "Activation status is derived only from durable agent-recorded receipts; it is not independent proof of a harness tool call.",
+    };
+  }
+  const receipts = (graph.skill_activations ?? []).filter(
+    (activation) => activation.run_id === normalizedRunId,
+  );
+  if (receipts.length > MAX_ACTIVATION_RECEIPTS_PER_RUN) {
+    return {
+      ok: false,
+      command: "evidence activation-status",
+      ...statusEvidencePaths({ evaluatedReceiptPaths: [EVIDENCE_GRAPH_PATH] }),
+      run_id: normalizedRunId,
+      required_skills: required,
+      activated_skills: [],
+      missing_skills: required,
+      receipts: [],
+      errors: [
+        `run ${normalizedRunId} exceeds the ${MAX_ACTIVATION_RECEIPTS_PER_RUN}-receipt activation bound`,
+      ],
+      status: "blocked",
+      boundary:
+        "Activation status is derived only from durable agent-recorded receipts; it is not independent proof of a harness tool call.",
+    };
+  }
+  const validReceipts = [];
+  const receiptErrors = [];
+  for (const receipt of receipts) {
+    const errors = activationReceiptContentErrors(target, receipt);
+    if (errors.length === 0) {
+      validReceipts.push(receipt);
+    } else {
+      receiptErrors.push(
+        ...errors.map((error) => `activation ${receipt.id}: ${error}`),
+      );
+    }
+  }
+  const activated = [...new Set(validReceipts.map((receipt) => receipt.skill))].sort();
+  const missing = required.filter((skill) => !activated.includes(skill));
+  return {
+    ok: missing.length === 0 && receiptErrors.length === 0,
+    command: "evidence activation-status",
+    ...statusEvidencePaths({ evaluatedReceiptPaths: [EVIDENCE_GRAPH_PATH] }),
+    run_id: normalizedRunId,
+    required_skills: required,
+    activated_skills: activated,
+    missing_skills: missing,
+    receipts: validReceipts,
+    errors: receiptErrors,
+    status: missing.length === 0 && receiptErrors.length === 0 ? "satisfied" : "blocked",
+    boundary:
+      "Activation status is derived only from durable agent-recorded receipts; it is not independent proof of a harness tool call.",
+  };
+}
+
+function commandEvidenceActivationStatus(target, options) {
+  return activationStatusForRun(target, options.runId, options.requiredSkills);
+}
+
+function commandReviewRecord(target, options) {
+  const coordinator = requireCoordinator(target, options.coordinatorToken);
+  const runId = requireRunId(options.runId);
+  const reviewerKind = boundedReceiptText(
+    options.reviewerKind,
+    "--reviewer-kind",
+    120,
+  );
+  const reviewerId = boundedReceiptText(
+    options.reviewerId,
+    "--reviewer-id",
+    256,
+  );
+  if (!REVIEW_RESULTS.has(options.result)) {
+    throw new StackError(
+      "--result must be passed or changes-requested",
+    );
+  }
+  const normalizedResultFile = normalizeReviewerResultPath(options.resultFile);
+  if (!normalizedResultFile) {
+    throw new StackError(
+      "--result-file must name a JSON reviewer-result artifact under .agent-stack/runs/",
+    );
+  }
+  const resultFile = projectFileWithoutSymlinkComponents(
+    target,
+    normalizedResultFile,
+    "review result file",
+  );
+  if (!existsSync(resultFile)) {
+    throw new StackError("--result-file must name an existing project file");
+  }
+  if (lstatSync(resultFile).isSymbolicLink() || !statSync(resultFile).isFile()) {
+    throw new StackError("--result-file must name a regular non-symlink project file");
+  }
+  const size = statSync(resultFile).size;
+  if (size === 0 || size > MAX_REVIEW_RESULT_FILE_BYTES) {
+    throw new StackError(
+      `--result-file must be non-empty and at most ${MAX_REVIEW_RESULT_FILE_BYTES} bytes`,
+    );
+  }
+  const git = gitSnapshot(target);
+  if (!git || git.clean !== true || !GIT_OBJECT_ID.test(git.head ?? "")) {
+    throw new StackError(
+      "review record requires a clean Git working tree at an exact commit",
+      2,
+      { git },
+    );
+  }
+  const artifact = readJson(resultFile, "reviewer result artifact");
+  const artifactErrors = validateReviewerResultArtifact(artifact, {
+    run_id: runId,
+    git_commit: git.head,
+    reviewer_kind: reviewerKind,
+    reviewer_id: reviewerId,
+    result: options.result,
+  });
+  if (artifactErrors.length > 0) {
+    throw new StackError(
+      "Refusing to record an unvalidated reviewer result artifact",
+      2,
+      artifactErrors,
+    );
+  }
+  const receipt = {
+    schema_version: 1,
+    run_id: artifact.run_id,
+    git_commit: artifact.git_commit,
+    git_object_format: git.object_format,
+    coordinator_id: coordinator.lease.coordinator_id,
+    reviewer_kind: artifact.reviewer_kind,
+    reviewer_id: artifact.reviewer_id,
+    result: artifact.result,
+    result_file: normalizedResultFile,
+    result_file_sha256: `sha256:${hashFile(resultFile)}`,
+    recorded_at: utcTimestamp(),
+    claim: "agent-recorded",
+  };
+  const receiptWithId = {
+    receipt_id: reviewReceiptId(receipt),
+    ...receipt,
+  };
+  const errors = validateReviewReceipt(receiptWithId);
+  if (errors.length > 0) {
+    throw new StackError("Refusing to write an invalid review receipt", 2, errors);
+  }
+  const directory = projectFileWithoutSymlinkComponents(
+    target,
+    REVIEW_RECEIPTS_PATH,
+    "review receipts directory",
+  );
+  if (existsSync(directory) && lstatSync(directory).isSymbolicLink()) {
+    throw new StackError("review receipts directory must not be a symlink");
+  }
+  if (
+    existsSync(directory) &&
+    readdirSync(directory).filter((name) => name !== ".gitkeep").length >=
+      MAX_REVIEW_RECEIPTS
+  ) {
+    throw new StackError(
+      `review receipts are limited to ${MAX_REVIEW_RECEIPTS} files`,
+    );
+  }
+  const path = `${REVIEW_RECEIPTS_PATH}/${receiptWithId.receipt_id}.json`;
+  atomicProjectJson(target, path, receiptWithId, "local review receipt");
+  return {
+    ok: true,
+    command: "review record",
+    recorded: true,
+    path,
+    receipt: receiptWithId,
+    boundary:
+      "This is an agent-recorded local pre-PR receipt. It is separate from protected GitHub review receipts and is not external-provider authentication.",
+  };
+}
+
+function commandReviewUnavailable(target, options) {
+  const coordinator = requireCoordinator(target, options.coordinatorToken);
+  const receipt = {
+    schema_version: 1,
+    run_id: requireRunId(options.runId),
+    coordinator_id: coordinator.lease.coordinator_id,
+    reason: boundedReceiptText(options.reason, "--reason", 200),
+    details: boundedReceiptText(options.details, "--details", 2_000),
+    recorded_at: utcTimestamp(),
+    claim: "agent-recorded",
+    status: "unavailable",
+  };
+  const receiptWithId = {
+    receipt_id: reviewUnavailableReceiptId(receipt),
+    ...receipt,
+  };
+  const errors = validateReviewUnavailableReceipt(receiptWithId);
+  if (errors.length > 0) {
+    throw new StackError(
+      "Refusing to write an invalid review unavailable receipt",
+      2,
+      errors,
+    );
+  }
+  const directory = projectFileWithoutSymlinkComponents(
+    target,
+    REVIEW_UNAVAILABLE_PATH,
+    "review unavailable directory",
+  );
+  if (existsSync(directory) && lstatSync(directory).isSymbolicLink()) {
+    throw new StackError("review unavailable directory must not be a symlink");
+  }
+  if (
+    existsSync(directory) &&
+    readdirSync(directory).filter((name) => name !== ".gitkeep").length >=
+      MAX_REVIEW_UNAVAILABLE_RECEIPTS
+  ) {
+    throw new StackError(
+      `review unavailable receipts are limited to ${MAX_REVIEW_UNAVAILABLE_RECEIPTS} files`,
+    );
+  }
+  const path = `${REVIEW_UNAVAILABLE_PATH}/${receiptWithId.receipt_id}.json`;
+  atomicProjectJson(target, path, receiptWithId, "review unavailable receipt");
+  return {
+    ok: true,
+    command: "review unavailable",
+    recorded: true,
+    path,
+    receipt: receiptWithId,
+    boundary:
+      "Unavailable review evidence is a blocker and can never create a successful independent-review claim or PR-ready state.",
+  };
+}
+
+function commandReviewStatus(target, runId, capturedGit = undefined) {
+  const normalizedRunId = requireRunId(runId);
+  const reviewDirectory = reviewReceiptDirectory(
+    target,
+    REVIEW_RECEIPTS_PATH,
+    "review receipts directory",
+    MAX_REVIEW_RECEIPTS,
+    validateReviewReceipt,
+  );
+  const unavailableDirectory = reviewReceiptDirectory(
+    target,
+    REVIEW_UNAVAILABLE_PATH,
+    "review unavailable directory",
+    MAX_REVIEW_UNAVAILABLE_RECEIPTS,
+    validateReviewUnavailableReceipt,
+  );
+  const git = capturedGit === undefined ? gitSnapshot(target) : capturedGit;
+  const selectedEntries = reviewDirectory.entries.filter(
+    (entry) => entry.receipt.run_id === normalizedRunId,
+  );
+  const unavailableEntries = unavailableDirectory.entries.filter(
+    (entry) => entry.receipt.run_id === normalizedRunId,
+  );
+  const invalidReceipts = [
+    ...reviewDirectory.errors,
+    ...reviewDirectory.entries.flatMap((entry) =>
+      entry.errors.map((error) => `${entry.path}: ${error}`),
+    ),
+    ...unavailableDirectory.errors,
+    ...unavailableDirectory.entries.flatMap((entry) =>
+      entry.errors.map((error) => `${entry.path}: ${error}`),
+    ),
+  ];
+  const currentErrors = [];
+  const validReceipts = [];
+  const evaluatedResultPaths = [];
+  for (const entry of selectedEntries) {
+    if (entry.errors.length > 0) {
+      continue;
+    }
+    evaluatedResultPaths.push(entry.receipt.result_file);
+    const errors = reviewReceiptCurrentErrors(target, entry.receipt, git);
+    if (errors.length > 0) {
+      invalidReceipts.push(...errors.map((error) => `${entry.path}: ${error}`));
+      currentErrors.push(...errors);
+    } else {
+      validReceipts.push(entry.receipt);
+    }
+  }
+  const unavailable = unavailableEntries.filter((entry) => entry.errors.length === 0);
+  const passed = validReceipts.filter((receipt) => receipt.result === "passed");
+  const changesRequested = validReceipts.filter(
+    (receipt) => receipt.result === "changes-requested",
+  );
+  const blockedReasons = [];
+  if (unavailable.length > 0) {
+    blockedReasons.push("independent review was recorded as unavailable");
+  }
+  if (selectedEntries.length === 0) {
+    blockedReasons.push("no review receipt exists for this run");
+  }
+  if (passed.length === 0) {
+    blockedReasons.push("no passed exact-head independent review exists");
+  }
+  if (changesRequested.length > 0) {
+    blockedReasons.push("a reviewer requested changes");
+  }
+  if (invalidReceipts.length > 0) {
+    blockedReasons.push("review evidence is invalid, stale, altered, or dirty");
+  }
+  const independentReviewed = blockedReasons.length === 0;
+  return {
+    ok: independentReviewed,
+    command: "review status",
+    ...statusEvidencePaths({
+      evaluatedReceiptPaths: [
+        ...reviewDirectory.entries.map((entry) => entry.path),
+        ...unavailableDirectory.entries.map((entry) => entry.path),
+      ],
+      evaluatedResultPaths,
+    }),
+    run_id: normalizedRunId,
+    git: publicGitIdentity(git),
+    receipts: validReceipts,
+    unavailable: unavailable.map((entry) => entry.receipt),
+    invalid_receipts: invalidReceipts,
+    independent_reviewed: independentReviewed,
+    review_gate_ready: independentReviewed,
+    status: independentReviewed ? "passed" : "blocked",
+    reasons: [...new Set(blockedReasons)],
+    current_errors: [...new Set(currentErrors)],
+    boundary:
+      "Local pre-PR review status is derived from durable receipt files and exact current Git state. Protected GitHub review receipts are a separate gate.",
   };
 }
 
@@ -6197,7 +7204,7 @@ function validatedLinearWriteContext(target, operation, options) {
     ledger,
     graph,
     item,
-    revision: git.head && /^[a-f0-9]{40}$/.test(git.head) ? git.head : null,
+    revision: git.head && GIT_OBJECT_ID.test(git.head) ? git.head : null,
   };
 }
 
@@ -7594,13 +8601,47 @@ function protectedProjectFileIssue(target, destination) {
   return null;
 }
 
+function hardenedGitEnvironment() {
+  const environment = Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_")),
+  );
+  environment.GIT_CONFIG_NOSYSTEM = "1";
+  environment.GIT_CONFIG_SYSTEM = platform() === "win32" ? "NUL" : "/dev/null";
+  environment.GIT_CONFIG_GLOBAL = platform() === "win32" ? "NUL" : "/dev/null";
+  environment.GIT_OPTIONAL_LOCKS = "0";
+  environment.GIT_PAGER = "cat";
+  environment.GIT_TERMINAL_PROMPT = "0";
+  return environment;
+}
+
+function hardenedGitProbe(target, args) {
+  return spawnSync(
+    "git",
+    [
+      "--no-pager",
+      "--no-optional-locks",
+      "-C",
+      resolve(target),
+      "-c",
+      "core.fsmonitor=false",
+      "-c",
+      "core.untrackedCache=false",
+      "-c",
+      "status.showUntrackedFiles=all",
+      ...args,
+    ],
+    {
+      encoding: "utf8",
+      shell: false,
+      timeout: 10_000,
+      env: hardenedGitEnvironment(),
+      windowsHide: true,
+    },
+  );
+}
+
 function isGitRepository(target) {
-  const result = spawnSync("git", ["-C", target, "rev-parse", "--git-dir"], {
-    encoding: "utf8",
-    shell: false,
-    timeout: 10_000,
-  });
-  return result.status === 0;
+  return hardenedGitProbe(target, ["rev-parse", "--git-dir"]).status === 0;
 }
 
 function commandDoctor(target) {
@@ -8236,12 +9277,14 @@ function runCheck(target, check, config) {
     id: check.id,
     argv: check.argv,
     required: check.required !== false,
+    timeout_seconds: check.timeout_seconds ?? 900,
     started_at: startedAt,
   };
   if (!executableExists(target, check.argv[0])) {
     return {
       ...result,
       status: "failed",
+      result: "failed",
       returncode: 127,
       duration_seconds: 0,
       output: `command not found: ${check.argv[0]}`,
@@ -8293,6 +9336,7 @@ function runCheck(target, check, config) {
   return {
     ...result,
     status: returncode === 0 ? "passed" : "failed",
+    result: returncode === 0 ? "passed" : "failed",
     returncode,
     ...(failureReason ? { reason: failureReason } : {}),
     duration_seconds: Math.round((Date.now() - started) / 10) / 100,
@@ -8304,15 +9348,21 @@ function runCheck(target, check, config) {
 }
 
 function commandVerify(target, failFast = false) {
-  const config = loadConfig(target);
-  const errors = validateConfig(config, target);
+  const canonicalTarget = realpathSync(target);
+  const config = loadConfig(canonicalTarget);
+  const errors = validateConfig(config, canonicalTarget);
+  const actualChecksHash = currentChecksHash(config, canonicalTarget);
+  const configSha256 = verificationConfigSha256(config);
+  const gitBefore = gitSnapshot(canonicalTarget);
   const evidence = {
     schema_version: 1,
+    command: "verify",
     started_at: utcTimestamp(),
-    target,
+    target: canonicalTarget,
+    checks_hash: actualChecksHash,
+    git_before: publicGitIdentity(gitBefore),
     checks: [],
   };
-  const actualChecksHash = currentChecksHash(config, target);
   let blockedBy;
   let nextSteps;
   if (config.onboarding.status !== "complete") {
@@ -8351,6 +9401,7 @@ function commandVerify(target, failFast = false) {
       "quality checks changed or were not reviewed; run approve-checks after inspecting them",
     );
   }
+  const attemptedChecks = errors.length === 0;
   if (errors.length > 0) {
     evidence.ok = false;
     evidence.configuration_errors = errors;
@@ -8360,7 +9411,7 @@ function commandVerify(target, failFast = false) {
     }
   } else {
     for (const check of config.quality.checks) {
-      const record = runCheck(target, check, config);
+      const record = runCheck(canonicalTarget, check, config);
       evidence.checks.push(record);
       if (record.status === "failed" && failFast) {
         break;
@@ -8372,9 +9423,54 @@ function commandVerify(target, failFast = false) {
         (record) => record.status === "passed" || !record.required,
       );
   }
+  let configAfter = null;
+  let configAfterErrors = [];
+  try {
+    configAfter = loadConfig(canonicalTarget);
+    configAfterErrors = validateConfig(configAfter, canonicalTarget);
+  } catch (error) {
+    configAfterErrors = [error.message];
+  }
+  let checksHashAfter = null;
+  if (configAfter) {
+    try {
+      checksHashAfter = currentChecksHash(configAfter, canonicalTarget);
+    } catch (error) {
+      configAfterErrors.push(error.message);
+    }
+  }
+  const configSha256After = configAfter
+    ? verificationConfigSha256(configAfter)
+    : null;
+  if (attemptedChecks && configAfterErrors.length > 0) {
+    errors.push(...configAfterErrors.map((error) => `configuration changed or became invalid during verification: ${error}`));
+  }
+  if (attemptedChecks && checksHashAfter !== actualChecksHash) {
+    errors.push("configured checks or environment changed during verification");
+  }
+  if (attemptedChecks && configSha256After !== configSha256) {
+    errors.push("project configuration changed during verification");
+  }
+  const gitAfter = gitSnapshot(canonicalTarget);
+  evidence.git_after = publicGitIdentity(gitAfter);
+  const beforeIdentity = publicGitIdentity(gitBefore);
+  const afterIdentity = publicGitIdentity(gitAfter);
+  if (attemptedChecks && stableJson(beforeIdentity) !== stableJson(afterIdentity)) {
+    errors.push("Git identity changed during verification");
+  }
+  evidence.ok =
+    errors.length === 0 &&
+    evidence.checks.length === config.quality.checks.length &&
+    evidence.checks.every(
+      (record) => record.status === "passed" || !record.required,
+    );
+  if (errors.length > 0) {
+    evidence.configuration_errors = errors;
+  }
   evidence.finished_at = utcTimestamp();
+  evidence.receipt_sha256 = verificationReceiptSha256(evidence);
   const evidenceDirectory = pathInside(
-    target,
+    canonicalTarget,
     config.quality.evidence_directory ?? RUNS_PATH,
     "quality.evidence_directory",
   );
@@ -8387,13 +9483,14 @@ function commandVerify(target, failFast = false) {
   atomicJson(join(evidenceDirectory, "latest.json"), evidence);
   return {
     ok: evidence.ok,
-    evidence: relative(target, evidenceFile),
+    evidence: relative(canonicalTarget, evidenceFile),
     checks: evidence.checks.map((record) => ({
       id: record.id,
       status: record.status,
       returncode: record.returncode,
       ...(record.reason ? { reason: record.reason } : {}),
     })),
+    git: evidence.git_after,
     configuration_errors: evidence.configuration_errors,
     ...(evidence.blocked_by
       ? {
@@ -8401,6 +9498,303 @@ function commandVerify(target, failFast = false) {
           next_steps: evidence.next_steps,
         }
       : {}),
+  };
+}
+
+function verificationReadiness(target, config, git) {
+  const reasons = [];
+  let canonicalTarget = null;
+  try {
+    canonicalTarget = realpathSync(target);
+  } catch (error) {
+    reasons.push(`current checkout path cannot be resolved: ${error.message}`);
+  }
+  if (!config) {
+    reasons.push("project configuration is missing");
+  }
+  if (git?.identity_error) {
+    reasons.push(git.identity_error);
+  }
+  if (
+    !git ||
+    git.clean !== true ||
+    !GIT_OBJECT_ID.test(git.head ?? "") ||
+    gitObjectFormatForId(git.head) !== git.object_format
+  ) {
+    reasons.push("current Git state is not a clean exact commit");
+  }
+  let evidence = null;
+  let evidencePath = null;
+  const configuredChecks = Array.isArray(config?.quality?.checks)
+    ? config.quality.checks
+    : null;
+  let configuredChecksHash = null;
+  if (config) {
+    try {
+      configuredChecksHash = currentChecksHash(
+        config,
+        canonicalTarget ?? target,
+      );
+    } catch (error) {
+      reasons.push("project configuration is invalid");
+      reasons.push(error.message);
+    }
+  }
+  if (config) {
+    try {
+      evidencePath = config.quality?.evidence_directory ?? RUNS_PATH;
+      const file = projectFileWithoutSymlinkComponents(
+        target,
+        `${evidencePath}/latest.json`,
+        "latest verification evidence",
+      );
+      evidence = readJson(file, "latest verification evidence");
+    } catch (error) {
+      reasons.push(error.message);
+    }
+  }
+  if (evidence) {
+    const evidenceErrors = [];
+    rejectUnknownKeys(
+      evidenceErrors,
+      evidence,
+      new Set([
+        "schema_version",
+        "command",
+        "started_at",
+        "target",
+        "checks_hash",
+        "checks",
+        "ok",
+        "configuration_errors",
+        "blocked_by",
+        "next_steps",
+        "git_before",
+        "git_after",
+        "finished_at",
+        "receipt_sha256",
+      ]),
+      "latest verification evidence",
+    );
+    if (evidence.schema_version !== 1 || evidence.command !== "verify") {
+      evidenceErrors.push(
+        "latest verification evidence is not stack-generated verify evidence",
+      );
+    }
+    if (!/^[a-f0-9]{64}$/.test(evidence.checks_hash ?? "")) {
+      evidenceErrors.push("latest verification checks_hash is missing or malformed");
+    } else if (
+      configuredChecksHash !== null &&
+      evidence.checks_hash !== configuredChecksHash
+    ) {
+      evidenceErrors.push(
+        "latest verification checks_hash does not match the current configured checks",
+      );
+    }
+    if (!/^[a-f0-9]{64}$/.test(evidence.receipt_sha256 ?? "")) {
+      evidenceErrors.push(
+        "latest verification receipt_sha256 is missing or malformed",
+      );
+    } else if (evidence.receipt_sha256 !== verificationReceiptSha256(evidence)) {
+      evidenceErrors.push(
+        "latest verification receipt_sha256 does not match its content",
+      );
+    }
+    requiredVerificationTimestamp(
+      evidenceErrors,
+      evidence.started_at,
+      "latest verification started_at",
+    );
+    requiredVerificationTimestamp(
+      evidenceErrors,
+      evidence.finished_at,
+      "latest verification finished_at",
+    );
+    contractString(evidenceErrors, evidence.target, "latest verification target", 4_096);
+    if (canonicalTarget && evidence.target !== canonicalTarget) {
+      evidenceErrors.push(
+        "latest verification target does not match the current checkout",
+      );
+    }
+    if (evidence.ok !== true) {
+      reasons.push("latest verification did not pass");
+    }
+    reasons.push(...evidenceErrors);
+    const gitErrors = [];
+    const validateRecordedIdentity = (recordedGit, label) => {
+      if (
+        !recordedGit ||
+        typeof recordedGit !== "object" ||
+        Array.isArray(recordedGit)
+      ) {
+        gitErrors.push(`latest verification lacks ${label} Git evidence`);
+        return false;
+      }
+      rejectUnknownKeys(
+        gitErrors,
+        recordedGit,
+        new Set(["head", "object_format", "clean"]),
+        `latest verification ${label}`,
+      );
+      if (!GIT_OBJECT_ID.test(recordedGit.head ?? "")) {
+        gitErrors.push(`latest verification ${label}.head must be a full Git commit`);
+      }
+      if (
+        !GIT_OBJECT_FORMATS.has(recordedGit.object_format) ||
+        gitObjectFormatForId(recordedGit.head) !== recordedGit.object_format
+      ) {
+        gitErrors.push(
+          `latest verification ${label}.object_format must match its Git commit`,
+        );
+      }
+      if (recordedGit.clean !== true) {
+        gitErrors.push(`latest verification ${label}.clean must be true`);
+      }
+      return (
+        GIT_OBJECT_ID.test(recordedGit.head ?? "") &&
+        GIT_OBJECT_FORMATS.has(recordedGit.object_format) &&
+        gitObjectFormatForId(recordedGit.head) === recordedGit.object_format &&
+        recordedGit.clean === true
+      );
+    };
+    const beforeValid = validateRecordedIdentity(evidence.git_before, "git_before");
+    const afterValid = validateRecordedIdentity(evidence.git_after, "git_after");
+    if (beforeValid && afterValid) {
+      if (stableJson(evidence.git_before) !== stableJson(evidence.git_after)) {
+        gitErrors.push("latest verification Git identity changed during verification");
+      }
+      if (
+        stableJson(evidence.git_before) !== stableJson(publicGitIdentity(git)) ||
+        stableJson(evidence.git_after) !== stableJson(publicGitIdentity(git))
+      ) {
+        gitErrors.push(
+          "latest verification is stale or does not prove a clean current Git head",
+        );
+      }
+    }
+    reasons.push(...gitErrors);
+    if (!Array.isArray(evidence.checks)) {
+      reasons.push("latest verification checks must be an array");
+    } else if (!configuredChecks) {
+      reasons.push("latest verification cannot be checked against configured checks");
+    } else {
+      const configuredById = new Map(
+        configuredChecks.map((check) => [check?.id, check]),
+      );
+      const seen = new Set();
+      const checkErrors = [];
+      for (const [index, record] of evidence.checks.entries()) {
+        const label = `latest verification checks[${index}]`;
+        if (!record || typeof record !== "object" || Array.isArray(record)) {
+          checkErrors.push(`${label} must be an object`);
+          continue;
+        }
+        rejectUnknownKeys(
+          checkErrors,
+          record,
+          new Set([
+            "id",
+            "argv",
+            "required",
+            "timeout_seconds",
+            "started_at",
+            "status",
+            "result",
+            "returncode",
+            "reason",
+            "duration_seconds",
+            "output",
+          ]),
+          label,
+        );
+        if (typeof record.id !== "string" || record.id.length === 0) {
+          checkErrors.push(`${label}.id must be a non-empty string`);
+          continue;
+        }
+        if (seen.has(record.id)) {
+          checkErrors.push(`latest verification checks contains duplicate id: ${record.id}`);
+        }
+        seen.add(record.id);
+        const configured = configuredById.get(record.id);
+        if (!configured) {
+          checkErrors.push(`latest verification checks contains unknown id: ${record.id}`);
+          continue;
+        }
+        const expectedRequired = configured.required !== false;
+        if (record.required !== expectedRequired) {
+          checkErrors.push(`${label}.required does not match configured check`);
+        }
+        if (stableJson(record.argv) !== stableJson(configured.argv)) {
+          checkErrors.push(`${label}.argv does not match configured check`);
+        }
+        if (record.timeout_seconds !== (configured.timeout_seconds ?? 900)) {
+          checkErrors.push(`${label}.timeout_seconds does not match configured check`);
+        }
+        requiredVerificationTimestamp(
+          checkErrors,
+          record.started_at,
+          `${label}.started_at`,
+        );
+        if (!(record.status === "passed" || record.status === "failed")) {
+          checkErrors.push(`${label}.status must be passed or failed`);
+        }
+        if (!(record.result === "passed" || record.result === "failed")) {
+          checkErrors.push(`${label}.result must be passed or failed`);
+        } else if (record.result !== record.status) {
+          checkErrors.push(`${label}.status and result must agree`);
+        }
+        if (!Number.isInteger(record.returncode)) {
+          checkErrors.push(`${label}.returncode must be an integer`);
+        } else if (record.result === "passed" && record.returncode !== 0) {
+          checkErrors.push(`${label}.passed result must have returncode 0`);
+        } else if (record.result === "failed" && record.returncode === 0) {
+          checkErrors.push(`${label}.failed result must have a non-zero returncode`);
+        }
+        if (
+          !Number.isFinite(record.duration_seconds) ||
+          record.duration_seconds < 0
+        ) {
+          checkErrors.push(`${label}.duration_seconds must be a non-negative number`);
+        }
+        if (typeof record.output !== "string" || record.output.length > 12_000) {
+          checkErrors.push(`${label}.output must be a bounded string`);
+        }
+      }
+      for (const check of configuredChecks) {
+        if (!seen.has(check?.id)) {
+          checkErrors.push(`latest verification checks is missing configured id: ${check?.id}`);
+        }
+      }
+      if (evidence.checks.length !== configuredChecks.length) {
+        checkErrors.push(
+          "latest verification checks must contain every configured check exactly once",
+        );
+      }
+      const requiredPassed = configuredChecks.every((check) => {
+        const record = evidence.checks.find((item) => item?.id === check?.id);
+        return check.required !== false ? record?.status === "passed" : true;
+      });
+      if (!requiredPassed) {
+        checkErrors.push("latest verification lacks a passed required check");
+      }
+      const expectedOk =
+        evidence.checks.length === configuredChecks.length &&
+        configuredChecks.every((check) => {
+          const record = evidence.checks.find((item) => item?.id === check?.id);
+          return check.required !== false ? record?.status === "passed" : true;
+        });
+      if (evidence.ok !== expectedOk) {
+        checkErrors.push("latest verification ok does not agree with check results");
+      }
+      reasons.push(...checkErrors);
+    }
+  }
+  return {
+    ok: reasons.length === 0,
+    status: reasons.length === 0 ? "passed" : "blocked",
+    evidence: evidencePath ? `${evidencePath}/latest.json` : null,
+    git: publicGitIdentity(git),
+    reasons: [...new Set(reasons)],
   };
 }
 
@@ -8416,25 +9810,72 @@ function loadState(target) {
   return state;
 }
 
+function gitProbeIdentity(headResult, objectFormatResult) {
+  const head = headResult.status === 0 ? headResult.stdout.trim() : null;
+  const probedObjectFormat =
+    objectFormatResult.status === 0
+      ? objectFormatResult.stdout.trim()
+      : null;
+  const objectFormat = GIT_OBJECT_FORMATS.has(probedObjectFormat)
+    ? probedObjectFormat
+    : gitObjectFormatForId(head);
+  return {
+    head,
+    object_format: objectFormat,
+    valid:
+      GIT_OBJECT_ID.test(head ?? "") &&
+      GIT_OBJECT_FORMATS.has(objectFormat) &&
+      gitObjectFormatForId(head) === objectFormat,
+  };
+}
+
 function gitSnapshot(target) {
   if (!isGitRepository(target)) {
     return null;
   }
-  const run = (args) =>
-    spawnSync("git", ["-C", target, ...args], {
-      encoding: "utf8",
-      shell: false,
-      timeout: 10_000,
-    });
-  const headResult = run(["rev-parse", "HEAD"]);
-  const branchResult = run(["branch", "--show-current"]);
-  const statusResult = run(["status", "--porcelain=v1"]);
-  const statusLines =
-    statusResult.status === 0
-      ? statusResult.stdout.split("\n").filter(Boolean)
-      : [];
+  const headBeforeResult = hardenedGitProbe(target, ["rev-parse", "HEAD"]);
+  const objectFormatBeforeResult = hardenedGitProbe(target, [
+    "rev-parse",
+    "--show-object-format=storage",
+  ]);
+  const branchResult = hardenedGitProbe(target, ["branch", "--show-current"]);
+  const statusResult = hardenedGitProbe(target, [
+    "status",
+    "--porcelain=v1",
+    "--untracked-files=all",
+    "--ignore-submodules=none",
+  ]);
+  const headAfterResult = hardenedGitProbe(target, ["rev-parse", "HEAD"]);
+  const objectFormatAfterResult = hardenedGitProbe(target, [
+    "rev-parse",
+    "--show-object-format=storage",
+  ]);
+  const statusOk = statusResult.status === 0;
+  const beforeIdentity = gitProbeIdentity(
+    headBeforeResult,
+    objectFormatBeforeResult,
+  );
+  const afterIdentity = gitProbeIdentity(
+    headAfterResult,
+    objectFormatAfterResult,
+  );
+  const head = afterIdentity.head ?? beforeIdentity.head;
+  const objectFormat = afterIdentity.object_format ?? beforeIdentity.object_format;
+  const identityChanged =
+    beforeIdentity.head !== afterIdentity.head ||
+    beforeIdentity.object_format !== afterIdentity.object_format;
+  const statusLines = statusOk
+    ? statusResult.stdout.split("\n").filter(Boolean)
+    : ["<git status failed>"];
+  const clean =
+    beforeIdentity.valid &&
+    afterIdentity.valid &&
+    !identityChanged &&
+    statusOk &&
+    statusLines.length === 0;
   return {
-    head: headResult.status === 0 ? headResult.stdout.trim() : null,
+    head,
+    object_format: objectFormat,
     branch:
       branchResult.status === 0 && branchResult.stdout.trim().length > 0
         ? branchResult.stdout.trim()
@@ -8443,7 +9884,10 @@ function gitSnapshot(target) {
       .length,
     untracked_changes: statusLines.filter((line) => line.startsWith("??"))
       .length,
-    clean: statusLines.length === 0,
+    clean,
+    ...(identityChanged
+      ? { identity_error: "Git HEAD or object format changed during the Git snapshot" }
+      : {}),
   };
 }
 
@@ -9272,7 +10716,7 @@ function testConfiguredMemory(target, config, health, checkpoint) {
   };
 }
 
-function commandStatus(target) {
+function commandStatus(target, runId) {
   const installation = loadInstallation(target);
   const config = projectExists(target, CONFIG_PATH, "project config")
     ? loadConfig(target)
@@ -9280,10 +10724,28 @@ function commandStatus(target) {
   const state = loadState(target);
   const pending = Object.keys(installation?.pending_files ?? {});
   const drift = protectedDrift(target, installation);
-  const actualChecksHash = config ? currentChecksHash(config, target) : null;
+  let configurationErrors = [];
+  if (config) {
+    try {
+      configurationErrors = validateConfig(config, target);
+    } catch (error) {
+      configurationErrors = [error.message];
+    }
+  }
+  let actualChecksHash = null;
+  try {
+    actualChecksHash = config ? currentChecksHash(config, target) : null;
+  } catch (error) {
+    configurationErrors.push(error.message);
+  }
   const actualConfigurationHash = config
     ? configurationHash(config)
     : null;
+  const checksApproved =
+    Boolean(config) &&
+    configurationErrors.length === 0 &&
+    (config.safety?.require_check_approval === false ||
+      config.safety?.approved_checks_hash === actualChecksHash);
   let checkpoint = null;
   try {
     const loadedCheckpoint = projectExists(
@@ -9309,15 +10771,130 @@ function commandStatus(target) {
   } catch (error) {
     coordinator = { error: error.message };
   }
+  const git = runId === undefined ? null : gitSnapshot(target);
+  let review = null;
+  let readiness = {
+    independent_reviewed: false,
+    review_gate_ready: false,
+    pr_ready: false,
+    status: "blocked",
+    reasons: ["a run id is required to evaluate review readiness"],
+  };
+  if (runId !== undefined) {
+    try {
+      review = commandReviewStatus(target, runId, git);
+      readiness = {
+        independent_reviewed: review.independent_reviewed,
+        review_gate_ready: review.review_gate_ready,
+        pr_ready: false,
+        status: review.status,
+        reasons: review.reasons,
+      };
+    } catch (error) {
+      review = {
+        ok: false,
+        command: "review status",
+        run_id: runId,
+        independent_reviewed: false,
+        review_gate_ready: false,
+        pr_ready: false,
+        status: "blocked",
+        reasons: [error.message],
+      };
+      readiness = {
+        independent_reviewed: false,
+        review_gate_ready: false,
+        pr_ready: false,
+        status: "blocked",
+        reasons: [error.message],
+      };
+    }
+  }
+  const projectHealthy =
+    Boolean(installation && config) &&
+    configurationErrors.length === 0 &&
+    pending.length === 0 &&
+    drift.length === 0 &&
+    config?.onboarding?.status === "complete" &&
+    config?.safety?.approved_configuration_hash === actualConfigurationHash &&
+    checksApproved &&
+    !checkpoint?.error &&
+    !coordinator?.error;
+  const projectHealthReasons = [];
+  if (!installation) {
+    projectHealthReasons.push("project installation is missing");
+  }
+  if (!config) {
+    projectHealthReasons.push("project configuration is missing");
+  }
+  if (configurationErrors.length > 0) {
+    projectHealthReasons.push("project configuration is invalid");
+  }
+  if (pending.length > 0) {
+    projectHealthReasons.push("pending reconciliation files remain");
+  }
+  if (drift.length > 0) {
+    projectHealthReasons.push("protected project files have drifted");
+  }
+  if (config && config.onboarding?.status !== "complete") {
+    projectHealthReasons.push("project onboarding is incomplete");
+  }
+  if (
+    config &&
+    config.safety?.approved_configuration_hash !== actualConfigurationHash
+  ) {
+    projectHealthReasons.push("project configuration approval is missing or stale");
+  }
+  if (config && !checksApproved) {
+    projectHealthReasons.push("project checks approval is missing or stale");
+  }
+  if (checkpoint?.error) {
+    projectHealthReasons.push("project checkpoint has an error");
+  }
+  if (coordinator?.error) {
+    projectHealthReasons.push("coordinator state has an error");
+  }
+  if (runId === undefined) {
+    readiness.reasons = [
+      ...new Set([
+        ...projectHealthReasons,
+        "a run id is required to evaluate review readiness",
+      ]),
+    ].slice(0, MAX_STATUS_REASONS);
+  }
+  const verification =
+    runId === undefined
+      ? null
+      : verificationReadiness(target, config, git);
+  if (runId !== undefined) {
+    const reviewGateReady = review?.review_gate_ready === true;
+    const prReady = projectHealthy && verification?.ok === true && reviewGateReady;
+    const readinessReasons = [
+      ...projectHealthReasons,
+      ...(review?.reasons ?? []),
+      ...(verification?.reasons ?? []),
+    ];
+    const boundedReadinessReasons = [
+      ...new Set(readinessReasons.filter((reason) => typeof reason === "string")),
+    ].slice(0, MAX_STATUS_REASONS);
+    if (!prReady && boundedReadinessReasons.length === 0) {
+      boundedReadinessReasons.push("project readiness requirements are not satisfied");
+    }
+    readiness = {
+      ...readiness,
+      review_gate_ready: reviewGateReady,
+      pr_ready: prReady,
+      status: prReady ? "passed" : "blocked",
+      reasons: boundedReadinessReasons,
+    };
+  }
   return {
     ok:
-      Boolean(installation && config) &&
-      pending.length === 0 &&
-      drift.length === 0 &&
-      config.onboarding.status === "complete" &&
-      config.safety.approved_configuration_hash === actualConfigurationHash &&
-      !checkpoint?.error &&
-      !coordinator?.error,
+      runId === undefined
+        ? projectHealthy
+        : projectHealthy &&
+          verification?.ok === true &&
+          review?.review_gate_ready === true,
     package_available: { name: PACKAGE_NAME, version: PACKAGE_VERSION },
     installed: installation?.package ?? null,
     upgrade_available:
@@ -9325,9 +10902,10 @@ function commandStatus(target) {
       installation.package.version !== PACKAGE_VERSION,
     pending_reconciliation: pending,
     protected_drift: drift,
-    checks_approved:
-      Boolean(config) &&
-      config.safety?.approved_checks_hash === actualChecksHash,
+    checks_approved: checksApproved,
+    ...(configurationErrors.length > 0
+      ? { configuration_errors: configurationErrors.slice(0, MAX_STATUS_REASONS) }
+      : {}),
     onboarding: config?.onboarding ?? null,
     capabilities: config?.capabilities ?? null,
     configuration_approved:
@@ -9336,6 +10914,9 @@ function commandStatus(target) {
     active_lock: state.active_lock?.locked_at ?? null,
     checkpoint,
     coordinator,
+    ...(review ? { review } : {}),
+    ...(verification ? { verification } : {}),
+    readiness,
   };
 }
 
@@ -9533,7 +11114,7 @@ function commandUpstreamCheck(target, output) {
       };
     }
     const remoteCommit = response.stdout.trim().split(/\s+/)[0];
-    if (!/^[a-f0-9]{40}$/.test(remoteCommit)) {
+    if (!GIT_OBJECT_ID.test(remoteCommit)) {
       return {
         id: source.id,
         repository: source.repository,
@@ -9577,7 +11158,7 @@ Your Project Steward — one conversation managing the entire build.
 Safe project setup:
   ultimate-agent-stack init [--target DIR] [--concise]
   ultimate-agent-stack upgrade [--target DIR] [--concise]
-  ultimate-agent-stack status [--target DIR]
+  ultimate-agent-stack status [--target DIR] [--run RUN]
   ultimate-agent-stack doctor [--target DIR] [--human]
   ultimate-agent-stack capabilities [--target DIR]
   ultimate-agent-stack work validate [--target DIR]
@@ -9587,8 +11168,17 @@ Safe project setup:
     --harness NAME --model NAME --run ID --event ID
     --coordinator-token TOKEN
     [--target DIR]
+  ultimate-agent-stack evidence activation-status --run RUN
+    [--require SKILL ...] [--target DIR]
   ultimate-agent-stack evidence report [--format json|mermaid]
     [--max-nodes 1..500] [--output PATH] [--target DIR]
+  ultimate-agent-stack review record --run RUN --reviewer-kind KIND
+    --reviewer-id ID --result passed|changes-requested
+    --result-file .agent-stack/runs/reviews/<safe-id>.json
+    --coordinator-token TOKEN [--target DIR]
+  ultimate-agent-stack review unavailable --run RUN --reason REASON
+    --details TEXT --coordinator-token TOKEN [--target DIR]
+  ultimate-agent-stack review status --run RUN [--target DIR]
   ultimate-agent-stack receipts validate [--target DIR]
   ultimate-agent-stack campaign status [--target DIR]
   ultimate-agent-stack campaign start --objective TEXT --max-iterations 1..25
@@ -9694,16 +11284,16 @@ function execute(command, args) {
     }
     case "evidence": {
       const [subcommand, ...evidenceArgs] = args;
-      if (!["validate", "activate", "report"].includes(subcommand)) {
+      if (!["validate", "activate", "activation-status", "report"].includes(subcommand)) {
         throw new StackError(
-          "evidence subcommand must be validate, activate, or report",
+          "evidence subcommand must be validate, activate, activation-status, or report",
         );
       }
       assertNoUnknownOptions(
         evidenceArgs,
         subcommand === "validate"
           ? ["--target"]
-          : subcommand === "activate"
+            : subcommand === "activate"
             ? [
                 "--target",
                 "--skill",
@@ -9715,6 +11305,8 @@ function execute(command, args) {
                 "--event",
                 "--coordinator-token",
               ]
+            : subcommand === "activation-status"
+              ? ["--target", "--run", "--require"]
             : ["--target", "--format", "--max-nodes", "--output"],
       );
       const target = resolveTarget(getOption(evidenceArgs, "--target", "."));
@@ -9736,11 +11328,65 @@ function execute(command, args) {
           ),
         });
       }
+      if (subcommand === "activation-status") {
+        return commandEvidenceActivationStatus(target, {
+          runId: getOption(evidenceArgs, "--run"),
+          requiredSkills: getRepeatedOption(evidenceArgs, "--require"),
+        });
+      }
       return commandEvidenceReport(target, {
         format: getOption(evidenceArgs, "--format", "json"),
         maxNodes: getOption(evidenceArgs, "--max-nodes", "200"),
         output: getOption(evidenceArgs, "--output"),
       });
+    }
+    case "review": {
+      const [subcommand, ...reviewArgs] = args;
+      if (!["record", "unavailable", "status"].includes(subcommand)) {
+        throw new StackError(
+          "review subcommand must be record, unavailable, or status",
+        );
+      }
+      const allowedReviewOptions = {
+        record: [
+          "--target",
+          "--run",
+          "--reviewer-kind",
+          "--reviewer-id",
+          "--result",
+          "--result-file",
+          "--coordinator-token",
+        ],
+        unavailable: [
+          "--target",
+          "--run",
+          "--reason",
+          "--details",
+          "--coordinator-token",
+        ],
+        status: ["--target", "--run"],
+      };
+      assertNoUnknownOptions(reviewArgs, allowedReviewOptions[subcommand]);
+      const target = resolveTarget(getOption(reviewArgs, "--target", "."));
+      if (subcommand === "record") {
+        return commandReviewRecord(target, {
+          runId: getOption(reviewArgs, "--run"),
+          reviewerKind: getOption(reviewArgs, "--reviewer-kind"),
+          reviewerId: getOption(reviewArgs, "--reviewer-id"),
+          result: getOption(reviewArgs, "--result"),
+          resultFile: getOption(reviewArgs, "--result-file"),
+          coordinatorToken: getOption(reviewArgs, "--coordinator-token"),
+        });
+      }
+      if (subcommand === "unavailable") {
+        return commandReviewUnavailable(target, {
+          runId: getOption(reviewArgs, "--run"),
+          reason: getOption(reviewArgs, "--reason"),
+          details: getOption(reviewArgs, "--details"),
+          coordinatorToken: getOption(reviewArgs, "--coordinator-token"),
+        });
+      }
+      return commandReviewStatus(target, getOption(reviewArgs, "--run"));
     }
     case "receipts": {
       const [subcommand, ...receiptArgs] = args;
@@ -9975,9 +11621,9 @@ function execute(command, args) {
       });
     }
     case "status": {
-      assertNoUnknownOptions(args, ["--target"]);
+      assertNoUnknownOptions(args, ["--target", "--run"]);
       const target = resolveTarget(getOption(args, "--target", "."));
-      return commandStatus(target);
+      return commandStatus(target, getOption(args, "--run"));
     }
     case "start": {
       assertNoUnknownOptions(args, [
@@ -10111,7 +11757,12 @@ export {
   commandDoctor,
   commandEvidenceValidate,
   commandEvidenceActivate,
+  commandEvidenceActivationStatus,
   commandEvidenceReport,
+  commandReviewRecord,
+  commandReviewUnavailable,
+  commandReviewStatus,
+  validateReviewerResultArtifact,
   commandLock,
   commandLinearHealth,
   commandLinearEvidenceComment,

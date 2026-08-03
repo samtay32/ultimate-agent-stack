@@ -43,7 +43,7 @@ const FIXTURE_BASELINES_FILE = join(
 const SCENARIOS_FILE = join(PACKAGE_ROOT, "evals", "scenarios.json");
 const FIXED_TIMESTAMP = "2026-01-01T00:00:00Z";
 const LIVE_LINEAR_SANDBOX_OPT_IN = "--allow-live-linear-sandbox-fixture";
-const GIT_COMMIT_ID = /^[a-f0-9]{40}$/;
+const GIT_COMMIT_ID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 const SHA256_RECEIPT = /^sha256:[a-f0-9]{64}$/;
 const PROJECT_TREE_MAX_ENTRIES = 20_000;
 const PROJECT_TREE_MAX_FILES = 10_000;
@@ -1248,7 +1248,7 @@ function parseCommandArguments(
 }
 
 function main() {
-  const [command, ...args] = process.argv.slice(2);
+  const [command = "list", ...args] = process.argv.slice(2);
   if (command === "list") {
     parseCommandArguments(args);
     process.stdout.write(

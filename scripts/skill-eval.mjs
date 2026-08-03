@@ -9,10 +9,20 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, extname, join, relative, resolve, sep } from "node:path";
+import {
+  dirname,
+  extname,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { startPromptPolicySurface } from "../bin/ultimate-agent-stack.mjs";
+import {
+  startPromptPolicySurface,
+  validateReviewerResultArtifact,
+} from "../bin/ultimate-agent-stack.mjs";
 import {
   EVALUATION_SCRUBBED_CREDENTIAL_ENVIRONMENT,
   LIVE_LINEAR_SANDBOX_OPT_IN,
@@ -42,9 +52,10 @@ const COORDINATOR_TOKEN_FIELD_NAMES = new Set([
   "coordinatorToken",
 ]);
 const COORDINATOR_OPTION = "--coordinator-token";
-const CURRENT_RUN_RECORD_SCHEMA_VERSION = 2;
+const CURRENT_RUN_RECORD_SCHEMA_VERSION = 3;
 const SHA256_RECEIPT = /^sha256:[a-f0-9]{64}$/;
-const GIT_COMMIT_ID = /^[a-f0-9]{40}$/;
+const GIT_COMMIT_ID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
+const GIT_OBJECT_FORMATS = new Set(["sha1", "sha256"]);
 const ARTIFACT_STATUSES = new Set([
   "DRAFT",
   "APPROVED",
@@ -76,6 +87,22 @@ const TEXT_SURFACE_EXTENSIONS = new Set([
   ".yaml",
   ".yml",
 ]);
+const ACTIVATION_RECEIPT_ID = /^skill-activation-[a-f0-9]{20}$/;
+const ACTIVATION_RECEIPT_HASH = /^[a-f0-9]{64}$/;
+const REVIEW_RECEIPT_ID = /^[a-f0-9]{64}$/;
+const REVIEW_UNAVAILABLE_STATUS = "unavailable";
+const REVIEW_RESULTS = new Set(["passed", "changes-requested"]);
+const REVIEW_EXPECTATIONS = new Set(["not-required", "passed", "blocked"]);
+const REVIEW_RUN_ID_MAX_CHARS = 200;
+const REVIEW_COORDINATOR_ID_MAX_CHARS = 120;
+const REVIEW_KIND_MAX_CHARS = 120;
+const REVIEW_ID_MAX_CHARS = 256;
+const REVIEW_RESULT_FILE_MAX_CHARS = 512;
+const REVIEW_REASON_MAX_CHARS = 200;
+const REVIEW_DETAILS_MAX_CHARS = 2_000;
+const MAX_REVIEW_RESULT_FILE_BYTES = 4 * 1024 * 1024;
+const MAX_REVIEW_RESULT_ARTIFACTS = 128;
+const LIVE_PROMPT_MAX_BYTES = 2 * 1024;
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
@@ -153,8 +180,13 @@ function behaviorSurfaceEntries() {
   }
   for (const projectPath of [
     ".gitattributes",
+    "bin/ultimate-agent-stack.mjs",
     "STARTER_PROMPT.md",
     "assets/project-template/.agent-stack/core-policy.json",
+    "assets/project-template/.agent-stack/contracts/evidence-graph.schema.json",
+    "assets/project-template/.agent-stack/contracts/review-receipt.schema.json",
+    "assets/project-template/.agent-stack/contracts/review-unavailable.schema.json",
+    "assets/project-template/.agent-stack/contracts/reviewer-result.schema.json",
     "assets/project-template/.agent-stack/HANDOFF.md",
     "assets/project-template/.agent-stack/artifacts/ARCHITECTURE.md",
     "assets/project-template/.agent-stack/artifacts/BRIEF.md",
@@ -175,6 +207,7 @@ function behaviorSurfaceEntries() {
     "evals/fixture-baselines.json",
     "evals/fixtures.json",
     "evals/scenarios.json",
+    "scripts/skill-eval.mjs",
     "scripts/skill-fixture.mjs",
   ]) {
     entries.push([projectPath, readBehaviorSurfacePath(projectPath)]);
@@ -240,6 +273,685 @@ function stringArray(value) {
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
+}
+
+function canonicalValue(value) {
+  if (Array.isArray(value)) {
+    return value.map(canonicalValue);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonicalValue(value[key])]),
+    );
+  }
+  return value;
+}
+
+function canonicalJson(value) {
+  return JSON.stringify(canonicalValue(value));
+}
+
+function digest(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function activationReceiptId(receipt) {
+  return `skill-activation-${digest(
+    canonicalJson({
+      harness: receipt.harness,
+      model: receipt.model,
+      run_id: receipt.run_id,
+      event_id: receipt.event_id,
+    }),
+  ).slice(0, 20)}`;
+}
+
+function reviewReceiptId(receipt) {
+  const copy = { ...receipt };
+  delete copy.receipt_id;
+  return digest(canonicalJson(copy));
+}
+
+function reviewUnavailableReceiptId(receipt) {
+  const copy = { ...receipt };
+  delete copy.receipt_id;
+  return digest(canonicalJson(copy));
+}
+
+function activationReceiptSha256(receipt) {
+  const copy = { ...receipt };
+  delete copy.receipt_sha256;
+  return digest(canonicalJson(copy));
+}
+
+function gitObjectFormatForId(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  if (value.length === 40 && /^[a-f0-9]{40}$/.test(value)) {
+    return "sha1";
+  }
+  if (value.length === 64 && /^[a-f0-9]{64}$/.test(value)) {
+    return "sha256";
+  }
+  return null;
+}
+
+function boundedReceiptString(value, maximum) {
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0 &&
+    value.length <= maximum &&
+    !/[\u0000-\u001f\u007f]/.test(value)
+  );
+}
+
+function validReceiptTimestamp(value) {
+  return (
+    typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value) &&
+    !Number.isNaN(Date.parse(value))
+  );
+}
+
+function reviewerResultPath(value) {
+  if (
+    typeof value !== "string" ||
+    value.includes(":") ||
+    /[\u0000-\u001f\u007f]/.test(value)
+  ) {
+    return false;
+  }
+  const components = value.split("/");
+  return (
+    isNonEmptyString(value) &&
+    value.length <= REVIEW_RESULT_FILE_MAX_CHARS &&
+    value.startsWith(".agent-stack/runs/") &&
+    value.endsWith(".json") &&
+    !value.endsWith("/.json") &&
+    safeScenarioPath(value) &&
+    components.every(
+      (component) =>
+        component.length > 0 &&
+        !/[. ]$/.test(component) &&
+        !/^(?:con|prn|aux|nul|com(?:[1-9]|[¹²³])|lpt(?:[1-9]|[¹²³]))(?:\..*)?$/i.test(component),
+    )
+  );
+}
+
+function validateReviewResultArtifacts(value, findings) {
+  if (!Array.isArray(value)) {
+    findings.push("review_result_artifacts must be an array");
+    return { entries: [], byPath: new Map(), invalidCount: 1 };
+  }
+  if (value.length > MAX_REVIEW_RESULT_ARTIFACTS) {
+    findings.push(
+      `review_result_artifacts must contain at most ${MAX_REVIEW_RESULT_ARTIFACTS} artifacts`,
+    );
+    return { entries: [], byPath: new Map(), invalidCount: 1, overflow: true };
+  }
+  const entries = [];
+  const byPath = new Map();
+  let invalidCount = 0;
+  for (const [index, snapshot] of value.entries()) {
+    const location = `review_result_artifacts[${index}]`;
+    const errors = [];
+    const issue = (message) => errors.push(`${location} ${message}`);
+    let parsed;
+    if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+      issue("must be an object");
+    } else {
+      for (const key of Object.keys(snapshot)) {
+        if (key !== "path" && key !== "content") {
+          issue(`contains unsupported field ${key}`);
+        }
+      }
+      for (const key of ["path", "content"]) {
+        if (!Object.hasOwn(snapshot, key)) {
+          issue(`${key} is required`);
+        }
+      }
+      if (!reviewerResultPath(snapshot.path)) {
+        issue("path must be a safe JSON reviewer-result path under .agent-stack/runs/");
+      }
+      if (typeof snapshot.content !== "string") {
+        issue("content must be a string");
+      } else {
+        const bytes = Buffer.from(snapshot.content, "utf8");
+        if (bytes.length === 0) {
+          issue("content must be non-empty");
+        }
+        if (bytes.length > MAX_REVIEW_RESULT_FILE_BYTES) {
+          issue(
+            `content exceeds the ${MAX_REVIEW_RESULT_FILE_BYTES}-byte limit`,
+          );
+        }
+        if (errors.length === 0) {
+          try {
+            parsed = JSON.parse(snapshot.content);
+          } catch (error) {
+            issue(`content contains invalid JSON: ${error.message}`);
+          }
+        }
+      }
+    }
+    const entry = {
+      index,
+      path: snapshot?.path,
+      content: snapshot?.content,
+      parsed,
+      errors,
+      valid: errors.length === 0,
+    };
+    if (reviewerResultPath(entry.path)) {
+      const pathEntries = byPath.get(entry.path) ?? [];
+      if (pathEntries.length > 0) {
+        issue(`duplicates artifact path ${entry.path}`);
+        entry.valid = false;
+      }
+      pathEntries.push(entry);
+      byPath.set(entry.path, pathEntries);
+    }
+    if (errors.length > 0) {
+      findings.push(...errors);
+      invalidCount += 1;
+    }
+    entries.push(entry);
+  }
+  return { entries, byPath, invalidCount, overflow: false };
+}
+
+function validateActivationReceipts(receipts, observedRunId, skills, findings) {
+  if (!Array.isArray(receipts)) {
+    findings.push("activation_receipts must be an array");
+    return [];
+  }
+  if (receipts.length > 128) {
+    findings.push("activation_receipts must contain at most 128 receipts");
+    return [];
+  }
+  const seen = new Set();
+  const derived = new Set();
+  for (const [index, receipt] of receipts.entries()) {
+    const location = `activation_receipts[${index}]`;
+    const receiptErrors = [];
+    const issue = (message) => {
+      receiptErrors.push(message);
+      findings.push(message);
+    };
+    if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
+      issue(`${location} must be an object`);
+      continue;
+    }
+    const activationKeys = new Set([
+      "id",
+      "skill",
+      "mode",
+      "harness",
+      "model",
+      "run_id",
+      "event_id",
+      "recorded_at",
+      "skill_path",
+      "skill_sha256",
+      "claim",
+      "receipt_sha256",
+    ]);
+    for (const key of Object.keys(receipt)) {
+      if (!activationKeys.has(key)) {
+        issue(`${location} contains unsupported field ${key}`);
+      }
+    }
+    for (const key of [
+      "id",
+      "skill",
+      "mode",
+      "harness",
+      "model",
+      "run_id",
+      "event_id",
+      "recorded_at",
+      "skill_path",
+      "skill_sha256",
+      "claim",
+    ]) {
+      if (!isNonEmptyString(receipt[key])) {
+        issue(`${location}.${key} must be a non-empty string`);
+      }
+    }
+    if (!ACTIVATION_RECEIPT_ID.test(receipt.id ?? "")) {
+      issue(`${location}.id must be a deterministic activation receipt id`);
+    } else if (receipt.id !== activationReceiptId(receipt)) {
+      issue(`${location}.id must match its deterministic activation identity`);
+    }
+    if (seen.has(receipt.id)) {
+      issue(`${location} duplicates activation receipt ${receipt.id}`);
+    }
+    seen.add(receipt.id);
+    if (!skills.has(receipt.skill)) {
+      issue(`${location}.skill references an unknown skill`);
+    }
+    if (!new Set(["native", "file-read"]).has(receipt.mode)) {
+      issue(`${location}.mode must be native or file-read`);
+    }
+    if (receipt.run_id !== observedRunId) {
+      issue(`${location}.run_id must equal observed.run_id`);
+    }
+    if (
+      !skills.has(receipt.skill) ||
+      !new Set([
+        `.agents/skills/${receipt.skill}/SKILL.md`,
+        `.claude/skills/${receipt.skill}/SKILL.md`,
+      ]).has(receipt.skill_path)
+    ) {
+      issue(`${location}.skill_path must be the canonical installed skill path`);
+    }
+    if (!ACTIVATION_RECEIPT_HASH.test(receipt.skill_sha256 ?? "")) {
+      issue(`${location}.skill_sha256 must be a SHA-256 digest`);
+    } else if (skills.has(receipt.skill)) {
+      const canonicalHash = digest(
+        readFileSync(join(PACKAGE_ROOT, skills.get(receipt.skill).path)),
+      );
+      if (receipt.skill_sha256 !== canonicalHash) {
+        issue(`${location}.skill_sha256 must match the canonical skill content`);
+      }
+    }
+    if (!validReceiptTimestamp(receipt.recorded_at)) {
+      issue(`${location}.recorded_at must be a UTC timestamp`);
+    }
+    if (receipt.claim !== "agent-recorded") {
+      issue(`${location}.claim must equal agent-recorded`);
+    }
+    if (!ACTIVATION_RECEIPT_HASH.test(receipt.receipt_sha256 ?? "")) {
+      issue(`${location}.receipt_sha256 must be present and be a SHA-256 digest`);
+    } else if (receipt.receipt_sha256 !== activationReceiptSha256(receipt)) {
+      issue(`${location}.receipt_sha256 must match its canonical content hash`);
+    }
+    if (receiptErrors.length === 0) {
+      derived.add(receipt.skill);
+    }
+  }
+  return [...derived].sort();
+}
+
+function validateReviewEvidence(
+  observed,
+  item,
+  expectedReview,
+  findings,
+) {
+  const receipts = observed.review_receipts;
+  const unavailableReceipts = observed.review_unavailable_receipts;
+  const artifacts = observed.review_result_artifacts;
+  const reviewArrayOverflow = [];
+  if (!Array.isArray(receipts)) {
+    findings.push("review_receipts must be an array");
+  } else if (receipts.length > MAX_REVIEW_RESULT_ARTIFACTS) {
+    reviewArrayOverflow.push("review_receipts");
+  }
+  if (!Array.isArray(unavailableReceipts)) {
+    findings.push("review_unavailable_receipts must be an array");
+  } else if (unavailableReceipts.length > MAX_REVIEW_RESULT_ARTIFACTS) {
+    reviewArrayOverflow.push("review_unavailable_receipts");
+  }
+  if (!Array.isArray(artifacts)) {
+    findings.push("review_result_artifacts must be an array");
+  } else if (artifacts.length > MAX_REVIEW_RESULT_ARTIFACTS) {
+    reviewArrayOverflow.push("review_result_artifacts");
+  }
+  if (reviewArrayOverflow.length > 0) {
+    for (const name of reviewArrayOverflow) {
+      findings.push(
+        `${name} must contain at most ${MAX_REVIEW_RESULT_ARTIFACTS} items`,
+      );
+    }
+    const derived = {
+      independent_reviewed: false,
+      review_gate_ready: false,
+      status: "blocked",
+    };
+    const status = observed.review_status;
+    if (expectedReview === "not-required") {
+      findings.push("review outcome was blocked for a not-required scenario");
+    } else if (expectedReview === "passed") {
+      findings.push("review outcome was blocked");
+    }
+    if (
+      status &&
+      (status.independent_reviewed !== derived.independent_reviewed ||
+        status.review_gate_ready !== derived.review_gate_ready ||
+        status.status !== derived.status ||
+        Object.hasOwn(status, "pr_ready"))
+    ) {
+      findings.push("review_status must agree with receipt-derived review readiness");
+    }
+    return {
+      validReviews: [],
+      validChangesRequested: [],
+      validUnavailable: [],
+      derived,
+    };
+  }
+  const artifactData = Array.isArray(artifacts)
+    ? validateReviewResultArtifacts(artifacts, findings)
+    : { entries: [], byPath: new Map(), invalidCount: 1 };
+  const validReviews = [];
+  const validChangesRequested = [];
+  let invalidReviewCount =
+    artifactData.invalidCount + (Array.isArray(receipts) ? 0 : 1);
+  const referencedArtifactPaths = new Set();
+  const receiptPaths = new Set();
+  for (const [index, receipt] of asArray(receipts).entries()) {
+    const location = `review_receipts[${index}]`;
+    const receiptErrors = [];
+    const issue = (message) => {
+      receiptErrors.push(message);
+      findings.push(message);
+    };
+    if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
+      issue(`${location} must be an object`);
+      invalidReviewCount += 1;
+      continue;
+    }
+    const reviewKeys = new Set([
+      "schema_version",
+      "receipt_id",
+      "run_id",
+      "git_commit",
+      "git_object_format",
+      "coordinator_id",
+      "reviewer_kind",
+      "reviewer_id",
+      "result",
+      "result_file",
+      "result_file_sha256",
+      "recorded_at",
+      "claim",
+    ]);
+    for (const key of Object.keys(receipt)) {
+      if (!reviewKeys.has(key)) {
+        issue(`${location} contains unsupported field ${key}`);
+      }
+    }
+    for (const key of [
+      "schema_version",
+      "receipt_id",
+      "run_id",
+      "git_commit",
+      "git_object_format",
+      "coordinator_id",
+      "reviewer_kind",
+      "reviewer_id",
+      "result",
+      "result_file",
+      "result_file_sha256",
+      "recorded_at",
+      "claim",
+    ]) {
+      if (receipt[key] === undefined) {
+        issue(`${location}.${key} is required`);
+      }
+    }
+    if (receipt.schema_version !== 1) {
+      issue(`${location}.schema_version must equal 1`);
+    }
+    if (!REVIEW_RECEIPT_ID.test(receipt.receipt_id ?? "")) {
+      issue(`${location}.receipt_id must be a SHA-256 digest`);
+    } else if (receipt.receipt_id !== reviewReceiptId(receipt)) {
+      issue(`${location}.receipt_id must match its canonical content hash`);
+    }
+    if (receipt.run_id !== observed.run_id) {
+      issue(`${location}.run_id must equal observed.run_id`);
+    }
+    if (!GIT_COMMIT_ID.test(receipt.git_commit ?? "")) {
+      issue(`${location}.git_commit must be a full Git commit`);
+    } else if (receipt.git_commit !== item.final_git_head) {
+      issue(`${location}.git_commit must equal final_git_head`);
+    }
+    if (
+      !GIT_OBJECT_FORMATS.has(receipt.git_object_format) ||
+      gitObjectFormatForId(receipt.git_commit) !== receipt.git_object_format
+    ) {
+      issue(`${location}.git_object_format must match git_commit`);
+    }
+    for (const [key, maximum] of [
+      ["run_id", REVIEW_RUN_ID_MAX_CHARS],
+      ["coordinator_id", REVIEW_COORDINATOR_ID_MAX_CHARS],
+      ["reviewer_kind", REVIEW_KIND_MAX_CHARS],
+      ["reviewer_id", REVIEW_ID_MAX_CHARS],
+    ]) {
+      if (!boundedReceiptString(receipt[key], maximum)) {
+        issue(
+          `${location}.${key} must be a non-empty single-line string of at most ${maximum} characters`,
+        );
+      }
+    }
+    if (
+      isNonEmptyString(receipt.reviewer_id) &&
+      isNonEmptyString(receipt.coordinator_id) &&
+      receipt.reviewer_id.trim().toLowerCase() ===
+        receipt.coordinator_id.trim().toLowerCase()
+    ) {
+      issue(`${location} reviewer must be distinct from coordinator`);
+    }
+    if (
+      isNonEmptyString(receipt.reviewer_kind) &&
+      new Set(["coordinator", "primary", "project-steward"]).has(
+        receipt.reviewer_kind.trim().toLowerCase(),
+      )
+    ) {
+      issue(`${location} reviewer kind cannot identify the coordinator`);
+    }
+    if (!REVIEW_RESULTS.has(receipt.result)) {
+      issue(`${location}.result must be passed or changes-requested`);
+    }
+    if (!reviewerResultPath(receipt.result_file)) {
+      issue(`${location}.result_file must be a JSON reviewer-result artifact under .agent-stack/runs/`);
+    }
+    if (!SHA256_RECEIPT.test(receipt.result_file_sha256 ?? "")) {
+      issue(`${location}.result_file_sha256 must be a SHA-256 receipt`);
+    }
+    if (!validReceiptTimestamp(receipt.recorded_at)) {
+      issue(`${location}.recorded_at must be a UTC timestamp`);
+    }
+    if (receipt.claim !== "agent-recorded") {
+      issue(`${location}.claim must equal agent-recorded`);
+    }
+    if (receiptErrors.length === 0) {
+      if (receiptPaths.has(receipt.result_file)) {
+        issue(`${location}.result_file is referenced by multiple review receipts`);
+      }
+      receiptPaths.add(receipt.result_file);
+      const snapshots = artifactData.byPath.get(receipt.result_file) ?? [];
+      if (snapshots.length !== 1) {
+        issue(
+          `${location}.result_file must have exactly one matching review_result_artifacts entry`,
+        );
+      } else {
+        const snapshot = snapshots[0];
+        referencedArtifactPaths.add(snapshot.path);
+        if (!snapshot.valid) {
+          issue(
+            `review_result_artifacts[${snapshot.index}] is structurally invalid`,
+          );
+        } else {
+          const bytes = Buffer.from(snapshot.content, "utf8");
+          const actualHash = `sha256:${digest(bytes)}`;
+          if (actualHash !== receipt.result_file_sha256) {
+            issue(
+              `${location}.result_file_sha256 must match review_result_artifacts[${snapshot.index}] content`,
+            );
+          }
+          for (const error of validateReviewerResultArtifact(snapshot.parsed, {
+            run_id: receipt.run_id,
+            git_commit: receipt.git_commit,
+            reviewer_kind: receipt.reviewer_kind,
+            reviewer_id: receipt.reviewer_id,
+            result: receipt.result,
+          })) {
+            issue(`review_result_artifacts[${snapshot.index}] ${error}`);
+          }
+        }
+      }
+    }
+    if (receiptErrors.length === 0) {
+      if (receipt.result === "passed") {
+        validReviews.push(receipt);
+      } else {
+        validChangesRequested.push(receipt);
+      }
+    } else {
+      invalidReviewCount += 1;
+    }
+  }
+  const validUnavailable = [];
+  let invalidUnavailableCount = Array.isArray(unavailableReceipts) ? 0 : 1;
+  for (const [index, receipt] of asArray(unavailableReceipts).entries()) {
+    const location = `review_unavailable_receipts[${index}]`;
+    const receiptErrors = [];
+    const issue = (message) => {
+      receiptErrors.push(message);
+      findings.push(message);
+    };
+    if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
+      issue(`${location} must be an object`);
+      invalidUnavailableCount += 1;
+      continue;
+    }
+    const unavailableKeys = new Set([
+      "schema_version",
+      "receipt_id",
+      "run_id",
+      "coordinator_id",
+      "reason",
+      "details",
+      "recorded_at",
+      "claim",
+      "status",
+    ]);
+    for (const key of Object.keys(receipt)) {
+      if (!unavailableKeys.has(key)) {
+        issue(`${location} contains unsupported field ${key}`);
+      }
+    }
+    for (const key of [
+      "schema_version",
+      "receipt_id",
+      "run_id",
+      "coordinator_id",
+      "reason",
+      "details",
+      "recorded_at",
+      "claim",
+      "status",
+    ]) {
+      if (receipt[key] === undefined) {
+        issue(`${location}.${key} is required`);
+      }
+    }
+    if (receipt.schema_version !== 1) {
+      issue(`${location}.schema_version must equal 1`);
+    }
+    if (!REVIEW_RECEIPT_ID.test(receipt.receipt_id ?? "")) {
+      issue(`${location}.receipt_id must be a SHA-256 digest`);
+    } else if (receipt.receipt_id !== reviewUnavailableReceiptId(receipt)) {
+      issue(`${location}.receipt_id must match its canonical content hash`);
+    }
+    if (receipt.run_id !== observed.run_id) {
+      issue(`${location}.run_id must equal observed.run_id`);
+    }
+    for (const [key, maximum] of [
+      ["run_id", REVIEW_RUN_ID_MAX_CHARS],
+      ["coordinator_id", REVIEW_COORDINATOR_ID_MAX_CHARS],
+      ["reason", REVIEW_REASON_MAX_CHARS],
+      ["details", REVIEW_DETAILS_MAX_CHARS],
+    ]) {
+      if (!boundedReceiptString(receipt[key], maximum)) {
+        issue(
+          `${location}.${key} must be a non-empty single-line string of at most ${maximum} characters`,
+        );
+      }
+    }
+    if (receipt.status !== REVIEW_UNAVAILABLE_STATUS) {
+      issue(`${location}.status must equal unavailable`);
+    }
+    if (receipt.claim !== "agent-recorded") {
+      issue(`${location}.claim must equal agent-recorded`);
+    }
+    if (!validReceiptTimestamp(receipt.recorded_at)) {
+      issue(`${location}.recorded_at must be a UTC timestamp`);
+    }
+    if (receiptErrors.length === 0) {
+      validUnavailable.push(receipt);
+    } else {
+      invalidUnavailableCount += 1;
+    }
+  }
+  for (const entry of artifactData.entries) {
+    if (
+      reviewerResultPath(entry.path) &&
+      !referencedArtifactPaths.has(entry.path)
+    ) {
+      findings.push(
+        `review_result_artifacts[${entry.index}].path is unreferenced by review_receipts`,
+      );
+      invalidReviewCount += 1;
+    }
+  }
+  const expected = expectedReview;
+  if (!REVIEW_EXPECTATIONS.has(expected)) {
+    findings.push("expected review expectation must be not-required, passed, or blocked");
+  }
+  const status = observed.review_status;
+  if (!status || typeof status !== "object" || Array.isArray(status)) {
+    findings.push("review_status must be an object");
+  }
+  const hasBlockingOutcome =
+    validChangesRequested.length > 0 || validUnavailable.length > 0;
+  const hasInvalidOutcome = invalidReviewCount > 0 || invalidUnavailableCount > 0;
+  if (validReviews.length > 0 && hasBlockingOutcome) {
+    findings.push("review evidence contains conflicting outcomes");
+  }
+  const reviewStatus = hasBlockingOutcome || hasInvalidOutcome
+    ? "blocked"
+    : validReviews.length > 0
+      ? "passed"
+      : expected === "not-required"
+        ? "not-required"
+        : "blocked";
+  const derived = {
+    independent_reviewed: reviewStatus === "passed",
+    review_gate_ready: reviewStatus === "passed",
+    status: reviewStatus,
+  };
+  if (expected === "not-required" && reviewStatus === "blocked") {
+    findings.push("review outcome was blocked for a not-required scenario");
+  } else if (expected === "passed" && reviewStatus !== "passed") {
+    if (reviewStatus === "blocked") {
+      findings.push("review outcome was blocked");
+    } else {
+      findings.push("required passed review outcome was not observed");
+    }
+  } else if (expected === "blocked" && !hasBlockingOutcome) {
+    findings.push("expected blocked review outcome was not observed");
+  }
+  if (
+    status &&
+    (status.independent_reviewed !== derived.independent_reviewed ||
+      status.review_gate_ready !== derived.review_gate_ready ||
+      status.status !== derived.status ||
+      Object.hasOwn(status, "pr_ready"))
+  ) {
+    findings.push("review_status must agree with receipt-derived review readiness");
+  }
+  return {
+    validReviews,
+    validChangesRequested,
+    validUnavailable,
+    derived,
+  };
 }
 
 function externalInputReceipts(scenarioId) {
@@ -429,6 +1141,15 @@ function validateScenarioCatalog(catalog = readJson(SCENARIOS_FILE)) {
     ) {
       errors.push(`${location}.context must be an object`);
     }
+    const livePrompt = JSON.stringify({
+      request: scenario?.request ?? "",
+      context: scenario?.context ?? {},
+    });
+    if (Buffer.byteLength(livePrompt, "utf8") > LIVE_PROMPT_MAX_BYTES) {
+      errors.push(
+        `${location} live prompt and context must be at most ${LIVE_PROMPT_MAX_BYTES} bytes`,
+      );
+    }
     const expected = scenario?.expected;
     if (!expected || typeof expected !== "object" || Array.isArray(expected)) {
       errors.push(`${location}.expected must be an object`);
@@ -444,11 +1165,24 @@ function validateScenarioCatalog(catalog = readJson(SCENARIOS_FILE)) {
         errors.push(`${location}.expected.${field} must be a unique string array`);
       }
     }
+    if (!REVIEW_EXPECTATIONS.has(expected.review)) {
+      errors.push(
+        `${location}.expected.review must be exactly not-required, passed, or blocked`,
+      );
+    }
     const mustActivateNames = asArray(expected.must_activate);
     const mustNotActivateNames = asArray(expected.must_not_activate);
     for (const name of [...mustActivateNames, ...mustNotActivateNames]) {
       if (!skills.has(name)) {
         errors.push(`${location} references unknown skill ${name}`);
+      }
+      const promptSurface = `${scenario?.request ?? ""}\n${JSON.stringify(
+        scenario?.context ?? {},
+      )}`.toLowerCase();
+      if (promptSurface.includes(name.toLowerCase())) {
+        errors.push(
+          `${location}.request/context must not disclose expected skill name ${name}`,
+        );
       }
     }
     const mustActivate = new Set(mustActivateNames);
@@ -597,7 +1331,10 @@ function validateScenarioCatalog(catalog = readJson(SCENARIOS_FILE)) {
   };
 }
 
-function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
+function validateRunRecord(
+  record,
+  catalog = readJson(SCENARIOS_FILE),
+) {
   const contract = validateScenarioCatalog(catalog);
   const skills = skillCatalog();
   const errors = [...contract.errors];
@@ -655,6 +1392,7 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
   for (const scenario of scenarios) {
     const item = caseMap.get(scenario.id);
     const findings = [];
+    let reviewDerived = null;
     if (!item) {
       findings.push("missing run result");
     } else {
@@ -688,6 +1426,15 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
         );
       }
       if (
+        !GIT_OBJECT_FORMATS.has(item.materialized_git_object_format) ||
+        gitObjectFormatForId(item.materialized_git_head) !==
+          item.materialized_git_object_format
+      ) {
+        findings.push(
+          "materialized_git_object_format must match materialized_git_head",
+        );
+      }
+      if (
         item.materialized_project_tree_sha256 !==
         expectedBaseline.project_tree_sha256
       ) {
@@ -715,8 +1462,14 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
       }
       if (!GIT_COMMIT_ID.test(item.final_git_head ?? "")) {
         findings.push(
-          "final_git_head must be the exact 40-character post-run Git commit",
+          "final_git_head must be the exact post-run Git commit",
         );
+      }
+      if (
+        !GIT_OBJECT_FORMATS.has(item.final_git_object_format) ||
+        gitObjectFormatForId(item.final_git_head) !== item.final_git_object_format
+      ) {
+        findings.push("final_git_object_format must match final_git_head");
       }
       if (item.final_baseline_ancestor !== true) {
         findings.push(
@@ -824,6 +1577,9 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
       if (!observed || typeof observed !== "object" || Array.isArray(observed)) {
         findings.push("observed must be an object");
       } else {
+        if (!isNonEmptyString(observed.run_id)) {
+          findings.push("run_id must be a non-empty string");
+        }
         for (const field of [
           "activated_skills",
           "performed_actions",
@@ -835,6 +1591,9 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
           if (!stringArray(observed[field])) {
             findings.push(`${field} must be a unique string array`);
           }
+        }
+        if (!Array.isArray(observed.review_result_artifacts)) {
+          findings.push("review_result_artifacts must be an array");
         }
         if (typeof observed.asked_clarifying_question !== "boolean") {
           findings.push("asked_clarifying_question must be boolean");
@@ -899,8 +1658,58 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
           "source_claim_dispositions",
           findings,
         );
-        const activated = new Set(asArray(observed.activated_skills));
-        for (const name of activated) {
+        const derivedActivated = validateActivationReceipts(
+          observed.activation_receipts,
+          observed.run_id,
+          skills,
+          findings,
+        );
+        if (
+          JSON.stringify(asArray(observed.activated_skills).slice().sort()) !==
+          JSON.stringify(derivedActivated)
+        ) {
+          findings.push(
+            "activated_skills must exactly equal the skills derived from activation_receipts",
+          );
+        }
+        const activated = new Set(derivedActivated);
+        const reportedActivated = new Set(asArray(observed.activated_skills));
+        const activationStatus = observed.activation_status;
+        const requiredSkills = [...(scenario?.expected?.must_activate ?? [])].sort();
+        const missingSkills = requiredSkills.filter(
+          (skill) => !activated.has(skill),
+        );
+        if (
+          !activationStatus ||
+          typeof activationStatus !== "object" ||
+          Array.isArray(activationStatus)
+        ) {
+          findings.push("activation_status must be an object");
+        } else {
+          if (activationStatus.run_id !== observed.run_id) {
+            findings.push("activation_status.run_id must equal observed.run_id");
+          }
+          if (JSON.stringify(activationStatus.required_skills) !== JSON.stringify(requiredSkills)) {
+            findings.push("activation_status.required_skills must equal expected required skills");
+          }
+          if (JSON.stringify(activationStatus.activated_skills) !== JSON.stringify(derivedActivated)) {
+            findings.push("activation_status.activated_skills must be receipt-derived");
+          }
+          if (JSON.stringify(activationStatus.missing_skills) !== JSON.stringify(missingSkills)) {
+            findings.push("activation_status.missing_skills must be receipt-derived");
+          }
+          const expectedActivationStatus = missingSkills.length === 0 ? "satisfied" : "blocked";
+          if (activationStatus.status !== expectedActivationStatus) {
+            findings.push("activation_status.status must reflect receipt-derived activation");
+          }
+        }
+        reviewDerived = validateReviewEvidence(
+          observed,
+          item,
+          scenario?.expected?.review,
+          findings,
+        ).derived;
+        for (const name of reportedActivated) {
           if (!skills.has(name)) {
             findings.push(`unknown skill was reported as active: ${name}`);
           }
@@ -911,7 +1720,7 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
           }
         }
         for (const name of asArray(scenario?.expected?.must_not_activate)) {
-          if (activated.has(name)) {
+          if (reportedActivated.has(name)) {
             findings.push(`forbidden skill activated: ${name}`);
           }
         }
@@ -1065,6 +1874,7 @@ function validateRunRecord(record, catalog = readJson(SCENARIOS_FILE)) {
       ok: findings.length === 0,
       findings,
       evidence_source: item?.evidence?.source ?? null,
+      review: reviewDerived,
     });
   }
   for (const scenarioId of caseMap.keys()) {
@@ -1106,6 +1916,8 @@ function buildScaffold(catalog = readJson(SCENARIOS_FILE)) {
         expectedMaterializationSha256(scenario.id),
       materialized_git_head:
         expectedFixtureBaseline(scenario.id).git_head,
+      materialized_git_object_format:
+        gitObjectFormatForId(expectedFixtureBaseline(scenario.id).git_head),
       materialized_project_tree_sha256:
         expectedFixtureBaseline(scenario.id).project_tree_sha256,
       materialized_project_state_sha256:
@@ -1117,6 +1929,7 @@ function buildScaffold(catalog = readJson(SCENARIOS_FILE)) {
             expectedFixtureBaseline(scenario.id).project_tree_sha256,
         }),
       final_git_head: "replace-with-final-git-head",
+      final_git_object_format: "replace-with-final-git-object-format",
       final_project_tree_sha256:
         "replace-with-final-project-tree-sha256",
       final_project_state_sha256:
@@ -1138,6 +1951,15 @@ function buildScaffold(catalog = readJson(SCENARIOS_FILE)) {
       provider_authority: providerAuthorityReceipt(scenario.id),
       external_inputs: externalInputReceipts(scenario.id),
       observed: {
+        run_id: `scaffold-run:${scenario.id}`,
+        activation_receipts: [],
+        activation_status: {
+          run_id: `scaffold-run:${scenario.id}`,
+          required_skills: [...(scenario.expected?.must_activate ?? [])].sort(),
+          activated_skills: [],
+          missing_skills: [...(scenario.expected?.must_activate ?? [])].sort(),
+          status: "blocked",
+        },
         activated_skills: [],
         asked_clarifying_question: false,
         question_count: 0,
@@ -1149,6 +1971,14 @@ function buildScaffold(catalog = readJson(SCENARIOS_FILE)) {
         outcome_tags: [],
         observable_outputs: [],
         source_claim_dispositions: [],
+        review_receipts: [],
+        review_unavailable_receipts: [],
+        review_result_artifacts: [],
+        review_status: {
+          independent_reviewed: false,
+          review_gate_ready: false,
+          status: scenario.expected?.review ?? "not-required",
+        },
       },
       evidence: {
         summary: "Replace with a concise observation grounded in the run.",
@@ -1185,6 +2015,11 @@ function summarizeRoutingRates(
       /^noncanonical artifact status was observed:/,
       /^required observable output was absent:/,
       /^required source claim was not accounted for:/,
+      /^required passed review outcome was not observed$/,
+      /^review outcome was blocked$/,
+      /^review outcome was blocked for a not-required scenario$/,
+      /^expected blocked review outcome was not observed$/,
+      /^review evidence contains conflicting outcomes$/,
     ].some((pattern) => pattern.test(finding));
   const usedSessions = new Set();
   const groups = new Map();
@@ -1262,6 +2097,8 @@ function summarizeRoutingRates(
       requiredSkills: new Map(),
       forbiddenSkills: new Map(),
       routes: new Map(),
+      activationReceiptOutcomes: new Map(),
+      reviewOutcomes: new Map(),
       matchedConstraints: 0,
       constraints: 0,
       matchedScenarios: 0,
@@ -1271,8 +2108,41 @@ function summarizeRoutingRates(
     if (evaluation.ok) {
       group.evaluated_runs_passed += 1;
     }
+    const evaluatedCases = new Map(
+      evaluation.cases.map((item) => [item.scenario_id, item]),
+    );
     for (const item of record.cases) {
       const scenario = scenarios.get(item?.scenario_id);
+      const activationReceiptOutcome =
+        item.observed.activation_status?.status ??
+        (asArray(item.observed.activation_receipts).length > 0
+          ? "recorded"
+          : "missing");
+      const activationOutcomeKey = `${scenario.id}\0${activationReceiptOutcome}`;
+      const activationOutcome =
+        group.activationReceiptOutcomes.get(activationOutcomeKey) ?? {
+          scenario_id: scenario.id,
+          outcome: activationReceiptOutcome,
+          observed: 0,
+          attempts: 0,
+        };
+      activationOutcome.observed += 1;
+      activationOutcome.attempts += 1;
+      group.activationReceiptOutcomes.set(activationOutcomeKey, activationOutcome);
+      const reviewOutcome =
+        evaluatedCases.get(item?.scenario_id)?.review?.status ??
+        item.observed.review_status?.status ??
+        "missing";
+      const reviewOutcomeKey = `${scenario.id}\0${reviewOutcome}`;
+      const reviewOutcomeCount = group.reviewOutcomes.get(reviewOutcomeKey) ?? {
+        scenario_id: scenario.id,
+        outcome: reviewOutcome,
+        observed: 0,
+        attempts: 0,
+      };
+      reviewOutcomeCount.observed += 1;
+      reviewOutcomeCount.attempts += 1;
+      group.reviewOutcomes.set(reviewOutcomeKey, reviewOutcomeCount);
       const activated = new Set(item.observed.activated_skills);
       let scenarioMatched = true;
       let scenarioConstraints = 0;
@@ -1341,6 +2211,30 @@ function summarizeRoutingRates(
         opportunities: item.opportunities,
         rate: rate(item.matched, item.opportunities),
       }));
+  const outcomeRates = (items) => {
+    const values = [...items.values()];
+    const attemptsByScenario = new Map();
+    for (const item of values) {
+      attemptsByScenario.set(
+        item.scenario_id,
+        (attemptsByScenario.get(item.scenario_id) ?? 0) + item.attempts,
+      );
+    }
+    return values
+      .sort(
+        (left, right) =>
+          left.scenario_id.localeCompare(right.scenario_id) ||
+          left.outcome.localeCompare(right.outcome),
+      )
+      .map((item) => ({
+        ...item,
+        attempts: attemptsByScenario.get(item.scenario_id),
+        rate: rate(
+          item.observed,
+          attemptsByScenario.get(item.scenario_id),
+        ),
+      }));
+  };
   return {
     ok: errors.length === 0,
     errors,
@@ -1376,6 +2270,10 @@ function summarizeRoutingRates(
           group.forbiddenSkills,
           "not_activated",
         ),
+        activation_receipt_outcomes: outcomeRates(
+          group.activationReceiptOutcomes,
+        ),
+        review_outcomes: outcomeRates(group.reviewOutcomes),
         routes: [...group.routes.values()]
           .sort(
             (left, right) =>

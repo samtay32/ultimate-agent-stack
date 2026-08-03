@@ -300,6 +300,54 @@ path and one stable ID for the activation event. The entry is agent-recorded
 trace evidence and must not be presented as independent proof of a harness tool
 call. Do not persist it when the user authorized read-only work only.
 
+For a bounded run, derive activation rather than trusting a skill name in a
+prompt or transcript:
+
+```bash
+node .agent-stack/bin/agent-stack.mjs evidence activation-status \
+  --run RUN --require SKILL
+```
+
+The result is exact-run, durable `agent-recorded` evidence. It is portable
+across harnesses, but it is not independent proof that a native harness call
+occurred. Local pre-PR review is a separate receipt family from the protected
+GitHub review receipt:
+
+```bash
+node .agent-stack/bin/agent-stack.mjs review record \
+  --run RUN --reviewer-kind KIND --reviewer-id ID \
+  --result passed \
+  --result-file .agent-stack/runs/reviews/<safe-id>.json \
+  --coordinator-token TOKEN
+node .agent-stack/bin/agent-stack.mjs review status --run RUN
+node .agent-stack/bin/agent-stack.mjs status --run RUN
+```
+
+Use `review unavailable --run RUN --reason REASON --details TEXT
+--coordinator-token TOKEN` when the independent reviewer cannot act.
+Unavailable, missing, failed,
+changes-requested, empty, altered, stale, dirty-tree, wrong-run,
+wrong-commit, or evidence with the same recorded reviewer and coordinator
+identity remains blocked and cannot become
+PR-ready. `reviewer_id` must be nonempty and distinct from the coordinator
+identity; `reviewer_kind` must be nonempty and may be the same string/label as
+`reviewer_id`. A local receipt claims only `agent-recorded`; it authenticates
+neither distinct physical-agent provenance nor an external provider, and it
+does not authorize a push, merge, or release. `review status`
+exposes `review_gate_ready`, while full `status --run` also requires current
+successful verification before its nested `readiness.pr_ready` is true.
+`verify` may still execute configured checks on a dirty worktree, but
+its evidence cannot satisfy readiness until a clean exact-head verification is
+recorded. The evidence target real path prevents cross-checkout replay; it does
+not authenticate the writer or prevent same-path recomputation.
+
+For deterministic live evaluation, keep the serialized request plus context at
+or below 2 KiB (a practical target is at most 512 input tokens). Do not include
+repository dumps or expected skill names. These are prompt-size and leakage
+controls for the evaluation surface, not a claim that every model runtime
+exposes or enforces token accounting. Do not run paid live-model tests as part
+of package validation.
+
 When sharing a transcript or JSONL trace, keep the private raw file and export a
 separate redacted copy:
 

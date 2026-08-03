@@ -106,6 +106,7 @@ flowchart LR
         LOCK["SHA-256 intent lock"]
         CHECKS["Project-native checks"]
         RUNS["Bounded local evidence"]
+        ARS["Activation and local review receipts"]
     end
 
     subgraph Release["Review and release plane"]
@@ -133,6 +134,7 @@ flowchart LR
     PD -->|bounded delegation| NA --> BV
     BV --> REPO
     REPO --> CLI --> CHECKS --> RUNS
+    CLI --> ARS
     LOCK --> VC
     RUNS --> VC --> RL
     RL --> GH

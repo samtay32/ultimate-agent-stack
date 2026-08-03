@@ -87,6 +87,22 @@ Delivery contract:
 - Never weaken a test, check, security control, permission, or acceptance criterion to obtain green.
 - Run focused checks while building and the complete configured gate before review and after every repair batch.
 - Review independently for engineering standards and for the locked intent.
+- For any run that requires independent review, use the stack-generated
+  activation and review receipts. Derive activation with `evidence
+  activation-status --run RUN --require SKILL`; use `review status --run RUN`
+  and `status --run RUN` for readiness. Reviewer results must be structured
+  JSON under `.agent-stack/runs/reviews/<safe-id>.json` with the exact run and
+  Git commit, reviewer fields, result, bounded summary/findings, and timestamp.
+  `reviewer_id` must be nonempty and distinct from `coordinator_id`;
+  `reviewer_kind` must be nonempty and may be the same string/label as
+  `reviewer_id`. These are recorded reviewer fields, not authenticated
+  physical-agent or provider identity.
+  A missing, failed, unavailable, stale, altered, dirty, empty, malformed,
+  wrong-run, wrong-commit, or a receipt with the same recorded reviewer and
+  coordinator identity is a blocker and cannot be
+  replaced by approval prose. `review_gate_ready` is the local agent-recorded
+  review gate; full `status --run RUN` requires current verification before
+  nested `readiness.pr_ready`.
 - Keep the PR as a draft until implementation and full verification are complete.
 - Treat reviewer claims as hypotheses. Inspect the cited code and its surrounding
   behavior before changing production code. Use only the canonical dispositions
@@ -100,6 +116,9 @@ Delivery contract:
 - Write deterministic checkpoints after verified milestones so a fresh
   conversation can resume. Never give the coordinator token to subagents.
 - If five repair loops fail to reduce the open problem set, preserve the work and report the smallest actual blocker with the evidence and attempted remedies.
+- Keep deterministic live test request plus context at or below 2 KiB (target
+  about 512 input tokens), without repository dumps or expected skill names.
+  Do not run paid live-model tests as part of package validation.
 
 Definition of done:
 - observable acceptance criteria pass;
