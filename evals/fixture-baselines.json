@@ -8,28 +8,28 @@
     },
     {
       "scenario_id": "direct-delivery",
-      "git_head": "fc86bd3a6960bf9ce98d1b17871c0eb73f758d8e",
-      "project_tree_sha256": "sha256:19ce2cf2036ca9628b541216eaa3ca9f3c4e3ad10cf4d61a8dab6d6097fef5b9"
+      "git_head": "70929fdb5b70dd2d2092f45f2dc7b5f45e198606",
+      "project_tree_sha256": "sha256:7ce98db918d83d650cef3f9b3657c29a1865be05b4611e778e177a281b284962"
     },
     {
       "scenario_id": "direct-telemetry-diagnosis",
-      "git_head": "ec3d840e67eb3cfd14845b862f51cc8f5aab4f66",
-      "project_tree_sha256": "sha256:fcf85d43c95f57edc198ac6ab6000019e4ccf26af29ebc46983c6bc26d270d95"
+      "git_head": "95f9f55e39ca066a0633e0ebdc2b7c84d9627d11",
+      "project_tree_sha256": "sha256:19caa446f788527aaff41044d695b0d34a77abdf752ce8c31200e260958cf1ad"
     },
     {
       "scenario_id": "direct-work-evidence",
-      "git_head": "803bf1652339f6e15780591536f805b85cdd5e4f",
-      "project_tree_sha256": "sha256:db15ca8fb05ecc1809926b95c9eb600f0956e9c783c892dbcdc852e644bbfef7"
+      "git_head": "8b00c79505af40e6fda9da661d15e61620874818",
+      "project_tree_sha256": "sha256:07ed67cd38302e3165eef5dbabc19cd818de45f32fd2cdf218ba577324323d11"
     },
     {
       "scenario_id": "direct-receipted-linear-write",
-      "git_head": "721d1ea9be48c331c2a4053a971db2254e54f9ae",
-      "project_tree_sha256": "sha256:01fe97aff8fc65512398d6151f608c0970e38d9238f26f868d8f10fc05803ade"
+      "git_head": "66f8d75efda7c896318dc663a7c6a85016b731a7",
+      "project_tree_sha256": "sha256:ff119476a30d468f90bf10e5b5c6c36c39c0d8b199ff629cf250bf36438cc895"
     },
     {
       "scenario_id": "direct-evidence-graph-report",
-      "git_head": "5578d486fc2d76948c2a11547fbdf2134b866d9c",
-      "project_tree_sha256": "sha256:6bf32c922c59712356dcf5e56540c741cf07d51f31420fb40121051e69118990"
+      "git_head": "7dfde0af8a872fb48004c745f0363dfb8d8220e4",
+      "project_tree_sha256": "sha256:751c3b978b6c3d83dbe67a2132ff9b35b473710bd1447de2f1e9c35b7ca3a8d3"
     },
     {
       "scenario_id": "indirect-setup",
@@ -38,33 +38,33 @@
     },
     {
       "scenario_id": "incomplete-product-idea",
-      "git_head": "ba326165da5096682f914bffd9434ff94c408019",
-      "project_tree_sha256": "sha256:ccfa8fde56a3896d8fbab75843404e2a4062ead3bf94cb5be11d724a24b213d3"
+      "git_head": "64c2584407f8eceebb01ec6c3e2e76086a499bea",
+      "project_tree_sha256": "sha256:e767fb377319b75d6c423bd4f6d8651980324167d08a10a47ae1d51d5ca1d422"
     },
     {
       "scenario_id": "negative-explanation-only",
-      "git_head": "e6a4252bd461d0af11a0063e6a2d579854e8e883",
-      "project_tree_sha256": "sha256:931ceb2765f6e6efb0ef3a7563ec36a7050a27b4f949d3a0a97c272a01d1ad2b"
+      "git_head": "8f3ff61a8a17eb2a79266159eda2b66813483375",
+      "project_tree_sha256": "sha256:7f6c8e65e4000b5f4e43e7af0e80208c2916b138e8a418dabcd707b103a660b2"
     },
     {
       "scenario_id": "edge-bypass-gates",
-      "git_head": "c8fd1ebf0bf85d2113c658f7183a1f841605a43b",
-      "project_tree_sha256": "sha256:12436b18fd49d9768df9f0bc7ae656f817946ba29a5cc9abccc7272fa8daa591"
+      "git_head": "8a6dc850ba400e1cd078f4d49c05ed8e20490964",
+      "project_tree_sha256": "sha256:7344beb30baca170a3bee3dc7813206d3b1e9368125156c9865a1191d8e53ab6"
     },
     {
       "scenario_id": "edge-unbounded-campaign",
-      "git_head": "5437fa09b71001f6e9a0c89dae8cfb2ea1f8d376",
-      "project_tree_sha256": "sha256:17f6812711ea78927bd28137327f97657a3093801667353e6bf16a01c4dafeee"
+      "git_head": "0e223ca16bc608c1685f06cdfeb64ce1e71fb8c4",
+      "project_tree_sha256": "sha256:f6f68aca47d6986aa17de719b7174a881b30b131c79482bcf907863cb4bf2b99"
     },
     {
       "scenario_id": "authority-release-boundary",
-      "git_head": "c77bc41eadf96105f8588e7b3a5e25845a84569e",
-      "project_tree_sha256": "sha256:cb4f66432babf185d2db5d1647647ff01a6975dbf081b572a05ad2023eba54a9"
+      "git_head": "6f22d9dbecaf83692d24883c9aba099b3aa85680",
+      "project_tree_sha256": "sha256:4719eb35c7cff51fa4f854b7ab1b5652b1930f7974e25e76398b7c1a0ceb32eb"
     },
     {
       "scenario_id": "continuity-active-coordinator",
-      "git_head": "dbda5e0f378d1c274c65d602bd89198ea350a70c",
-      "project_tree_sha256": "sha256:49189e56b270976f161e422714c6b2bce1ece172eaad2831b4cc28f37028b8a7"
+      "git_head": "f02a511662c222e193c58a89f502a3e6337f7eb5",
+      "project_tree_sha256": "sha256:d16388be166f075690bf33bb542354f10e0efd37acc3e1220f9bf4a9e6002b26"
     },
     {
       "scenario_id": "existing-project-reconciliation",
@@ -73,53 +73,53 @@
     },
     {
       "scenario_id": "flexible-vague-discovery",
-      "git_head": "d574dd781fa6b79f3f9780c39571ee676ade343f",
-      "project_tree_sha256": "sha256:224bf338a6f457533620922ff47739be2b12eee8d45f020eca2f161f528284a0"
+      "git_head": "a563f77383adbc289ce29c16dfa78482638e12ec",
+      "project_tree_sha256": "sha256:848dfbb80acf65812b8aab4d795d94bc246b89399ff326d483d446d5037bed19"
     },
     {
       "scenario_id": "flexible-brief-only",
-      "git_head": "4b5dc52de8a2efeb710ad6b66478e1f25efc38f0",
-      "project_tree_sha256": "sha256:d8ef95512c05adfcc93fc310143b867002ffd788ddc86c9bca95c9e659004dd5"
+      "git_head": "240ff454ec3cfbb2bfe1b772122e890e84357be8",
+      "project_tree_sha256": "sha256:e7cca17d405b942e706b8004df71cda2c96e13743a0aee0f7ae76b31805e7c03"
     },
     {
       "scenario_id": "flexible-external-detailed-prd",
-      "git_head": "8cbb4d304e1358aa655c5164f691104ede668107",
-      "project_tree_sha256": "sha256:3c13d4fe1a32c3c38485a033ee5e01726416f6cea47d94c6eda828c05303336a"
+      "git_head": "e67a1cd9d35ebe3962a6b1097387b84f64feb6ed",
+      "project_tree_sha256": "sha256:88a6b987aa7fb6e3d8f329b03036e32ba7f39081650d09a678dcc418c6bc4daa"
     },
     {
       "scenario_id": "flexible-external-complete-prd",
-      "git_head": "9af89521859195e2ff3af70f2ab90f3ae29f9555",
-      "project_tree_sha256": "sha256:80e25079e48082a570c246f070368c3a57f79d38f18cced8cd3b3b69172427ea"
+      "git_head": "2768fc7262a4dc33766184df63cede8aff375e3a",
+      "project_tree_sha256": "sha256:a59148c6921f7f537a5e69814474d0721f3ea381560f724eb39da90046690894"
     },
     {
       "scenario_id": "flexible-external-contradictory",
-      "git_head": "bdf36f00b7d2a620b20f4988b9467c5d1e277f2e",
-      "project_tree_sha256": "sha256:db9cbed3ecda4388c8dcc6b94ddc9e53fe9229bdc71d9edb0622bf753459afc6"
+      "git_head": "6c3c774136eb1d936cfc4c1d5b96b6a66df2ad95",
+      "project_tree_sha256": "sha256:e4ba91c5a1e68bfa7c119261a7b7f8537102ab4fd0a905edd9b823bd929f129d"
     },
     {
       "scenario_id": "flexible-external-existing-reconciliation",
-      "git_head": "2b1cef3bf1794a757a1e4706e5b260fd57dd7c60",
-      "project_tree_sha256": "sha256:363350344a6810fbc50c3ad9f50930c9d1a5543b4b4c3d63b0688c6d74aae8eb"
+      "git_head": "b0b1447a6a7d859b3c51a342f19cc21a3cacdfa6",
+      "project_tree_sha256": "sha256:e70896066f813cd4d97d7e4f38b3934e05ade4465658f64497d047685710933a"
     },
     {
       "scenario_id": "flexible-direct-bypass",
-      "git_head": "c734244ad7649a7013322dc2e4c2edd752afd829",
-      "project_tree_sha256": "sha256:a8894c1afca7e6afcad51524dbef45cf11a44e67345b1377de33b0d7632c655b"
+      "git_head": "2b46b46c9b787971947b8cd893e7f6467d960b7c",
+      "project_tree_sha256": "sha256:5dde5c0646e34b25b6cbf4ba9c01bce8ea30afe29ecdfde5196a5aa386bc2e19"
     },
     {
       "scenario_id": "flexible-resume-valid",
-      "git_head": "26cedf25e2f26a3fd8001da1de5c0501421cf5ad",
-      "project_tree_sha256": "sha256:f18525ed93cb87fa7c16dc5b5284255b8d3be6e2b3a4ba9ee772ec8a348ddb87"
+      "git_head": "8aa219baa93f4628ed7aed8e95c7edaaf3e28335",
+      "project_tree_sha256": "sha256:4b3b29e360485fb1347afad6fa13a7e6f935a3f00e5c015f9f935dac79f01deb"
     },
     {
       "scenario_id": "flexible-draft-lock",
-      "git_head": "705ad228dc479c17f7549bbedfdf6df4501fb9a4",
-      "project_tree_sha256": "sha256:0d0e0a5e68a320f7005c499780aaeff9991f1f6a528e2f19907360bcbe55c4a3"
+      "git_head": "04c41991bfc313cfb33ec1742f5ba6e278c07898",
+      "project_tree_sha256": "sha256:955c1632e784ef3ec079d00fb1462908c500e6051534a5c8e3a21542f2872093"
     },
     {
       "scenario_id": "flexible-approved-promotion",
-      "git_head": "5e7a2841373e86e0b672f9d446a69eb9fe85cccd",
-      "project_tree_sha256": "sha256:755654befd1b18d9ae8e38baf52d41394c17c93d6156a10142704b86d23fcabe"
+      "git_head": "e6d425eb3ddabc301ef025c9b156883575504813",
+      "project_tree_sha256": "sha256:e503c06607021c55d224aec7657ea729b32b3b5a7752b463e6fce8bdf89a8a82"
     },
     {
       "scenario_id": "flexible-simple-onboarding",
@@ -133,13 +133,13 @@
     },
     {
       "scenario_id": "edge-reviewer-unavailable",
-      "git_head": "5d7a1f7c9061f6b4108e4945f8852e4c13136970",
-      "project_tree_sha256": "sha256:a1ea691c5c9ef464e05e90dc3a3a51d58163abad2c2c1ccd46f81525ea32a21d"
+      "git_head": "be4f49b219eac5b044e044f0725a74298ca6be0a",
+      "project_tree_sha256": "sha256:8e9187137ace9f0c93bbeaeb8c39a843c598b331d245cceb82932b591a5fc057"
     },
     {
       "scenario_id": "flexible-external-secret-redaction",
-      "git_head": "5d418fa325d71be8415589d72966ab79736d5f0b",
-      "project_tree_sha256": "sha256:e63452d399e4d1754f0af006c77785af20b890dfc514c335b85aacc3ba3ad3be"
+      "git_head": "a7ca7fb17764a2758b708cd5bf254decbd863da7",
+      "project_tree_sha256": "sha256:595137bd8da2d818f62cc1b1155bb3773bdb51c05fa52c5402a20c0b1d7ee1c9"
     }
   ]
 }

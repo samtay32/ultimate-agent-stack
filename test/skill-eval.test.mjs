@@ -81,6 +81,38 @@ function activationReceipt(scenario, skill) {
   return receipt;
 }
 
+function refreshActivationReceiptIdentity(receipt) {
+  receipt.id = `skill-activation-${sha256({
+    harness: receipt.harness,
+    model: receipt.model,
+    run_id: receipt.run_id,
+    event_id: receipt.event_id,
+  }).slice(0, 20)}`;
+  const body = { ...receipt };
+  delete body.receipt_sha256;
+  receipt.receipt_sha256 = sha256(body);
+}
+
+function bindActivationReceiptsToRun(record) {
+  for (const item of record.cases) {
+    for (const receipt of item.observed.activation_receipts ?? []) {
+      if (
+        typeof record.harness?.name === "string" &&
+        record.harness.name.trim().length > 0
+      ) {
+        receipt.harness = record.harness.name;
+      }
+      if (
+        typeof record.harness?.model === "string" &&
+        record.harness.model.trim().length > 0
+      ) {
+        receipt.model = record.harness.model;
+      }
+      refreshActivationReceiptIdentity(receipt);
+    }
+  }
+}
+
 function reviewEvidence(
   scenario,
   gitCommit,
@@ -999,6 +1031,131 @@ test("missing or placeholder harness versions cannot support a named live claim"
       /run record harness\.version must identify the actual run/,
       String(version),
     );
+  }
+});
+
+test("behavior evaluation rejects a self-consistent generic live identity", () => {
+  const record = passingRecord();
+  record.harness = {
+    name: "Codex",
+    version: "latest",
+    model: "GPT-5",
+  };
+  bindActivationReceiptsToRun(record);
+  const result = evaluateRecord(record, catalog);
+  const identityError = "run record harness.version must identify the actual run";
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.includes(identityError));
+  assert.doesNotMatch(
+    JSON.stringify(result),
+    /receipt_sha256 must match its canonical content hash/,
+  );
+
+  const target = mkdtempSync(join(tmpdir(), "uas-generic-identity-evaluate-"));
+  const input = join(target, "run.json");
+  try {
+    writeFileSync(input, `${JSON.stringify(record)}\n`, "utf8");
+    const cli = spawnSync(
+      process.execPath,
+      [
+        join(PACKAGE_ROOT, "scripts", "skill-eval.mjs"),
+        "evaluate",
+        "--input",
+        input,
+      ],
+      { encoding: "utf8" },
+    );
+    assert.equal(cli.status, 2, cli.stderr);
+    const evaluated = JSON.parse(cli.stdout);
+    assert.equal(evaluated.ok, false);
+    assert.ok(evaluated.errors.includes(identityError));
+    assert.doesNotMatch(
+      JSON.stringify(evaluated),
+      /receipt_sha256 must match its canonical content hash/,
+    );
+  } finally {
+    rmSync(target, { recursive: true, force: true });
+  }
+});
+
+test("field-aware live identity validation rejects missing and template values", () => {
+  const cases = [
+    ["name", undefined],
+    ["name", "unknown"],
+    ["name", "[HARNESS_ID]"],
+    ["version", undefined],
+    ["version", "latest"],
+    ["version", "{HARNESS_VERSION}"],
+    ["model", undefined],
+    ["model", "auto"],
+    ["model", "<MODEL_ID>"],
+    ["model", "PLACEHOLDER"],
+  ];
+  for (const [field, value] of cases) {
+    const record = passingRecord();
+    record.harness[field] = value;
+    bindActivationReceiptsToRun(record);
+    const result = evaluateRecord(record, catalog);
+    assert.equal(result.ok, false, `${field}=${String(value)}`);
+    assert.ok(
+      result.errors.includes(
+        `run record harness.${field} must identify the actual run`,
+      ),
+      `${field}=${String(value)}`,
+    );
+    assert.doesNotMatch(
+      JSON.stringify(result),
+      /receipt_sha256 must match its canonical content hash/,
+      `${field}=${String(value)}`,
+    );
+  }
+});
+
+test("routing-rate rejects a self-consistent generic identity group", () => {
+  const first = passingRecord();
+  const second = passingRecord();
+  for (const record of [first, second]) {
+    record.harness = {
+      name: "Codex",
+      version: "latest",
+      model: "GPT-5",
+    };
+    bindActivationReceiptsToRun(record);
+  }
+  for (const item of second.cases) {
+    item.harness_session.id = `${item.harness_session.id}:second-generic`;
+  }
+  const identityError = "run record harness.version must identify the actual run";
+  const result = evaluateRoutingRates([first, second], catalog);
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.groups, []);
+  assert.ok(result.errors.includes(identityError));
+
+  const target = mkdtempSync(join(tmpdir(), "uas-generic-identity-routing-"));
+  const firstPath = join(target, "first.json");
+  const secondPath = join(target, "second.json");
+  try {
+    writeFileSync(firstPath, `${JSON.stringify(first)}\n`, "utf8");
+    writeFileSync(secondPath, `${JSON.stringify(second)}\n`, "utf8");
+    const cli = spawnSync(
+      process.execPath,
+      [
+        join(PACKAGE_ROOT, "scripts", "skill-eval.mjs"),
+        "routing-rate",
+        "--input",
+        firstPath,
+        "--input",
+        secondPath,
+      ],
+      { encoding: "utf8" },
+    );
+    assert.equal(cli.status, 2, cli.stderr);
+    const routed = JSON.parse(cli.stdout);
+    assert.equal(routed.ok, false);
+    assert.deepEqual(routed.groups, []);
+    assert.ok(routed.errors.includes(identityError));
+  } finally {
+    rmSync(target, { recursive: true, force: true });
   }
 });
 

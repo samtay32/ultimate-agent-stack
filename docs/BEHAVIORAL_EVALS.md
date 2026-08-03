@@ -397,24 +397,27 @@ the preset without asking the same question again.
 
 ## Release Readiness
 
-For every live smoke run, the operator supplies this exact context block:
+Paste this complete operator-supplied block into the live evaluation prompt
+after replacing every template value with the exact observed value:
 
 ```text
-Live evaluation identity:
+Live evaluation identity (operator-supplied; replace template values before pasting):
 HARNESS_ID: exact harness name
 HARNESS_VERSION: exact harness version
 MODEL_ID: exact model name or alias
+Receipt mapping: copy HARNESS_ID and MODEL_ID verbatim into activation receipt
+fields harness and model.
+Evidence mapping: retain HARNESS_VERSION in smoke/run evidence.
+Claim rule: missing, placeholder, or sentinel values forbid a named
+harness/model claim.
 ```
 
-During the live evaluation, copy `HARNESS_ID` and `MODEL_ID` verbatim into the
-activation receipt `harness` and `model` fields, and retain `HARNESS_VERSION` in
-the smoke/run evidence. Never infer, normalize, autodetect, or replace missing
-or placeholder values with generic labels. Missing or incomplete identity cannot
-support a named harness/model compatibility claim. This mapping is evaluation-
-only; ordinary `npm init`, onboarding, and no-code use are unchanged. The
-identity remains agent-recorded evidence, not authentication of a harness,
-provider, or model. Keep the live request plus context at or below 2 KiB (target
-about 512 tokens), without repository dumps or expected skill names.
+Never infer, normalize, autodetect, or replace missing/placeholding values with
+generic labels. This mapping is live-evaluation-only; ordinary `npm init`,
+onboarding, and no-code use are unchanged. The identity remains agent-recorded,
+not authentication of a harness, provider, or model. Keep the request plus
+context at or below 2 KiB (target about 512 tokens), without repository dumps or
+expected skill names.
 
 When a pull request changes the behavior-surface hash:
 

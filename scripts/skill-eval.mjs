@@ -263,6 +263,46 @@ function isCompletedField(value) {
   );
 }
 
+const LIVE_IDENTITY_SENTINELS = new Set([
+  "unknown",
+  "unspecified",
+  "default",
+  "latest",
+  "current",
+  "auto",
+  "automatic",
+  "n/a",
+  "n-a",
+  "na",
+  "none",
+  "null",
+  "tbd",
+  "todo",
+  "placeholder",
+  "harness",
+  "model",
+  "version",
+]);
+
+function isExactLiveIdentity(field, value) {
+  if (!isCompletedField(value)) {
+    return false;
+  }
+  const normalized = value.trim().toLowerCase();
+  return (
+    !LIVE_IDENTITY_SENTINELS.has(normalized) &&
+    !/^replace(?:-with(?:-|$)| with(?: |$))/i.test(normalized) &&
+    !/^(?:exact[\s_-]+)?(?:harness|model|version)(?:[\s_-]+(?:id|name|version|alias))?(?:\s+or\s+alias)?$/i.test(
+      normalized,
+    ) &&
+    !/^\[[^\[\]\r\n]*\]$/.test(value.trim()) &&
+    !/^<[^<>\r\n]*>$/.test(value.trim()) &&
+    !/^\{[^{}\r\n]*\}$/.test(value.trim()) &&
+    !/^\$\{[^{}\r\n]*\}$/.test(value.trim()) &&
+    !["harness", "model", "version", field].includes(normalized)
+  );
+}
+
 function stringArray(value) {
   return (
     Array.isArray(value) &&
@@ -1363,7 +1403,7 @@ function validateRunRecord(
     );
   }
   for (const field of ["name", "version", "model"]) {
-    if (!isCompletedField(record?.harness?.[field])) {
+    if (!isExactLiveIdentity(field, record?.harness?.[field])) {
       errors.push(
         `run record harness.${field} must identify the actual run`,
       );
@@ -2041,17 +2081,21 @@ function summarizeRoutingRates(
   const errors = [];
   for (const [recordIndex, record] of asArray(records).entries()) {
     const recordLabel = `run record ${recordIndex + 1}`;
+    const invalidHarnessField = ["name", "version", "model"].find(
+      (field) => !isExactLiveIdentity(field, record?.harness?.[field]),
+    );
+    if (invalidHarnessField) {
+      errors.push(
+        `run record harness.${invalidHarnessField} must identify the actual run`,
+      );
+      continue;
+    }
     if (
       record?.schema_version !== CURRENT_RUN_RECORD_SCHEMA_VERSION ||
       record?.surface_hash !== behaviorSurfaceHash() ||
       !record?.harness ||
       typeof record.harness !== "object" ||
       Array.isArray(record.harness) ||
-      ![
-        record.harness.name,
-        record.harness.version,
-        record.harness.model,
-      ].every(isCompletedField) ||
       !isCompletedField(record.recorded_at) ||
       Number.isNaN(Date.parse(record.recorded_at)) ||
       !Array.isArray(record.cases) ||
