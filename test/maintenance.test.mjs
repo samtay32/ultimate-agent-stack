@@ -224,6 +224,10 @@ const cursorAdapter = readFileSync(
   ),
   "utf8",
 );
+const cursorDeliverCommand = readFileSync(
+  join(PACKAGE_ROOT, "assets/project-template/.cursor/commands/deliver.md"),
+  "utf8",
+);
 const readme = readFileSync(join(PACKAGE_ROOT, "README.md"), "utf8");
 const trustGuide = readFileSync(
   join(PACKAGE_ROOT, "docs/TRUST.md"),
@@ -416,6 +420,21 @@ test("repository and installed-project CodeRabbit policies stay synchronized", (
   assert.equal(repositoryCodeRabbit, templateCodeRabbit);
   assert.match(repositoryCodeRabbit, /profile: "assertive"/);
   assert.match(repositoryCodeRabbit, /auto_incremental_review: false/);
+});
+
+test("Cursor delivery command restores the guarded local preflight", () => {
+  assert.match(
+    cursorDeliverCommand,
+    /Before material delivery[\s\S]{0,180}AGENTS\.md[\s\S]{0,100}core-policy\.json[\s\S]{0,100}config\.json[\s\S]{0,100}valid checkpoint[\s\S]{0,100}current diff/i,
+  );
+  assert.match(
+    cursorDeliverCommand,
+    /local CLI `start`[\s\S]{0,100}Project Steward lease\/token[\s\S]{0,100}`doctor`/i,
+  );
+  assert.match(
+    cursorDeliverCommand,
+    /only route-relevant artifacts[\s\S]{0,120}knowledge[\s\S]{0,100}next\s+decision/i,
+  );
 });
 
 test("installed doctor guidance is version-bound and directory metadata fits", () => {
@@ -886,21 +905,51 @@ test("discovery fast path is self-contained and avoids verbose follow-up work", 
 });
 
 test("local review receipts are audit evidence, not mechanical independence", () => {
-  for (const source of [
-    projectAgents,
-    runDeliverySkill,
-    verifyChangeSkill,
-    coordinateDeliverySkill,
-    readme,
-    operatingManual,
-    trustGuide,
-    behavioralEvals,
-  ]) {
-    assert.match(source, /agent-recorded/i);
-    assert.match(
-      source,
-      /cannot\s+(?:prove|authenticate|establish)|does not authenticate|always keeps/i,
-    );
+  const localReviewBoundarySources = [
+    {
+      name: "project AGENTS",
+      source: projectAgents,
+      boundary: /agent-recorded[\s\S]{0,180}not authenticated\s+dispatch,\s+identity,\s+or\s+independence/i,
+    },
+    {
+      name: "delivery controller",
+      source: runDeliverySkill,
+      boundary: /agent-recorded artifact metadata only[\s\S]{0,120}cannot establish a passed audit,\s*independent review,\s*or PR readiness/i,
+    },
+    {
+      name: "verification skill",
+      source: verifyChangeSkill,
+      boundary: /agent-recorded[\s\S]{0,140}cannot prove distinct delegation[\s\S]{0,80}satisfy independent review/i,
+    },
+    {
+      name: "parallel-delivery skill",
+      source: coordinateDeliverySkill,
+      boundary: /agent-recorded[\s\S]{0,140}cannot establish mechanical independence/i,
+    },
+    {
+      name: "README",
+      source: readme,
+      boundary: /agent-recorded receipts[\s\S]{0,200}not authenticated dispatch or identity[\s\S]{0,120}never unlock stack-generated PR readiness/i,
+    },
+    {
+      name: "operating manual",
+      source: operatingManual,
+      boundary: /agent-recorded[\s\S]{0,160}cannot\s+authenticate distinct physical-agent provenance/i,
+    },
+    {
+      name: "trust guide",
+      source: trustGuide,
+      boundary: /agent-recorded[\s\S]{0,280}cannot prove\s+distinct reviewer delegation/i,
+    },
+    {
+      name: "behavioral evaluations",
+      source: behavioralEvals,
+      boundary: /local artifact[\s\S]{0,180}cannot establish a passed audit or\s+mechanical independence[\s\S]{0,180}agent-recorded/i,
+    },
+  ];
+  for (const { name, source, boundary } of localReviewBoundarySources) {
+    assert.match(source, /agent-recorded/i, `${name} must identify local receipts`);
+    assert.match(source, boundary, `${name} must state the local-evidence boundary`);
     assert.match(source, /protected\s+GitHub\s+review/i);
   }
   for (const adapter of [cursorAdapter, claudeAdapter, geminiAdapter]) {

@@ -44,8 +44,8 @@ Keep the core dependent on capabilities rather than provider brands:
 - review: `builtin`, `coderabbit`, or `github-human`;
 - knowledge: `repository` or `gbrain`.
 
-`builtin` review configuration and `repository` knowledge are portable. A
-recorded builtin reviewer-result artifact is structural metadata only; C0 records unavailable
+Built-in review configuration (`builtin`) and `repository` knowledge are portable. A
+recorded built-in reviewer-result artifact is structural metadata only; C0 records unavailable
 and blocks readiness, and local artifacts never unlock PR readiness. Protected
 GitHub review remains the authenticated gate, while CodeRabbit itself remains
 replaceable.

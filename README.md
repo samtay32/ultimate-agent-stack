@@ -236,7 +236,7 @@ flowchart LR
     V --> T["Project tests and checks"]
     T --> A["Bounded local reviewer-result artifact"]
     A --> DRAFT["Draft PR + evidence"]
-    DRAFT --> PROTECTED["Protected GitHub review"]
+    DRAFT --> PROTECTED["Protected GitHub review (when configured by policy)"]
     PROTECTED --> C["Inspect the cited code and evidence"]
     C --> F{"Claim established?"}
     F -- "True and in scope" --> V

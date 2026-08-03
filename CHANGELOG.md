@@ -26,9 +26,9 @@ All notable changes to Ultimate Agent Stack are documented here.
 
 - Behavioral run records use schema version 3, keep all 28 scenarios in the
   denominator, and derive activation and review outcomes from durable evidence.
-- Builtin local readiness requires a passed exact-head local audit and current
-  successful verification. Authenticated protected review remains separate and
-  is required only by configured external-review policy.
+- Local review output is diagnostic exact-head artifact-integrity evidence only;
+  current successful verification remains required. Authenticated protected
+  review is a separate gate required only by configured external-review policy.
 - Git identity probes ignore ambient configuration and support SHA-1 and SHA-256
   repositories without adding runtime dependencies.
 

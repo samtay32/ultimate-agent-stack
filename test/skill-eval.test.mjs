@@ -1748,6 +1748,28 @@ test("agent-recorded local passed results cannot satisfy direct-review independe
   }
 });
 
+test("direct delivery rejects conflicting passed and changes-requested local result artifacts", () => {
+  const record = passingRecord();
+  const scenario = catalog.scenarios.find((item) => item.id === "direct-delivery");
+  const item = record.cases.find((caseItem) => caseItem.scenario_id === scenario.id);
+  const changesRequested = reviewEvidence(scenario, item.final_git_head, {
+    result: "changes-requested",
+    reviewerId: "changes-requested-reviewer",
+  });
+  item.observed.review_receipts.push(changesRequested.receipt);
+  item.observed.review_result_artifacts.push(changesRequested.artifact);
+
+  const result = evaluateRecord(record, catalog);
+  const evaluated = result.cases.find((caseItem) => caseItem.scenario_id === scenario.id);
+  assert.equal(result.ok, false);
+  assert.equal(evaluated.review.status, "blocked");
+  assert.equal(evaluated.review.evidence_outcome, "conflict");
+  assert.match(
+    evaluated.findings.join("\n"),
+    /review evidence contains conflicting outcomes/,
+  );
+});
+
 test("a post-artifact checkpoint commit cannot be labelled local-result-artifact", () => {
   const record = passingRecord();
   const item = record.cases.find(
