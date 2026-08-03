@@ -164,8 +164,8 @@ flowchart LR
    contains no LLM decision logic.
 6. **Review plane** — records a bounded local reviewer audit after the exact
    commit, then uses protected GitHub review as the separate authenticated
-   adversarial surface when the configured policy requires it. Local
-   `agent-recorded` audit evidence never proves reviewer independence.
+   adversarial surface. Local `agent-recorded` audit evidence proves exact-head
+   artifact integrity only and never unlocks PR readiness.
 7. **Authority plane** — limits interruptions without pretending authority does
    not exist. Reversible engineering is agent-owned; credentials, cost, legal
    risk, destructive production actions, and unauthorized releases remain

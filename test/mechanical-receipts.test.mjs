@@ -466,14 +466,19 @@ test("terminal verification and local audit bind the same clean final head", () 
     const review = commandReviewStatus(fixture.directory, fixture.runId);
     assert.equal(review.local_review_audit_passed, true);
     const status = commandStatus(fixture.directory, fixture.runId);
-    assert.equal(status.ok, true, JSON.stringify(status, null, 2));
+    assert.equal(status.ok, false, JSON.stringify(status, null, 2));
     assert.equal(status.verification.ok, true);
     assert.deepEqual(status.verification.git, review.git);
     assert.equal(
       status.verification.reasons.some((reason) => /stale/i.test(reason)),
       false,
     );
-    assert.equal(status.readiness.pr_ready, true);
+    assert.equal(status.readiness.review_gate_ready, false);
+    assert.equal(status.readiness.pr_ready, false);
+    assert.match(
+      status.readiness.reasons.join(" "),
+      /agent-recorded.*cannot prove distinct reviewer delegation/,
+    );
   } finally {
     fixture.cleanup();
   }
@@ -1103,7 +1108,7 @@ test(
   },
 );
 
-test("status --run applies the configured external-review policy to full readiness", () => {
+test("status --run keeps a healthy builtin local audit mechanically blocked", () => {
   const fixture = createFixture();
   try {
     commandApproveChecks(
@@ -1111,7 +1116,10 @@ test("status --run applies the configured external-review policy to full readine
       "Inspected the bounded fixture verification commands",
     );
     commit(fixture.directory, "approve fixture verification checks");
-    recordPassed(fixture);
+    recordPassed(fixture, {
+      reviewerKind: "arbitrary-distinct-reviewer-kind",
+      reviewerId: "arbitrary-distinct-reviewer-id",
+    });
     const before = commandStatus(fixture.directory, fixture.runId);
     assert.equal(before.ok, false);
     assert.equal(before.review.review_gate_ready, false);
@@ -1134,22 +1142,29 @@ test("status --run applies the configured external-review policy to full readine
     );
     commandVerify(fixture.directory);
     const after = commandStatus(fixture.directory, fixture.runId);
-    assert.equal(after.ok, true, JSON.stringify(after, null, 2));
+    assert.equal(after.ok, false, JSON.stringify(after, null, 2));
     assert.equal(after.review.review_gate_ready, false);
     assert.equal(after.review.local_review_audit_passed, true);
-    assert.equal(after.readiness.review_gate_ready, true);
+    assert.equal(
+      after.review.receipts[0].reviewer_id,
+      "arbitrary-distinct-reviewer-id",
+    );
+    assert.equal(after.readiness.review_gate_ready, false);
     assert.equal(after.readiness.local_review_audit_passed, true);
     assert.equal(after.readiness.external_review_required, false);
     assert.equal(after.readiness.protected_review, "not-required");
-    assert.equal(after.readiness.pr_ready, true);
-    assert.equal(after.readiness.reasons.length, 0);
+    assert.equal(after.readiness.pr_ready, false);
+    assert.match(
+      after.readiness.reasons.join(" "),
+      /agent-recorded.*cannot prove distinct reviewer delegation/,
+    );
     assert.deepEqual(after.review.git, after.verification.git);
     const cliAfter = spawnSync(
       process.execPath,
       [PACKAGE_CLI, "status", "--target", fixture.directory, "--run", fixture.runId],
       { encoding: "utf8" },
     );
-    assert.equal(cliAfter.status, 0, cliAfter.stderr);
+    assert.equal(cliAfter.status, 1, cliAfter.stderr);
   } finally {
     fixture.cleanup();
   }
@@ -1281,8 +1296,9 @@ test("verification evidence contains tamper-detection hashes and exact check res
     assert.equal(evidence.checks[0].result, "passed");
     assert.equal(evidence.checks[0].returncode, 0);
     const status = commandStatus(fixture.directory, fixture.runId);
-    assert.equal(status.ok, true, JSON.stringify(status, null, 2));
+    assert.equal(status.ok, false, JSON.stringify(status, null, 2));
     assert.equal(status.verification.ok, true);
+    assert.equal(status.readiness.review_gate_ready, false);
     assert.deepEqual(status.review.git, status.verification.git);
   } finally {
     fixture.cleanup();
@@ -1417,8 +1433,9 @@ test("status validates configuration and preserves readiness across branch renam
     const renamed = runGit(fixture.directory, ["branch", "-m", "renamed-for-readiness"]);
     assert.equal(renamed, "");
     const status = commandStatus(fixture.directory, fixture.runId);
-    assert.equal(status.ok, true, JSON.stringify(status, null, 2));
+    assert.equal(status.ok, false, JSON.stringify(status, null, 2));
     assert.equal(status.verification.ok, true);
+    assert.equal(status.readiness.review_gate_ready, false);
     assert.deepEqual(status.review.git, {
       head: status.verification.git.head,
       object_format: status.verification.git.object_format,

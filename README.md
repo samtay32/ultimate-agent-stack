@@ -123,13 +123,10 @@ non-authenticated.
 
 `review status --run RUN` preserves the local structural result but keeps
 `independent_reviewed` and `review_gate_ready` false: agent-recorded receipts
-cannot prove distinct reviewer delegation. In a profile that requires external
-review, protected GitHub review is authoritative and not evaluated by the local
-CLI. The default builtin policy does not
-require an external review, but still requires a valid passed exact-head local
-audit plus successful project and verification gates. It may then be ready
-while `independent_reviewed` remains false; this is policy satisfaction, not
-authenticated independence.
+prove exact-head artifact integrity, not authenticated dispatch or identity.
+They never unlock stack-generated PR readiness. A draft PR/evidence bundle may
+proceed under user authority; protected GitHub review is authoritative and not
+evaluated by the local CLI.
 
 The ordinary `verify` command may run configured checks on a dirty
 worktree; `status --run RUN` still requires a clean exact-head verification.
@@ -239,8 +236,7 @@ flowchart LR
     V --> T["Project tests and checks"]
     T --> A["Bounded local review audit"]
     A --> DRAFT["Draft PR + evidence"]
-    DRAFT --> Q{"Protected review required?"}
-    Q -- "Yes" --> PROTECTED["Protected review"]
+    DRAFT --> PROTECTED["Protected GitHub review"]
     PROTECTED --> C["Inspect the cited code and evidence"]
     C --> F{"Claim established?"}
     F -- "True and in scope" --> V
@@ -250,7 +246,6 @@ flowchart LR
     H --> G
     G -- "Yes" --> D["Merge-ready result + evidence"]
     G -- "No" --> PROTECTED
-    Q -- "No" --> D
 ```
 
 `BRIEF.md` is optional and unlocked while EXTERNAL or DISCOVER intent evolves.

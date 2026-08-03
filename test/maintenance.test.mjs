@@ -478,7 +478,7 @@ test("PR-ready review guidance attempts native delegation before unavailable", (
     assert.match(source, /coordinator (?:state\/)?token/i);
     assert.match(
       source,
-      /(?:(?:capability|dispatch|isolation)[\s\S]*(?:absent|failed|cannot be prevented|prevented\/verified|unverifiable)[\s\S]*`?review\s+unavailable|(?:absent, failed, or unverifiable|absent\/failed\/unverifiable)[\s\S]*isolation[\s\S]*`?review\s+unavailable)/i,
+      /(?:absent|failed|unverifiable|wait without dispatch|missing result)[\s\S]*`?review\s+unavailable/i,
     );
     assert.match(
       source,
@@ -497,6 +497,39 @@ test("PR-ready review guidance attempts native delegation before unavailable", (
   assert.match(
     runDeliverySkill,
     /AGENTS\.md[\s\S]*assignment[\s\S]*exclusion|assignment[\s\S]*exclusion[\s\S]*AGENTS\.md/i,
+  );
+  assert.match(
+    deliveryPolicy,
+    /Dispatch before any wait or poll[\s\S]*wait only on it[\s\S]*inspect its returned result/i,
+  );
+  for (const phrase of [
+    /Empty receiver IDs or states/i,
+    /wait[\s\S]{0,20}without\s+dispatch/i,
+    /missing result/i,
+    /coordinator-authored substitute/i,
+    /`review unavailable`/i,
+  ]) {
+    assert.match(deliveryPolicy, phrase);
+  }
+});
+
+test("local review guidance keeps portable audit evidence out of PR readiness", () => {
+  for (const source of [
+    projectAgents,
+    deliveryPolicy,
+    readme,
+    operatingManual,
+    trustGuide,
+  ]) {
+    assert.match(source, /exact-head artifact integrity/i);
+    assert.match(
+      source,
+      /(?:never|cannot) unlock(?: stack-generated)? PR(?:-|\s+)read(?:y|iness)|cannot make[\s\S]{0,40}PR-ready|cannot make `?(?:readiness\.)?pr_ready`? true/i,
+    );
+  }
+  assert.match(
+    behavioralEvals,
+    /no trusted native-dispatch trace[\s\S]*structurally passed local audit never proves real delegation/i,
   );
 });
 
@@ -877,11 +910,15 @@ test("local review receipts are audit evidence, not mechanical independence", ()
   }
   assert.match(
     adaptersGuide,
-    /Configuration is portable[\s\S]{0,180}real supported reviewer capability[\s\S]{0,120}unavailable evidence blocks readiness/i,
+    /Configuration is portable[\s\S]{0,180}structural metadata[\s\S]{0,120}cannot unlock PR readiness/i,
   );
   assert.match(
     delegationContract,
-    /protected GitHub review owns approval and is not\s+evaluated by the local CLI/i,
+    /local audit[\s\S]*cannot establish[\s\S]*local PR readiness/i,
+  );
+  assert.match(
+    delegationContract,
+    /protected\s+GitHub\s+review owns approval and is not\s+evaluated by the local CLI/i,
   );
   assert.doesNotMatch(closeReviewDescription, /local pre-PR independent review/i);
   for (const source of [

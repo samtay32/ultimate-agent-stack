@@ -24,10 +24,8 @@ failure evidence, never independent-review success.
 
 On any of those conditions, record the assignment as failed, cancelled, or
 serially recovered. Continue safe serial work when useful. The local audit
-cannot establish authenticated independence. Builtin readiness still needs a
-valid passed exact-head local audit; an external-review policy leaves local
-readiness blocked because protected GitHub review owns approval and is not
-evaluated by the local CLI.
+cannot establish authenticated independence or local PR readiness. Protected
+GitHub review owns approval and is not evaluated by the local CLI.
 
 ## Assignment Envelope
 

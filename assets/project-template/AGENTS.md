@@ -85,21 +85,21 @@ or review completed require the corresponding path and command/result evidence.
 Activation is receipt-derived by `evidence activation-status --run RUN --require
 SKILL`, not prose. `review record` stores an exact-clean local audit under
 `.agent-stack/runs/reviews/`; `review unavailable` is durable. Agent-recorded
-local receipts cannot prove delegation/independence or set `independent_reviewed`
-or `review_gate_ready`.
-External profiles need protected GitHub review; builtin needs health, current
-verification, and an exact-head passed audit. Missing/failed/empty/stale/altered/
-wrong-run/wrong-commit/dirty-tree/unavailable/same-recorded-identity evidence
-blocks the audit.
+local receipts prove exact-head artifact integrity only—not authenticated
+dispatch, identity, or independence—and cannot unlock PR readiness. Under user
+authority, a
+draft PR/evidence bundle may proceed; protected GitHub review is the
+authenticated gate. Missing/failed/empty/stale/altered/wrong-run/wrong-commit/
+dirty-tree/unavailable/same-recorded-identity evidence blocks the audit.
 
 After tests and an exact clean commit, locally authorized PR-ready work attempts
-one native bounded read-only reviewer in a fresh/no-history or demonstrably sanitized
-session. Give only checkout locator, commit, intent/acceptance, and review
-scope—not parent transcript/output, coordinator state/token, credentials, or
-environment secrets. Bind returned ID/result to the commit. Absent/failed/
+one native bounded read-only reviewer in a fresh/no-history or demonstrably
+sanitized session. Give only checkout locator, commit, intent/acceptance, and
+review scope—not parent transcript/output, coordinator state/token, credentials,
+or environment secrets. Bind returned ID/result to the commit. Absent/failed/
 unverifiable capability, dispatch/collection, or isolation requires `review
-unavailable`, blocking readiness including builtin. Never invent receipts; prose
-cannot prove isolation.
+unavailable`, blocking builtin readiness. Never invent receipts; prose cannot
+prove isolation.
 
 Keep live evaluation prompts and serialized context at or below 2 KiB. Paid
 live-model tests are not part of deterministic package validation.

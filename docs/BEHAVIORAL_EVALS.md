@@ -103,7 +103,8 @@ observable outputs, and source-claim dispositions from inspectable traces and
 fixture snapshots. The evaluator validates those records; it does not observe
 the broader project filesystem or authenticate the collector on its own. It
 mechanically checks the exact self-contained reviewer-result snapshots recorded
-inside each case.
+inside each case. Portable run records contain no trusted native-dispatch trace,
+so a structurally passed local audit never proves real delegation.
 
 The negative case makes false activation a first-class failure. Adding more
 positive examples cannot compensate for an agent starting work when it should

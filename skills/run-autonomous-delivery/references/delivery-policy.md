@@ -89,13 +89,21 @@ For DIRECT and end-to-end delivery:
 The reviewer ID is the exact returned worker/thread/session ID, and reviewer
 kind describes that actual capability.
 
+Dispatch before any wait or poll. Capture that returned ID, wait only on it,
+and inspect its returned result. Empty receiver IDs or states, a wait without
+dispatch, a missing result, or a coordinator-authored substitute requires
+`review unavailable`.
+
 Give the reviewer only the sanitized assignment allowed by `AGENTS.md`. The
 coordinator may serialize its returned inspectable result into the shipped
 reviewer-result contract, but must not invent a result or replace a missing
 reviewer with self, primary, coordinator, or generic labels. If dispatch,
 collection, isolation, ID, or result is absent, failed, or unverifiable, record
 `review unavailable` and leave readiness blocked. Local evidence remains
-agent-recorded and cannot authenticate physical independence.
+agent-recorded: it proves exact-head artifact integrity, not authenticated
+dispatch or identity, and cannot unlock PR-ready status. A user-authorized
+draft PR/evidence bundle may proceed; protected GitHub review is the
+authenticated gate.
 
 Record the returned result against that exact final clean head:
 

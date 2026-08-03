@@ -102,10 +102,9 @@ repository checkpoint.
 
 Delivery proceeds through deterministic work and tests, an exact clean commit,
 a bounded local reviewer attempt with an inspectable audit result (or durable
-unavailable receipt), then a draft PR. Protected GitHub review follows when the
-configured policy requires it. The default builtin policy may proceed without
-that external requirement only after a valid passed exact-head local audit and
-its other gates; local audit evidence never authenticates reviewer independence.
+unavailable receipt), then a draft PR. Local audit proves exact-head artifact
+integrity only; it never unlocks PR readiness. Protected GitHub review is the
+separate authenticated gate.
 
 ## Installation Locations
 

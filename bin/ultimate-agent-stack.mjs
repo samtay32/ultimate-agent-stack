@@ -10903,7 +10903,7 @@ function commandStatus(target, runId) {
     const externalReviewRequired = reviewPolicy.external_review_required === true;
     const localReviewAuditPassed = review?.local_review_audit_passed === true;
     const reviewGateReady =
-      reviewPolicy.valid && !externalReviewRequired && localReviewAuditPassed;
+      reviewPolicy.valid && review?.review_gate_ready === true;
     const protectedReview = !reviewPolicy.valid
       ? "invalid-policy"
       : externalReviewRequired
@@ -10914,8 +10914,8 @@ function commandStatus(target, runId) {
     const readinessReasons = [
       ...projectHealthReasons,
       ...(!reviewPolicy.valid ? ["review provider policy is invalid"] : []),
-      ...(!localReviewAuditPassed
-        ? (review?.local_review_audit_reasons ?? review?.reasons ?? [])
+      ...(!reviewGateReady
+        ? (review?.reasons ?? review?.local_review_audit_reasons ?? [])
         : []),
       ...(externalReviewRequired
         ? ["protected GitHub review is not evaluated locally"]
@@ -10946,8 +10946,7 @@ function commandStatus(target, runId) {
         : projectHealthy &&
           verification?.ok === true &&
           reviewPolicy.valid &&
-          reviewPolicy.external_review_required === false &&
-          review?.local_review_audit_passed === true,
+          review?.review_gate_ready === true,
     package_available: { name: PACKAGE_NAME, version: PACKAGE_VERSION },
     installed: installation?.package ?? null,
     upgrade_available:
