@@ -27,12 +27,12 @@ common hash-bound `.agents` recipe. Always record the actual installed path used
 
 When the selected route reaches verification or readiness, use `evidence
 activation-status --run RUN --require SKILL` for exact-run receipt-derived
-activation and `review status --run RUN` for local pre-PR audit status, which
-remains blocked: only protected GitHub review can establish mechanical
-independence. Do not run either during the initial one-question DISCOVER draft.
-Never replace these artifacts with skill names or approval prose; unavailable
-review evidence remains blocked. Keep live evaluation request plus context at
-or below 2 KiB, without repository dumps or expected skill names.
+activation. `review status --run RUN` reports structural local-audit evidence;
+`status --run RUN` reports configured local-policy readiness. Protected GitHub
+review is not evaluated by the local CLI. Do not run either during the initial one-question DISCOVER draft.
+Never replace these artifacts with skill names or
+approval prose; unavailable review evidence remains blocked. Keep live evaluation
+request plus context at or below 2 KiB, without repository dumps or expected skill names.
 
 Apply `$use-project-knowledge` only when the selected route's immediate next
 decision needs relevant knowledge beyond the checkout. Apply

@@ -456,6 +456,20 @@ const REVIEW_PROVIDERS = new Set([
   "coderabbit",
   "github-human",
 ]);
+
+function configuredReviewReleasePolicy(config) {
+  const review = config?.capabilities?.review;
+  const provider = review?.provider;
+  const valid =
+    REVIEW_PROVIDERS.has(provider) &&
+    typeof review?.required_for_release === "boolean" &&
+    review.required_for_release === (provider !== "builtin");
+  return {
+    valid,
+    external_review_required: valid ? provider !== "builtin" : null,
+  };
+}
+
 const KNOWLEDGE_PROVIDERS = new Set(["repository", "gbrain"]);
 const KNOWLEDGE_SCOPES = new Set(["project", "organization"]);
 const TELEMETRY_PROVIDER_ROLES = Object.freeze({
@@ -10884,18 +10898,22 @@ function commandStatus(target, runId) {
     runId === undefined
       ? null
       : verificationReadiness(target, config, git);
+  const reviewPolicy = configuredReviewReleasePolicy(config);
   if (runId !== undefined) {
-    const externalReviewRequired =
-      config?.capabilities?.review?.required_for_release === true;
+    const externalReviewRequired = reviewPolicy.external_review_required === true;
     const localReviewAuditPassed = review?.local_review_audit_passed === true;
-    const reviewGateReady = !externalReviewRequired && localReviewAuditPassed;
-    const protectedReview = externalReviewRequired
-      ? "not-evaluated-locally"
-      : "not-required";
+    const reviewGateReady =
+      reviewPolicy.valid && !externalReviewRequired && localReviewAuditPassed;
+    const protectedReview = !reviewPolicy.valid
+      ? "invalid-policy"
+      : externalReviewRequired
+        ? "not-evaluated-locally"
+        : "not-required";
     const prReady =
       projectHealthy && verification?.ok === true && reviewGateReady;
     const readinessReasons = [
       ...projectHealthReasons,
+      ...(!reviewPolicy.valid ? ["review provider policy is invalid"] : []),
       ...(!localReviewAuditPassed
         ? (review?.local_review_audit_reasons ?? review?.reasons ?? [])
         : []),
@@ -10914,7 +10932,7 @@ function commandStatus(target, runId) {
       ...readiness,
       review_gate_ready: reviewGateReady,
       local_review_audit_passed: localReviewAuditPassed,
-      external_review_required: externalReviewRequired,
+      external_review_required: reviewPolicy.external_review_required,
       protected_review: protectedReview,
       pr_ready: prReady,
       status: prReady ? "passed" : "blocked",
@@ -10927,7 +10945,8 @@ function commandStatus(target, runId) {
         ? projectHealthy
         : projectHealthy &&
           verification?.ok === true &&
-          !config?.capabilities?.review?.required_for_release &&
+          reviewPolicy.valid &&
+          reviewPolicy.external_review_required === false &&
           review?.local_review_audit_passed === true,
     package_available: { name: PACKAGE_NAME, version: PACKAGE_VERSION },
     installed: installation?.package ?? null,

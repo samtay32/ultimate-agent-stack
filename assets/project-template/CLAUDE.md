@@ -28,10 +28,10 @@ Because this adapter requires an actual native `Skill` invocation, record
 not copy the common `.agents` file-read mode unless the skill was only hash-read.
 
 When the selected route reaches verification or readiness, use `evidence
-activation-status --run RUN --require SKILL` for receipt-derived activation and
-`review status --run RUN` for local pre-PR audit status, which remains blocked:
-only protected GitHub review can establish mechanical independence. Do not run
-either during the initial one-question DISCOVER draft. Never replace those
-artifacts with skill names or approval prose; unavailable review evidence
-remains blocked. Keep live evaluation request plus context at or below 2 KiB,
-without repository dumps or expected skill names.
+activation-status --run RUN --require SKILL` for receipt-derived activation.
+`review status --run RUN` reports structural local-audit evidence; `status --run
+RUN` reports configured local-policy readiness. Protected GitHub review is not
+evaluated by the local CLI. Do not run either during the initial one-question DISCOVER draft.
+Never replace those artifacts with skill names or approval
+prose; unavailable review evidence remains blocked. Keep live evaluation request
+plus context at or below 2 KiB, without repository dumps or expected skill names.

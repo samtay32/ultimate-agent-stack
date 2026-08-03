@@ -217,6 +217,13 @@ const geminiAdapter = readFileSync(
   join(PACKAGE_ROOT, "assets/project-template/GEMINI.md"),
   "utf8",
 );
+const cursorAdapter = readFileSync(
+  join(
+    PACKAGE_ROOT,
+    "assets/project-template/.cursor/rules/agent-stack.mdc",
+  ),
+  "utf8",
+);
 const readme = readFileSync(join(PACKAGE_ROOT, "README.md"), "utf8");
 const trustGuide = readFileSync(
   join(PACKAGE_ROOT, "docs/TRUST.md"),
@@ -670,7 +677,7 @@ test("flexible intake stays ordered, proportionate, and source preserving", () =
 
 test("always-loaded delivery policy stays compact and routes detail to phase references", () => {
   const words = (source) => source.trim().split(/\s+/).length;
-  assert.ok(Buffer.byteLength(projectAgents) <= 9_700);
+  assert.ok(Buffer.byteLength(projectAgents) <= 9_400);
   assert.ok(words(projectAgents) <= 1_600);
   assert.ok(Buffer.byteLength(runDeliverySkill) < 9_000);
   assert.ok(words(runDeliverySkill) <= 1_150);
@@ -863,6 +870,20 @@ test("local review receipts are audit evidence, not mechanical independence", ()
     );
     assert.match(source, /protected\s+GitHub\s+review/i);
   }
+  for (const adapter of [cursorAdapter, claudeAdapter, geminiAdapter]) {
+    assert.match(adapter, /review status --run RUN[\s\S]{0,80}structural local-audit/i);
+    assert.match(adapter, /status --run RUN[\s\S]{0,80}configured local-policy readiness/i);
+    assert.match(adapter, /protected GitHub\s+review[\s\S]{0,120}not\s+evaluated by the local CLI/i);
+  }
+  assert.match(
+    adaptersGuide,
+    /Configuration is portable[\s\S]{0,180}real supported reviewer capability[\s\S]{0,120}unavailable evidence blocks readiness/i,
+  );
+  assert.match(
+    delegationContract,
+    /protected GitHub review owns approval and is not\s+evaluated by the local CLI/i,
+  );
+  assert.doesNotMatch(closeReviewDescription, /local pre-PR independent review/i);
   for (const source of [
     projectAgents,
     handoffTemplate,

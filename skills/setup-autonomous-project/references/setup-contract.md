@@ -44,10 +44,12 @@ Keep the core dependent on capabilities rather than provider brands:
 - review: `builtin`, `coderabbit`, or `github-human`;
 - knowledge: `repository` or `gbrain`.
 
-`builtin` review and `repository` knowledge are always available. Production
-profiles require a current independent external review, but CodeRabbit itself
-remains replaceable. Knowledge is never a release dependency and always falls
-back to repository state.
+`builtin` review configuration and `repository` knowledge are portable. A
+passed builtin local audit still needs a real supported reviewer capability;
+C0 records unavailable and blocks readiness. Production profiles require a
+current independent external review, but CodeRabbit itself remains replaceable.
+Knowledge is never a release dependency and always falls back to repository
+state.
 
 Project-scoped local GBrain uses a checkout-local ignored home and must pass
 database containment, provider doctor, and identity checks. Remote organization

@@ -1,6 +1,6 @@
 ---
 name: close-review-loop
-description: "Drive an existing GitHub pull request and its configured independent review provider through evidence-backed closure. Use only for an existing pull request or an external provider or human review thread: address review comments, wait on CI, re-trigger the selected provider, validate an allowed GitHub human approval, resolve threads, or decide whether the existing change is ready to merge. Do not use for a local pre-PR independent review or as the top-level entry for a new delivery request; run-autonomous-delivery owns work from intent through pull request creation and calls this skill for closure."
+description: "Drive an existing GitHub pull request and its configured independent review provider through evidence-backed closure. Use only for an existing pull request or an external provider or human review thread: address review comments, wait on CI, re-trigger the selected provider, validate an allowed GitHub human approval, resolve threads, or decide whether the existing change is ready to merge. Do not use for a local pre-PR review audit or as the top-level entry for a new delivery request; run-autonomous-delivery owns work from intent through pull request creation and calls this skill for closure."
 ---
 
 # Close Review Loop

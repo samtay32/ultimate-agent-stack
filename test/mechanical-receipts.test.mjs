@@ -1110,32 +1110,45 @@ test("status --run keeps a required external-review profile blocked by local evi
   }
 });
 
-test("a hash-approved review-policy mismatch never becomes ready", () => {
-  const fixture = createFixture();
-  try {
-    commandApproveChecks(
-      fixture.directory,
-      "Inspected the bounded fixture verification commands",
-    );
-    commit(fixture.directory, "approve fixture verification checks");
-    recordPassed(fixture);
-    commandVerify(fixture.directory);
-    const configPath = join(fixture.directory, ".agent-stack", "config.json");
-    const config = JSON.parse(readFileSync(configPath, "utf8"));
-    config.capabilities.review.required_for_release = true;
-    config.safety.approved_configuration_hash = configurationHash(config);
-    writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
-    const status = commandStatus(fixture.directory, fixture.runId);
-    assert.equal(status.configuration_approved, true);
-    assert.equal(status.ok, false);
-    assert.equal(status.readiness.pr_ready, false);
-    assert.match(
-      status.configuration_errors.join("\n"),
-      /required_for_release must match the selected review provider policy/,
-    );
-    assert.ok(status.readiness.reasons.includes("project configuration is invalid"));
-  } finally {
-    fixture.cleanup();
+test("hash-approved review-provider policy mismatches fail closed", () => {
+  for (const { provider, required, allowedLogins } of [
+    { provider: "github-human", required: false, allowedLogins: ["trusted-owner"] },
+    { provider: "coderabbit", required: false, allowedLogins: [] },
+    { provider: "builtin", required: true, allowedLogins: [] },
+  ]) {
+    const fixture = createFixture();
+    try {
+      commandApproveChecks(
+        fixture.directory,
+        "Inspected the bounded fixture verification commands",
+      );
+      commit(fixture.directory, "approve fixture verification checks");
+      recordPassed(fixture);
+      commandVerify(fixture.directory);
+      const configPath = join(fixture.directory, ".agent-stack", "config.json");
+      const config = JSON.parse(readFileSync(configPath, "utf8"));
+      config.capabilities.review.provider = provider;
+      config.capabilities.review.required_for_release = required;
+      config.capabilities.review.allowed_logins = allowedLogins;
+      config.safety.approved_configuration_hash = configurationHash(config);
+      writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
+      const status = commandStatus(fixture.directory, fixture.runId);
+      assert.equal(status.configuration_approved, true, provider);
+      assert.equal(status.ok, false, provider);
+      assert.equal(status.readiness.review_gate_ready, false, provider);
+      assert.equal(status.readiness.pr_ready, false, provider);
+      assert.equal(status.readiness.external_review_required, null, provider);
+      assert.equal(status.readiness.protected_review, "invalid-policy", provider);
+      assert.match(
+        status.configuration_errors.join("\n"),
+        /required_for_release must match the selected review provider policy/,
+        provider,
+      );
+      assert.ok(status.readiness.reasons.includes("project configuration is invalid"));
+      assert.ok(status.readiness.reasons.includes("review provider policy is invalid"));
+    } finally {
+      fixture.cleanup();
+    }
   }
 });
 

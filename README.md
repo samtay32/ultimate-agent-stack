@@ -124,8 +124,8 @@ non-authenticated.
 `review status --run RUN` preserves the local structural result but keeps
 `independent_reviewed` and `review_gate_ready` false: agent-recorded receipts
 cannot prove distinct reviewer delegation. In a profile that requires external
-review, `status --run RUN` remains blocked until the protected GitHub receipt
-satisfies that separate authenticated gate. The default builtin policy does not
+review, protected GitHub review is authoritative and not evaluated by the local
+CLI. The default builtin policy does not
 require an external review, but still requires a valid passed exact-head local
 audit plus successful project and verification gates. It may then be ready
 while `independent_reviewed` remains false; this is policy satisfaction, not
@@ -237,8 +237,8 @@ flowchart LR
     P --> L
     L --> V["Small working slices"]
     V --> T["Project tests and checks"]
-    T --> Q{"Independent review required?"}
-    Q -- "Yes" --> R["Independent review"]
+    T --> Q{"Protected review required?"}
+    Q -- "Yes" --> R["Protected review"]
     R --> C["Inspect the cited code and evidence"]
     C --> F{"Claim established?"}
     F -- "True and in scope" --> V
@@ -396,7 +396,7 @@ The core workflow depends on capabilities, not vendor names.
 | Capability | Built-in path | Optional adapter |
 |---|---|---|
 | Coding agent | Portable project rules and serial execution | Native Codex, Claude Code, Gemini, OpenCode, Cursor, or other supported features |
-| Independent review | Repository standards and intent review | CodeRabbit or an approved GitHub human |
+| Local review audit | Repository standards and intent review | CodeRabbit or an approved GitHub human |
 | Project knowledge | Repository checkpoint, evidence, and Git history | Project-scoped local or separately approved remote GBrain |
 | Project telemetry | Repository and deployment evidence | Reviewed read-only product, error, service, or AI provider |
 | Work tracking | Portable repository ledger and evidence graph | Scoped Linear reading plus optional receipted issue/comment creation; other reviewed providers can implement the same contract |

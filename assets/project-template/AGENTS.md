@@ -2,14 +2,14 @@
 
 ## Mission and precedence
 
-Deliver the simplest production-grade change from intent through verified review
-closure. Humans retain strategic and irreversible authority. Project-specific
-instructions outrank this generic contract.
+Deliver the simplest production-grade change through verified review. Humans
+retain strategic and irreversible authority. Project-specific instructions
+outrank this contract.
 
 Before meaningful work, read this file, `.agent-stack/core-policy.json`,
-`.agent-stack/config.json`, any valid checkpoint, and the current diff. Then
-load only the route, source, test, and reference needed for the next decision.
-Do not dump directories, artifacts, all skills, CLI source, or command help.
+`.agent-stack/config.json`, any valid checkpoint, and the current diff. Load
+only the next-decision route, source, test, and reference.
+Do not dump directories, artifacts, skills, CLI source, or help.
 
 ## Intake and skill routing
 
@@ -23,31 +23,27 @@ Use the first matching route:
 4. **DIRECT** clear, bounded, testable work.
 
 A supporting screenshot, log, or attachment does not make clear work EXTERNAL;
-clear bounded work remains DIRECT in a new repository. Completed state does not
-hijack a new request. Preserve supplied sources unchanged and reconcile claims
-with repository reality.
+clear bounded work remains DIRECT in a new repo. Completed state does not hijack
+a new request. Preserve sources and reconcile with reality.
 
-End-to-end delivery and RESUME use `$run-autonomous-delivery`; EXTERNAL and
-DISCOVER then use `$develop-project-brief`. A request explicitly limited to
-brief refinement, source audit, or reconciliation uses only
-`$develop-project-brief`. Explanation-only work uses neither. An explicitly
-phase-specific implementation uses `$build-vertical-slice`; explicitly
-phase-specific verification uses `$verify-change`. The controller owns routine
-implementation and verification without requiring nested native phase
-activations. `$close-review-loop` applies only to an existing pull request or
-provider/human review thread. Optional knowledge, telemetry, work, and parallel
-skills load only when the selected route's immediate next decision needs them;
-DISCOVER brief work stays serial.
+End-to-end delivery/RESUME use `$run-autonomous-delivery`; EXTERNAL/DISCOVER
+then use `$develop-project-brief`. A request explicitly limited to brief refinement,
+source audit, or reconciliation uses only `$develop-project-brief`;
+explanation-only work uses neither. Explicitly phase-specific implementation
+uses `$build-vertical-slice`; explicitly phase-specific verification uses
+`$verify-change`. The controller owns routine implementation and verification
+without nested native phases.
+`$close-review-loop` applies only to an existing pull request or provider/human
+review thread. Optional knowledge, telemetry, work, and parallel skills load
+only when the selected route's immediate next decision needs them; DISCOVER brief work stays serial.
 
-When the harness supports native skills, invoke the applicable skill before
-acting. Otherwise hash-bound read the same installed `SKILL.md`. If the harness
-can do neither safely, report the capability limitation and do not force a
-substitute. A prompt that names a skill is not activation. Receipts distinguish
-`native` from `file-read`; never mislabel either. Use a canonical project-relative
-installed path, exact exposed harness/model identities, and one stable event ID
-per actual activation so retries are idempotent. Never persist without checkout
-ownership and repository-write authority; keep read-only traces outside project
-state.
+When the harness supports native skills, invoke the applicable skill; otherwise
+hash-bound read the same installed `SKILL.md`. If it can do neither safely,
+report the capability limitation; do not force a substitute. A skill name is
+not activation. Receipts distinguish `native` from `file-read`; never mislabel.
+Use canonical project-relative installed paths, exact exposed harness/model IDs,
+and a stable event ID per actual activation for idempotent retries. Persist only
+with checkout/write authority; keep read-only traces outside project.
 
 ## Compact DISCOVER start
 
@@ -86,48 +82,44 @@ state. A failed or rejected guard never authorizes editing its prerequisites.
 Claims that a source was read, artifact locked, test passed, skill activated,
 or review completed require the corresponding path and command/result evidence.
 
-Activation comes from `evidence activation-status --run RUN --require SKILL`,
-not prose. `review record` retains a same-run, exact-clean local audit under
-`.agent-stack/runs/reviews/`; `review unavailable` is durable. Local
-`agent-recorded` receipts never prove delegation or set `independent_reviewed`
-or local `review_gate_ready`. External-review profiles need protected GitHub
-review and stay PR-blocked; builtin may pass health, current verification, and
-a passed exact-head local audit without authenticating independence. Missing,
-failed, empty, stale, altered, wrong-run, wrong-commit, dirty-tree,
-unavailable, or same-recorded-identity evidence blocks the audit.
+Activation is receipt-derived by `evidence activation-status --run RUN --require
+SKILL`, not prose. `review record` stores an exact-clean local audit under
+`.agent-stack/runs/reviews/`; `review unavailable` is durable. Agent-recorded
+local receipts cannot prove delegation/independence or set `independent_reviewed`
+or `review_gate_ready`.
+External profiles need protected GitHub review; builtin needs health, current
+verification, and an exact-head passed audit. Missing/failed/empty/stale/altered/
+wrong-run/wrong-commit/dirty-tree/unavailable/same-recorded-identity evidence
+blocks the audit.
 
-After tests and a clean exact commit, locally authorized PR-ready work attempts
-one native bounded read-only reviewer in a fresh/no-history or demonstrably
-sanitized session. Give only checkout locator, commit, intent/acceptance, and
-review scope—never parent transcript/output, coordinator state/token,
-credentials, or environment secrets. Bind returned ID/result to the commit.
-Absent/failed/unverifiable capability, dispatch/collection, or isolation
-requires `review unavailable`; external-review-required readiness blocks. Never
-invent receipts; prose cannot prove isolation.
+After tests and an exact clean commit, locally authorized PR-ready work attempts
+one native bounded read-only reviewer in a fresh/no-history or demonstrably sanitized
+session. Give only checkout locator, commit, intent/acceptance, and review
+scope—not parent transcript/output, coordinator state/token, credentials, or
+environment secrets. Bind returned ID/result to the commit. Absent/failed/
+unverifiable capability, dispatch/collection, or isolation requires `review
+unavailable`, blocking readiness including builtin. Never invent receipts; prose
+cannot prove isolation.
 
 Keep live evaluation prompts and serialized context at or below 2 KiB. Paid
 live-model tests are not part of deterministic package validation.
 
 ## Delivery and authority
 
-Before a meaningful change, provide a proportionate design note: understanding,
-assumptions, observable behavior, tests, and implementation. Build vertical,
-demonstrable slices; keep side effects and failure behavior explicit; update
-documentation; preserve unrelated changes. Never add dependencies,
-infrastructure, or services without need, or weaken tests, permissions,
-security, or acceptance criteria to obtain green.
+Before meaningful change, give a proportionate design note: understanding,
+assumptions, behavior, tests, and implementation. Build demonstrable vertical
+slices; state side effects/failures; update docs; preserve unrelated changes.
+Never add unneeded dependencies/infrastructure/services or weaken tests,
+permissions, security, or acceptance criteria for green.
 
-Proceed on routine reversible evidence-backed choices. Ask before choices that
-materially change product intent, spend money, create accounts, expose secrets,
-accept legal/privacy/security risk, delete material data, or perform an
-unauthorized merge, deployment, release, or publication. Recommend one safe
-default, offer at most one genuinely safe alternative, explain the practical
-consequence, then ask and end the turn. A question asking for
-acceptance ends the turn. A prior explicit instruction such as "use the
-recommendation" is approval for that recommendation, but never for an
-irreversible action. Read closed decisions before proposing changes; binding
-changes require product-owner authority and the audited unlock/change/relock
-path.
+Proceed on routine reversible evidence-backed choices. Before choices that
+materially change intent, spend money, create accounts, expose secrets, accept
+legal/privacy/security risk, delete data, or perform unauthorized merge,
+deployment, release, or publication, recommend one safe default and at most one genuinely safe alternative, explain the practical consequence, then ask and end the turn.
+A question seeking acceptance ends the turn. A prior explicit
+instruction to "use the recommendation" approves it, never an irreversible
+action. Read closed decisions; binding changes need product-owner authority and
+the audited unlock/change/relock path.
 
 This stack constrains its own files, commands, evidence, evaluation, and
 readiness artifacts. It is not a sandbox and cannot mechanically constrain

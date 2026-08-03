@@ -22,8 +22,9 @@ runtime model label, never pre-record it or write without the coordinator token.
 For read-only work, do not mutate the repository and report that the receipt was
 not persisted.
 
-Derive activation with `evidence activation-status --run RUN --require SKILL`
-and readiness with `review status --run RUN`; free-form skill names and review
-claims do not count. An unavailable reviewer is a blocker. Keep live evaluation
-request plus context at or below 2 KiB, without repository dumps or expected
-skill names.
+Derive activation with `evidence activation-status --run RUN --require SKILL`.
+`review status --run RUN` reports structural local-audit evidence; `status --run
+RUN` reports configured local-policy readiness. Protected GitHub review is not
+evaluated by the local CLI. Free-form skill names and review claims do not
+count. An unavailable reviewer is a blocker. Keep live evaluation request plus
+context at or below 2 KiB, without repository dumps or expected skill names.
