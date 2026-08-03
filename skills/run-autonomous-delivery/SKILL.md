@@ -99,8 +99,8 @@ a canonical disposition; residual risks and human-only actions are stated.
    `AGENTS.md` assignment/exclusion rules. Capture its exact returned ID/result
    bound to that commit, wait only on it, and inspect it. Empty IDs/states, wait without dispatch,
    missing result, or a coordinator substitute requires `review unavailable`;
-   never fabricate. A local result is agent-recorded audit evidence only and
-   cannot establish independent review or PR readiness. Only protected GitHub
+   never fabricate. A local result is agent-recorded artifact metadata only and
+   cannot establish a passed audit, independent review, or PR readiness. Only protected GitHub
    review establishes that mechanical gate. Check `review status --run RUN` and
    `status --run RUN`; local evidence cannot make either gate ready.
 

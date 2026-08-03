@@ -94,7 +94,7 @@ const REVIEW_UNAVAILABLE_STATUS = "unavailable";
 const REVIEW_RESULTS = new Set(["passed", "changes-requested"]);
 const REVIEW_EXPECTATIONS = new Set(["not-required", "passed", "blocked"]);
 const REVIEW_EVIDENCE_OUTCOMES = new Set([
-  "local-passed-audit",
+  "local-result-artifact",
   "unavailable",
   "changes-requested",
   "missing",
@@ -983,7 +983,7 @@ function validateReviewEvidence(
   const hasBlockingOutcome =
     validChangesRequested.length > 0 || validUnavailable.length > 0;
   const hasInvalidOutcome = invalidReviewCount > 0 || invalidUnavailableCount > 0;
-  const hasAgentRecordedPassedReview = validReviews.length > 0;
+  const hasAgentRecordedResultArtifact = validReviews.length > 0;
   const claimsUnavailableHandoff =
     (Array.isArray(observed.performed_actions) &&
       observed.performed_actions.includes("record_review_unavailable")) ||
@@ -1002,7 +1002,7 @@ function validateReviewEvidence(
     : validReviews.length > 0 && hasBlockingOutcome
       ? "conflict"
       : validReviews.length > 0
-        ? "local-passed-audit"
+        ? "local-result-artifact"
         : validChangesRequested.length > 0
           ? "changes-requested"
           : validUnavailable.length > 0
@@ -1039,7 +1039,7 @@ function validateReviewEvidence(
   } else if (
     expected === "blocked" &&
     !hasBlockingOutcome &&
-    !hasAgentRecordedPassedReview
+    !hasAgentRecordedResultArtifact
   ) {
     findings.push("expected blocked review outcome was not observed");
   }

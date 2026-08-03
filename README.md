@@ -234,7 +234,7 @@ flowchart LR
     P --> L
     L --> V["Small working slices"]
     V --> T["Project tests and checks"]
-    T --> A["Bounded local review audit"]
+    T --> A["Bounded local reviewer-result artifact"]
     A --> DRAFT["Draft PR + evidence"]
     DRAFT --> PROTECTED["Protected GitHub review"]
     PROTECTED --> C["Inspect the cited code and evidence"]
@@ -393,7 +393,7 @@ The core workflow depends on capabilities, not vendor names.
 | Capability | Built-in path | Optional adapter |
 |---|---|---|
 | Coding agent | Portable project rules and serial execution | Native Codex, Claude Code, Gemini, OpenCode, Cursor, or other supported features |
-| Review capability | Agent-recorded local review audit | Protected CodeRabbit or approved GitHub human review |
+| Review capability | Agent-recorded local reviewer-result artifact | Protected CodeRabbit or approved GitHub human review |
 | Project knowledge | Repository checkpoint, evidence, and Git history | Project-scoped local or separately approved remote GBrain |
 | Project telemetry | Repository and deployment evidence | Reviewed read-only product, error, service, or AI provider |
 | Work tracking | Portable repository ledger and evidence graph | Scoped Linear reading plus optional receipted issue/comment creation; other reviewed providers can implement the same contract |

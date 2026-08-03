@@ -4860,7 +4860,7 @@ function commandReviewRecord(target, options) {
     path,
     receipt: receiptWithId,
     boundary:
-      "This is an agent-recorded local pre-PR receipt. It is separate from protected GitHub review receipts and is not external-provider authentication.",
+      "This records an agent-reported local reviewer result artifact. It is not a passed audit or external-provider authentication and is separate from protected GitHub review receipts.",
   };
 }
 
@@ -4972,29 +4972,30 @@ function commandReviewStatus(target, runId, capturedGit = undefined) {
   const changesRequested = validReceipts.filter(
     (receipt) => receipt.result === "changes-requested",
   );
-  const localAuditReasons = [];
+  const localArtifactReasons = [];
   if (unavailable.length > 0) {
-    localAuditReasons.push("local review audit was recorded as unavailable");
+    localArtifactReasons.push("local reviewer result was recorded as unavailable");
   }
   if (selectedEntries.length === 0) {
-    localAuditReasons.push("no review receipt exists for this run");
+    localArtifactReasons.push("no reviewer result receipt exists for this run");
   }
   if (passed.length === 0) {
-    localAuditReasons.push("no passed exact-head local review audit exists");
+    localArtifactReasons.push("no reported passed reviewer result artifact exists");
   }
   if (changesRequested.length > 0) {
-    localAuditReasons.push("a local reviewer requested changes");
+    localArtifactReasons.push("a reported local reviewer result requested changes");
   }
   if (invalidReceipts.length > 0) {
-    localAuditReasons.push(
-      "local review audit evidence is invalid, stale, altered, or dirty",
+    localArtifactReasons.push(
+      "local reviewer result artifact evidence is invalid, stale, altered, or dirty",
     );
   }
-  const localReviewAuditPassed = git.clean === true && localAuditReasons.length === 0;
-  const blockedReasons = [...localAuditReasons];
+  const localReviewArtifactValid =
+    git.clean === true && localArtifactReasons.length === 0;
+  const blockedReasons = [...localArtifactReasons];
   if (validReceipts.length > 0) {
     blockedReasons.push(
-      "local review receipt is agent-recorded and cannot prove distinct reviewer delegation",
+      "agent-recorded local reviewer result cannot prove dispatch, identity, or independence",
     );
   }
   const independentReviewed = false;
@@ -5013,15 +5014,17 @@ function commandReviewStatus(target, runId, capturedGit = undefined) {
     receipts: validReceipts,
     unavailable: unavailable.map((entry) => entry.receipt),
     invalid_receipts: invalidReceipts,
-    local_review_audit_passed: localReviewAuditPassed,
-    local_review_audit_reasons: localAuditReasons,
+    local_review_artifact_valid: localReviewArtifactValid,
+    local_review_artifact_reasons: localArtifactReasons,
+    local_review_audit_passed: false,
+    local_review_audit_reasons: localArtifactReasons,
     independent_reviewed: independentReviewed,
     review_gate_ready: independentReviewed,
     status: independentReviewed ? "passed" : "blocked",
     reasons: [...new Set(blockedReasons)],
     current_errors: [...new Set(currentErrors)],
     boundary:
-      "Local pre-PR receipts are inspectable agent-recorded audit evidence and cannot establish mechanical reviewer independence. Protected GitHub review receipts are the separate authenticated gate.",
+      "Local reviewer result artifacts are inspectable agent-reported metadata only. They cannot establish a passed audit, mechanical dispatch, identity, or reviewer independence; local_review_audit_passed is retained for compatibility and always false. Protected GitHub review receipts are the separate authenticated gate.",
   };
 }
 
@@ -10901,7 +10904,7 @@ function commandStatus(target, runId) {
   const reviewPolicy = configuredReviewReleasePolicy(config);
   if (runId !== undefined) {
     const externalReviewRequired = reviewPolicy.external_review_required === true;
-    const localReviewAuditPassed = review?.local_review_audit_passed === true;
+    const localReviewArtifactValid = review?.local_review_artifact_valid === true;
     const reviewGateReady =
       reviewPolicy.valid && review?.review_gate_ready === true;
     const protectedReview = !reviewPolicy.valid
@@ -10931,7 +10934,8 @@ function commandStatus(target, runId) {
     readiness = {
       ...readiness,
       review_gate_ready: reviewGateReady,
-      local_review_audit_passed: localReviewAuditPassed,
+      local_review_artifact_valid: localReviewArtifactValid,
+      local_review_audit_passed: false,
       external_review_required: reviewPolicy.external_review_required,
       protected_review: protectedReview,
       pr_ready: prReady,

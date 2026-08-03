@@ -41,10 +41,10 @@
     {
       "id": "direct-delivery",
       "category": "direct",
-      "request": "Take this checkout's reported login bug through a tested local change, a recorded local review audit, and a draft evidence package. Do not claim authenticated independence, contact GitHub, or merge it.",
+      "request": "Take this checkout's reported login bug through a tested local change, a recorded local reviewer-result artifact, and a draft evidence package. Do not claim a passed audit or authenticated independence, contact GitHub, or merge it.",
       "context": {
         "repository": "configured project with a reproducible bug report",
-        "authority": "code changes, tests, a local branch and commit, draft evidence, and a local review audit are authorized; external provider writes, push, merge, and release are not"
+        "authority": "code changes, tests, a local branch and commit, draft evidence, and a local reviewer-result artifact are authorized; external provider writes, push, merge, and release are not"
       },
       "expected": {
         "must_activate": [
@@ -75,15 +75,15 @@
           "delivery_plan",
           "passing_project_tests",
           "draft_pr_evidence_prepared",
-          "local_review_audit_recorded"
+          "local_reviewer_result_artifact_recorded"
         ],
         "required_outputs": [
           "passing_project_tests",
           "draft_pr_evidence_prepared",
-          "local_review_audit_recorded"
+          "local_reviewer_result_artifact_recorded"
         ],
         "review": "blocked",
-        "review_evidence": "local-passed-audit"
+        "review_evidence": "local-result-artifact"
       }
     },
     {
@@ -851,10 +851,10 @@
     {
       "id": "flexible-direct-bypass",
       "category": "direct",
-      "request": "In this newly initialized empty project, create src/status.mjs with one status() function that returns \"ok\", add the exact Node test at test/status.test.mjs, and prepare a recorded local review audit plus draft evidence without claiming authenticated independence. The attached one-line acceptance note is supporting evidence only. Do not contact GitHub or merge it.",
+      "request": "In this newly initialized empty project, create src/status.mjs with one status() function that returns \"ok\", add the exact Node test at test/status.test.mjs, and prepare a recorded local reviewer-result artifact plus draft evidence without claiming a passed audit or authenticated independence. The attached one-line acceptance note is supporting evidence only. Do not contact GitHub or merge it.",
       "context": {
         "repository": "configured greenfield repository with no product source yet, a project-native Node test command, a completed setup checkpoint, and an active setup lock whose done and evidence conditions are fully satisfied",
-        "authority": "code, test, local branch and commit, draft evidence, and a local review audit are authorized; external provider writes, push, merge, and release are not"
+        "authority": "code, test, local branch and commit, draft evidence, and a local reviewer-result artifact are authorized; external provider writes, push, merge, and release are not"
       },
       "expected": {
         "must_activate": [
@@ -889,16 +889,16 @@
           "completed_state_not_resumed",
           "supporting_attachment_not_external",
           "greenfield_bounded_direct",
-          "local_review_audit_recorded"
+          "local_reviewer_result_artifact_recorded"
         ],
         "required_outputs": [
           "bounded_delivery_plan",
           "passing_project_tests",
           "draft_pr_evidence_prepared",
-          "local_review_audit_recorded"
+          "local_reviewer_result_artifact_recorded"
         ],
         "review": "blocked",
-        "review_evidence": "local-passed-audit"
+        "review_evidence": "local-result-artifact"
       }
     },
     {

@@ -529,7 +529,7 @@ test("local review guidance keeps portable audit evidence out of PR readiness", 
   }
   assert.match(
     behavioralEvals,
-    /no trusted native-dispatch trace[\s\S]*structurally passed local audit never proves real delegation/i,
+    /no trusted native-dispatch trace[\s\S]*structurally valid local result artifact never proves real delegation/i,
   );
 });
 
@@ -914,7 +914,7 @@ test("local review receipts are audit evidence, not mechanical independence", ()
   );
   assert.match(
     delegationContract,
-    /local audit[\s\S]*cannot establish[\s\S]*local PR readiness/i,
+    /local reviewer-result[\s\S]*cannot establish[\s\S]*local PR readiness/i,
   );
   assert.match(
     delegationContract,
@@ -970,7 +970,8 @@ test("delivery policy finalizes tracked work before the local review audit", () 
     /After `review record`, make no tracked write or\s+commit[\s\S]{0,160}audit stale/i,
   );
   assert.match(finalCommands, /review status --run RUN[\s\S]{0,180}status --run RUN/i);
-  assert.match(deliveryPolicy, /local_review_audit_passed:true/i);
+  assert.match(deliveryPolicy, /Never claim a passed local audit/i);
+  assert.match(deliveryPolicy, /local_review_artifact_valid:true/i);
   assert.match(
     deliveryPolicy,
     /report any false, stale, or blocked condition\s+truthfully/i,

@@ -40,7 +40,7 @@ reviewer-unavailable case:
 | `flexible-external-complete-prd` | A complete consistent source stops DRAFT ready for later product-owner approval with zero questions, including no approval prompt |
 | `flexible-external-contradictory` | A material contradiction is surfaced before lock or implementation |
 | `flexible-external-existing-reconciliation` | Outside intent is compared with existing code, schemas, migrations, tests, architecture, and policy before changes |
-| `flexible-direct-bypass` | A clear bounded change stays DIRECT, writes and tests the requested slice, and prepares draft evidence plus a recorded local audit in a new project with completed state and a supporting attachment; it does not claim authenticated independence or universal PR readiness |
+| `flexible-direct-bypass` | A clear bounded change stays DIRECT, writes and tests the requested slice, and prepares draft evidence plus a recorded local reviewer-result artifact in a new project with completed state and a supporting attachment; it does not claim a passed audit, authenticated independence, or universal PR readiness |
 | `flexible-resume-valid` | A valid checkpoint resumes at the first unmet condition without reopening closed decisions |
 | `flexible-draft-lock` | A placeholder-free artifact marked DRAFT is still rejected by the lock |
 | `flexible-approved-promotion` | An approved conflict-free brief promotes into the canonical delivery contract while preserving closed decisions |
@@ -76,19 +76,23 @@ snapshot contains exactly the project-relative `path` and exact UTF-8
 newline. There is exactly one snapshot for every review receipt result file;
 paths are unique and contents are bounded at 4 MiB. Direct delivery and the
 flexible direct bypass retain implementation, tests, an exact final head, and
-draft evidence plus a valid passed local audit receipt/result. A local passed
-receipt is structurally inspectable audit evidence only; it cannot establish
+draft evidence plus a recorded local reviewer-result artifact. A local artifact
+is structurally inspectable metadata only; it cannot establish a passed audit or
 mechanical independence. The reviewer-unavailable edge case requires its
 durable unavailable receipt. These records claim only `agent-recorded`; only
 the protected GitHub review receipt provides the separate authenticated review
 gate.
 
 Review evidence is reported separately from mechanical readiness as
-`local-passed-audit`, `unavailable`, `changes-requested`, `missing`, `invalid`,
+`local-result-artifact`, `unavailable`, `changes-requested`, `missing`, `invalid`,
 `conflict`, or `not-required`. Routing rates count those observed evidence
 outcomes per scenario; they do not relabel missing evidence as blocked or make
 it a successful outcome. The 28-scenario route-accuracy denominator remains a
 separate routing measure.
+
+For CLI compatibility, `local_review_audit_passed` remains present but is always
+false. `local_review_artifact_valid` reports only exact-head artifact integrity;
+it is not a review-success, dispatch, identity, or readiness signal.
 
 The CLI `evidence activation-status` and `review status` results include stable
 project-relative `evidence_graph_path`, review receipt and unavailable
@@ -104,7 +108,7 @@ fixture snapshots. The evaluator validates those records; it does not observe
 the broader project filesystem or authenticate the collector on its own. It
 mechanically checks the exact self-contained reviewer-result snapshots recorded
 inside each case. Portable run records contain no trusted native-dispatch trace,
-so a structurally passed local audit never proves real delegation.
+so a structurally valid local result artifact never proves real delegation.
 
 The negative case makes false activation a first-class failure. Adding more
 positive examples cannot compensate for an agent starting work when it should

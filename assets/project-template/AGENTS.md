@@ -83,7 +83,8 @@ Claims that a source was read, artifact locked, test passed, skill activated,
 or review completed require the corresponding path and command/result evidence.
 
 Activation is receipt-derived by `evidence activation-status --run RUN --require
-SKILL`, not prose. `review record` stores an exact-clean local audit under
+SKILL`, not prose. `review record` stores an exact-clean local reviewer-result
+artifact under
 `.agent-stack/runs/reviews/`; `review unavailable` is durable. Agent-recorded
 local receipts prove exact-head artifact integrity only—not authenticated
 dispatch, identity, or independence—and cannot unlock PR readiness. Under user

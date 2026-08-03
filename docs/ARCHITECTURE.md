@@ -41,7 +41,7 @@ flowchart TD
     N -- "Yes" --> V
     N -- "No" --> G["Full deterministic gate"]
     G -->|Fail| V
-    G -->|Pass| A["Bounded local audit"]
+    G -->|Pass| A["Bounded local reviewer-result artifact"]
     A -->|Finding| V
     A -->|Recorded| PR["Draft PR + evidence"]
     PR --> CI["Required CI + GitHub protections"]

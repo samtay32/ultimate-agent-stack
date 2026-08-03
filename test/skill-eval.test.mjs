@@ -1296,7 +1296,7 @@ test("review expectations require their declared durable evidence outcome", () =
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
-    /expected review evidence outcome local-passed-audit was not observed \(observed changes-requested\)/,
+    /expected review evidence outcome local-result-artifact was not observed \(observed changes-requested\)/,
   );
 
   const malformed = passingRecord();
@@ -1688,7 +1688,7 @@ test("review outcomes are derived before scenario expectations", () => {
   );
   assert.match(
     JSON.stringify(absentRequiredResult),
-    /expected review evidence outcome local-passed-audit was not observed \(observed missing\)/,
+    /expected review evidence outcome local-result-artifact was not observed \(observed missing\)/,
   );
 
   const blocked = passingRecord();
@@ -1723,7 +1723,7 @@ test("review outcomes are derived before scenario expectations", () => {
   );
   assert.match(
     JSON.stringify(blockedResult),
-    /claimed review unavailable handoff requires a valid same-run unavailable receipt.*expected review evidence outcome unavailable was not observed \(observed local-passed-audit\)/s,
+    /claimed review unavailable handoff requires a valid same-run unavailable receipt.*expected review evidence outcome unavailable was not observed \(observed local-result-artifact\)/s,
   );
   assert.equal(absentCase.observed.review_result_artifacts.length, 0);
 });
@@ -1743,12 +1743,12 @@ test("agent-recorded local passed results cannot satisfy direct-review independe
       independent_reviewed: false,
       review_gate_ready: false,
       status: "blocked",
-      evidence_outcome: "local-passed-audit",
+      evidence_outcome: "local-result-artifact",
     });
   }
 });
 
-test("a post-audit checkpoint commit cannot be labelled local-passed-audit", () => {
+test("a post-artifact checkpoint commit cannot be labelled local-result-artifact", () => {
   const record = passingRecord();
   const item = record.cases.find(
     (caseItem) => caseItem.scenario_id === "flexible-direct-bypass",
@@ -1771,7 +1771,7 @@ test("a post-audit checkpoint commit cannot be labelled local-passed-audit", () 
   assert.equal(result.ok, false);
   assert.equal(evaluated.review.status, "blocked");
   assert.equal(evaluated.review.evidence_outcome, "invalid");
-  assert.notEqual(evaluated.review.evidence_outcome, "local-passed-audit");
+  assert.notEqual(evaluated.review.evidence_outcome, "local-result-artifact");
   assert.match(
     evaluated.findings.join("\n"),
     /review_receipts\[0\]\.git_commit must equal final_git_head/,
@@ -1972,11 +1972,11 @@ test("routing reliability is reported as k/N per harness and model", () => {
   const directPassedAudit = result.groups[0].review_outcomes.find(
     (item) =>
       item.scenario_id === "direct-delivery" &&
-      item.outcome === "local-passed-audit",
+      item.outcome === "local-result-artifact",
   );
   assert.deepEqual(directPassedAudit, {
     scenario_id: "direct-delivery",
-    outcome: "local-passed-audit",
+    outcome: "local-result-artifact",
     observed: 1,
     attempts: 2,
     rate: "1/2",
@@ -2601,7 +2601,7 @@ test("phase activation matches real workflow boundaries", () => {
 
   assert.ok(
     direct.expected.required_outcomes.includes(
-      "local_review_audit_recorded",
+      "local_reviewer_result_artifact_recorded",
     ),
   );
   for (const scenarioId of ["direct-delivery", "flexible-direct-bypass"]) {

@@ -123,9 +123,10 @@ when that is the returned result.
 After `review record`, make no tracked write or commit. Any changed HEAD or
 tracked tree makes the audit stale; repeat the audit against the new final
 head. Immediately before the final answer, run both `review status --run RUN`
-and `status --run RUN`. Claim a recorded/passed local audit only when
-`local_review_audit_passed:true`; report any false, stale, or blocked condition
-truthfully. Receipt validation, candidate doctor, or prose is not a substitute.
+and `status --run RUN`. Never claim a passed local audit. Report a recorded
+local reviewer-result artifact only when `local_review_artifact_valid:true`, and
+report any false, stale, or blocked condition truthfully. Receipt validation,
+candidate doctor, or prose is not a substitute.
 Use the commands above rather than inspecting CLI source or help to guess
 alternatives.
 

@@ -23,8 +23,8 @@ primary-agent summary with no worker result, and primary-agent self-review are
 failure evidence, never independent-review success.
 
 On any of those conditions, record the assignment as failed, cancelled, or
-serially recovered. Continue safe serial work when useful. The local audit
-cannot establish authenticated independence or local PR readiness. Protected
+serially recovered. Continue safe serial work when useful. A local reviewer-result
+artifact cannot establish a passed audit, authenticated independence, or local PR readiness. Protected
 GitHub review owns approval and is not evaluated by the local CLI.
 
 ## Assignment Envelope

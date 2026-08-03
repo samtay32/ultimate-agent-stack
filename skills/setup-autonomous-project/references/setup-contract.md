@@ -45,8 +45,8 @@ Keep the core dependent on capabilities rather than provider brands:
 - knowledge: `repository` or `gbrain`.
 
 `builtin` review configuration and `repository` knowledge are portable. A
-passed builtin local audit is structural metadata only; C0 records unavailable
-and blocks readiness, and local audit never unlocks PR readiness. Protected
+recorded builtin reviewer-result artifact is structural metadata only; C0 records unavailable
+and blocks readiness, and local artifacts never unlock PR readiness. Protected
 GitHub review remains the authenticated gate, while CodeRabbit itself remains
 replaceable.
 Knowledge is never a release dependency and always falls back to repository

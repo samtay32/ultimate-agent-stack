@@ -50,7 +50,7 @@ flowchart LR
     COORD --> EXEC["Controller-owned implementation + verification gates"]
     EXEC -. "explicit phase-specific implementation" .-> BUILD["build-vertical-slice"]
     EXEC -. "explicit phase-specific verification" .-> VERIFY["verify-change"]
-    EXEC --> REVIEW["bounded local review audit"]
+    EXEC --> REVIEW["bounded local reviewer-result artifact"]
     REVIEW --> PR["draft pull request"]
     PR --> GATE["protected GitHub review when policy requires it"]
     GATE --> CLOSE["close-review-loop"]
