@@ -4934,7 +4934,18 @@ function commandReviewStatus(target, runId, capturedGit = undefined) {
     MAX_REVIEW_UNAVAILABLE_RECEIPTS,
     validateReviewUnavailableReceipt,
   );
-  const git = capturedGit === undefined ? gitSnapshot(target) : capturedGit;
+  const capturedGitSnapshot =
+    capturedGit === undefined ? gitSnapshot(target) : capturedGit;
+  const gitUnavailable =
+    !capturedGitSnapshot || typeof capturedGitSnapshot !== "object";
+  const git = gitUnavailable
+    ? {
+        head: null,
+        object_format: null,
+        clean: false,
+        identity_error: "Git state is unavailable or target is not a valid Git checkout",
+      }
+    : capturedGitSnapshot;
   const selectedEntries = reviewDirectory.entries.filter(
     (entry) => entry.receipt.run_id === normalizedRunId,
   );
@@ -4982,7 +4993,11 @@ function commandReviewStatus(target, runId, capturedGit = undefined) {
       "local reviewer result artifact evidence is invalid, stale, altered, or dirty",
     );
   }
-  if (git.clean !== true) {
+  if (gitUnavailable) {
+    localArtifactReasons.push(
+      "Git state is unavailable or target is not a valid Git checkout",
+    );
+  } else if (git.clean !== true) {
     localArtifactReasons.push("current Git checkout is dirty");
   }
   const localReviewArtifactValid =
@@ -5026,7 +5041,7 @@ function commandReviewStatus(target, runId, capturedGit = undefined) {
       evaluatedResultPaths,
     }),
     run_id: normalizedRunId,
-    git: publicGitIdentity(git),
+    git: publicGitIdentity(capturedGitSnapshot),
     receipts: validReceipts,
     unavailable: unavailable.map((entry) => entry.receipt),
     invalid_receipts: invalidReceipts,

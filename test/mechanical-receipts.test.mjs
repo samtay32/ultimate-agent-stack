@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -498,6 +499,38 @@ test("terminal verification and a local result artifact bind the same clean fina
       status.readiness.reasons.join(" "),
       /agent-recorded.*cannot prove dispatch, identity, or independence/,
     );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("review status fails closed when an otherwise valid receipt loses Git state", () => {
+  const fixture = createFixture();
+  try {
+    recordPassed(fixture);
+    renameSync(join(fixture.directory, ".git"), join(fixture.directory, ".git-hidden"));
+
+    const review = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(review.ok, false);
+    assert.equal(review.status, "blocked");
+    assert.equal(review.git, null);
+    assert.equal(review.local_review_artifact_valid, false);
+    assert.equal(review.local_review_artifact_outcome, "invalid");
+    assert.equal(review.local_review_audit_passed, false);
+    assert.equal(review.independent_reviewed, false);
+    assert.equal(review.review_gate_ready, false);
+    assert.match(
+      review.reasons.join(" "),
+      /Git state is unavailable or target is not a valid Git checkout/,
+    );
+
+    const status = commandStatus(fixture.directory, fixture.runId);
+    assert.equal(status.ok, false);
+    assert.equal(status.review.status, "blocked");
+    assert.equal(status.readiness.review_gate_ready, false);
+    assert.equal(status.readiness.pr_ready, false);
+    assert.equal(status.review.local_review_artifact_valid, false);
+    assert.equal(status.review.local_review_artifact_outcome, "invalid");
   } finally {
     fixture.cleanup();
   }
