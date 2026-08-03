@@ -76,6 +76,31 @@ function qodoCurrentCleanReview(commit = HEAD) {
   };
 }
 
+function qodoCurrentZeroCountReview(
+  {
+    bugs = "0",
+    ruleViolations = "0",
+    skillInsights = "0",
+    includeSkillInsights = true,
+  } = {},
+  commit = HEAD,
+) {
+  return {
+    author: { login: "qodo-code-review[bot]", __typename: "Bot" },
+    url: QODO_REVIEW_URL,
+    body:
+      "<h3>Code Review by Qodo</h3>\n" +
+      "<details><summary><s>Action_required</s> — Resolved</summary>\n" +
+      "<s>A historical finding was resolved.</s>\n</details>\n" +
+      `<code>🐞 Bugs (${bugs})</code>\n` +
+      `<code>Rule violations (${ruleViolations})</code>\n` +
+      (includeSkillInsights
+        ? `<code>Skill insights (${skillInsights})</code>\n`
+        : "") +
+      `<!-- https://github.com/owner/repository/commit/${commit} -->`,
+  };
+}
+
 function qodoCleanReviewVariant(body, commit = HEAD) {
   return {
     author: { login: "qodo-code-review[bot]", __typename: "Bot" },
@@ -205,6 +230,45 @@ test("accepts Qodo's current exact-head terminal clean review", () => {
   assert.equal(stale.ok, false);
   assert.equal(summaryOnly.ok, false);
   assert.equal(nonTerminal.ok, false);
+});
+
+test("accepts Qodo's exact-head zero-count terminal summary only when complete", () => {
+  const clean = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "qodo",
+    comments: [qodoCurrentZeroCountReview()],
+  });
+  const nonzero = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "qodo",
+    comments: [qodoCurrentZeroCountReview({ ruleViolations: "1" })],
+  });
+  const missing = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "qodo",
+    comments: [qodoCurrentZeroCountReview({ includeSkillInsights: false })],
+  });
+  const nonnumeric = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "qodo",
+    comments: [qodoCurrentZeroCountReview({ bugs: "none" })],
+  });
+  const actionRequiredOnly = evaluateReviewReceipt({
+    headOid: HEAD,
+    provider: "qodo",
+    comments: [
+      qodoCleanReviewVariant(
+        "<details><summary>Action_required</summary>Historical finding</details>",
+      ),
+    ],
+  });
+
+  assert.equal(clean.ok, true);
+  assert.deepEqual(clean.detail.review_states, ["UNIFIED_COMMENT"]);
+  assert.equal(nonzero.ok, false);
+  assert.equal(missing.ok, false);
+  assert.equal(nonnumeric.ok, false);
+  assert.equal(actionRequiredOnly.ok, false);
 });
 
 test("accepts bounded Qodo terminal-clean wording and heading variants", () => {
