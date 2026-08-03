@@ -51,10 +51,14 @@ a canonical disposition; residual risks and human-only actions are stated.
    serial; optional provider, knowledge, telemetry, work, and parallel skills
    load only when the selected route's immediate next decision needs them.
 
-3. **Shape and secure.** For an approved brief, use `$shape-project` and its
-   [shaping contract](../shape-project/references/shaping-contract.md), then
-   `$secure-launch` and its
-   [security readiness](../secure-launch/references/security-readiness.md).
+3. **Shape and secure.** Use `$shape-project` and its
+   [shaping contract](../shape-project/references/shaping-contract.md) for an
+   approved EXTERNAL/DISCOVER brief or proportionate DIRECT T2+ work. On any
+   intake route, apply `$secure-launch` and its
+   [security readiness](../secure-launch/references/security-readiness.md) when
+   work touches authentication, uploads, personal data, paid APIs, deployment,
+   or other material exposure. Record it as not applicable only for offline or
+   no-exposure work.
    Artifact status is only `DRAFT` or `APPROVED`; lock state is protected CLI
    state.
    A failed or rejected guard never authorizes editing prerequisites. For
@@ -114,7 +118,9 @@ a canonical disposition; residual risks and human-only actions are stated.
 ## Control rules
 
 - Make reversible evidence-backed choices without interruption. Ask one
-  consequential question at a time. A question asking the user to accept a
+  consequential question at a time. Recommend one safe default, offer at most
+  one genuinely safe alternative, explain the practical consequence, then ask
+  and end the turn. A question asking the user to accept a
   recommendation ends the turn; a prior explicit instruction such as "use the
   recommendation" is approval and should not trigger the same question again.
 - Pause before destructive, irreversible, credential, financial, deployment,

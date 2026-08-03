@@ -112,7 +112,9 @@ security, or acceptance criteria to obtain green.
 Proceed on routine reversible evidence-backed choices. Ask before choices that
 materially change product intent, spend money, create accounts, expose secrets,
 accept legal/privacy/security risk, delete material data, or perform an
-unauthorized merge, deployment, release, or publication. A question asking for
+unauthorized merge, deployment, release, or publication. Recommend one safe
+default, offer at most one genuinely safe alternative, explain the practical
+consequence, then ask and end the turn. A question asking for
 acceptance ends the turn. A prior explicit instruction such as "use the
 recommendation" is approval for that recommendation, but never for an
 irreversible action. Read closed decisions before proposing changes; binding

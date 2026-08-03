@@ -613,9 +613,9 @@ test("flexible intake stays ordered, proportionate, and source preserving", () =
 
 test("always-loaded delivery policy stays compact and routes detail to phase references", () => {
   const words = (source) => source.trim().split(/\s+/).length;
-  assert.ok(Buffer.byteLength(projectAgents) <= 11_500);
+  assert.ok(Buffer.byteLength(projectAgents) < 10_000);
   assert.ok(words(projectAgents) <= 1_600);
-  assert.ok(Buffer.byteLength(runDeliverySkill) <= 8_500);
+  assert.ok(Buffer.byteLength(runDeliverySkill) < 9_000);
   assert.ok(words(runDeliverySkill) <= 1_150);
 
   const routes = [
@@ -634,6 +634,28 @@ test("always-loaded delivery policy stays compact and routes detail to phase ref
   assert.match(delegationContract, /coordinator token belongs only to the primary/);
   assert.match(verificationMatrix, /every required row passes/);
   assert.match(reviewClosurePolicy, /Treat every reviewer claim as a hypothesis/);
+});
+
+test("security routing and plain-language authority questions survive compaction", () => {
+  assert.match(
+    runDeliverySkill,
+    /approved EXTERNAL\/DISCOVER brief[\s\S]{0,80}DIRECT T2\+ work/i,
+  );
+  assert.match(
+    runDeliverySkill,
+    /any\s+intake route[\s\S]{0,100}`\$secure-launch`[\s\S]{0,180}authentication[\s\S]{0,80}uploads[\s\S]{0,80}personal data[\s\S]{0,80}paid APIs[\s\S]{0,80}deployment/i,
+  );
+  assert.match(runDeliverySkill, /not applicable only for offline or\s+no-exposure work/i);
+  assert.match(
+    runDeliverySkill,
+    /secure-launch\/references\/security-readiness\.md/,
+  );
+  for (const source of [projectAgents, runDeliverySkill]) {
+    assert.match(
+      source,
+      /recommend one safe\s+default[\s\S]{0,80}at most\s+one genuinely safe alternative[\s\S]{0,80}practical\s+consequence[\s\S]{0,80}(?:ask\s+and end the turn|ends the turn)/i,
+    );
+  }
 });
 
 test("workflow loading stays route-aware and provider-neutral", () => {
