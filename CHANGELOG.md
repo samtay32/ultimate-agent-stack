@@ -9,6 +9,8 @@ All notable changes to Ultimate Agent Stack are documented here.
 - Local `agent-recorded` review receipts remain inspectable audit evidence but
   cannot establish mechanical reviewer independence. A protected GitHub review
   receipt is a separate authenticated gate when external review is configured.
+- The protected Qodo receipt gate recognizes bounded clean-completion wording
+  and complete zero-count summaries while preserving exact-head checks.
 
 ## 0.10.0 - 2026-08-02
 
