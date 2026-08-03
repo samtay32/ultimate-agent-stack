@@ -93,14 +93,19 @@ a canonical disposition; residual risks and human-only actions are stated.
    native activation. Missing or skipped required checks fail.
 
 6. **Review adversarially.** Review correctness/security/reliability and
-   intent/acceptance/compatibility. A real separate reviewer returns an inspectable
-   result for the exact clean commit; primary-agent self-review is
-   not independent. Record a passed result only with `review record`, the same
-   run, distinct nonempty reviewer identity, and bounded structured result file.
-   If dispatch or collection fails, use `review unavailable`, preserve tested
-   work, and keep review and PR readiness blocked. Local receipts do not
-   authenticate physical identity and remain separate from protected GitHub
-   reviews. Check `review status --run RUN` and stack `status --run RUN`.
+   intent/acceptance/compatibility. For a locally authorized PR-ready delivery,
+   after tests and an exact clean local commit, if the harness exposes native
+   subagent/reviewer delegation, dispatch one bounded read-only reviewer without
+   the coordinator token. Retain the exact returned reviewer ID and result bound
+   to that commit and record it. A real separate reviewer returns an inspectable
+   result for the exact clean commit; primary-agent self-review is not
+   independent. Record a passed result only with `review record`, the same run,
+   distinct nonempty reviewer identity, and bounded structured result file. Use
+   `review unavailable` only when the capability is absent or dispatch/collection
+   actually fails; never invent a successful receipt. Unavailable review keeps
+   readiness blocked. Local receipts do not authenticate physical identity and
+   remain separate from protected GitHub reviews. Check `review status --run RUN`
+   and stack `status --run RUN`.
 
 7. **PR and feedback.** Keep a draft while material work remains. Include
    intent, decisions, evidence, migration/rollback notes, visual proof when

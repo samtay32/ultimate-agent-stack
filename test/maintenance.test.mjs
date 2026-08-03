@@ -436,6 +436,43 @@ test("installed doctor guidance is version-bound and directory metadata fits", (
   }
 });
 
+test("live smoke guidance supplies an exact candidate doctor runner", () => {
+  const promptBlock = behavioralEvals.match(
+    /```text\r?\n(Live evaluation identity[\s\S]*?)\r?\n```/,
+  );
+  assert.ok(promptBlock, "live evaluation prompt block must be present");
+  assert.ok(
+    Buffer.byteLength(promptBlock[1], "utf8") < 2048,
+    "live evaluation prompt context must stay below 2 KiB",
+  );
+  assert.match(promptBlock[1], /operator-supplied/i);
+  assert.match(promptBlock[1], /CANDIDATE_CLI: exact unpacked candidate CLI path/);
+  assert.match(
+    promptBlock[1],
+    /CANDIDATE_CLI[\s\S]*only for the integrity doctor[\s\S]*project-local CLI[\s\S]*routine state and evidence/i,
+  );
+  assert.match(promptBlock[1], /exact doctor command and result in smoke evidence/i);
+  assert.doesNotMatch(
+    promptBlock[1],
+    /run-autonomous-delivery|develop-project-brief|verify-change/,
+    "live prompt context must not disclose expected skill names",
+  );
+  assert.match(
+    behavioralEvals,
+    /operator must supply the exact[\s\S]*unpacked candidate CLI path[\s\S]*registry\/latest candidate[\s\S]*autodetect a runner[\s\S]*substitute the project copy/i,
+  );
+  assert.match(behavioralEvals, /prompt-only context, not a receipt or schema field/i);
+});
+
+test("PR-ready review guidance attempts native delegation before unavailable", () => {
+  for (const source of [projectAgents, runDeliverySkill]) {
+    assert.match(source, /locally authorized PR-ready delivery[\s\S]*tests[\s\S]*exact clean local\s+commit/i);
+    assert.match(source, /harness exposes native\s+subagent\/reviewer delegation[\s\S]*one\s+bounded read-only reviewer/i);
+    assert.match(source, /without\s+the coordinator token[\s\S]*returned reviewer ID and result bound\s+to that commit[\s\S]*record it/i);
+    assert.match(source, /review[\s`]+unavailable[\s\S]*the capability is absent or dispatch\/collection\s+actually\s+fails[\s\S]*never invent a successful receipt/i);
+  }
+});
+
 test("review closure validates claims and has one disposition vocabulary", () => {
   const decodedCloseReviewDescription = JSON.parse(closeReviewDescription);
   assert.equal(typeof decodedCloseReviewDescription, "string");

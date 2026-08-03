@@ -410,14 +410,22 @@ fields harness and model.
 Evidence mapping: retain HARNESS_VERSION in smoke/run evidence.
 Claim rule: missing, placeholder, or sentinel values forbid a named
 harness/model claim.
+Candidate runner (operator-supplied):
+CANDIDATE_CLI: exact unpacked candidate CLI path
+Doctor mapping: use CANDIDATE_CLI only for the integrity doctor; use the
+project-local CLI for routine state and evidence commands.
+Evidence mapping: retain the exact doctor command and result in smoke evidence.
 ```
 
 Never infer, normalize, autodetect, or replace missing/placeholding values with
 generic labels. This mapping is live-evaluation-only; ordinary `npm init`,
-onboarding, and no-code use are unchanged. The identity remains agent-recorded,
-not authentication of a harness, provider, or model. Keep the request plus
-context at or below 2 KiB (target about 512 tokens), without repository dumps or
-expected skill names.
+onboarding, and no-code use are unchanged. The operator must supply the exact
+unpacked candidate CLI path; do not resolve a registry/latest candidate,
+autodetect a runner, or substitute the project copy. `CANDIDATE_CLI` is
+prompt-only context, not a receipt or schema field. The identity remains
+agent-recorded, not authentication of a harness, provider, or model. Keep the
+request plus context at or below 2 KiB (target about 512 tokens), without
+repository dumps or expected skill names.
 
 When a pull request changes the behavior-surface hash:
 
