@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -17,6 +18,7 @@ import test from "node:test";
 import {
   commandConfigure,
   commandApproveChecks,
+  commandCheckpoint,
   commandEvidenceActivate,
   commandEvidenceActivationStatus,
   commandReviewRecord,
@@ -25,6 +27,7 @@ import {
   commandStart,
   commandStatus,
   commandVerify,
+  configurationHash,
   installOrUpgrade,
 } from "../bin/ultimate-agent-stack.mjs";
 import { fileURLToPath } from "node:url";
@@ -296,12 +299,15 @@ test("legacy activation graph entries remain readable but do not satisfy current
   }
 });
 
-test("review record emits a deterministic exact-head local receipt", () => {
+test("an invented distinct local result stays artifact metadata, never a passed audit", () => {
   const fixture = createFixture();
   try {
-    const result = recordPassed(fixture);
+    const result = recordPassed(fixture, {
+      reviewerId: "/root/independent_review",
+    });
     assert.equal(result.ok, true);
     assert.equal(result.receipt.claim, "agent-recorded");
+    assert.notEqual(result.receipt.reviewer_id, fixture.coordinatorId);
     assert.equal(result.receipt.git_commit, runGit(fixture.directory, ["rev-parse", "HEAD"]));
     assert.equal(
       result.receipt.result_file,
@@ -309,10 +315,21 @@ test("review record emits a deterministic exact-head local receipt", () => {
     );
     assert.match(result.receipt.result_file_sha256, /^sha256:[a-f0-9]{64}$/);
     assert.equal(result.receipt.git_object_format, "sha1");
+    assert.match(result.boundary, /not a passed audit/i);
     assert.ok(existsSync(join(fixture.directory, result.path)));
     const status = commandReviewStatus(fixture.directory, fixture.runId);
-    assert.equal(status.independent_reviewed, true);
-    assert.equal(status.review_gate_ready, true);
+    assert.equal(status.local_review_artifact_valid, true);
+    assert.equal(status.local_review_artifact_outcome, "passed");
+    assert.equal(status.local_review_audit_passed, false);
+    assert.deepEqual(status.local_review_artifact_reasons, []);
+    assert.match(status.boundary, /local_review_audit_passed is retained for compatibility and always false/);
+    assert.equal(status.independent_reviewed, false);
+    assert.equal(status.review_gate_ready, false);
+    assert.equal(status.status, "blocked");
+    assert.match(
+      status.reasons.join(" "),
+      /agent-recorded local reviewer result cannot prove dispatch, identity, or independence/,
+    );
     assert.equal(status.receipts.length, 1);
     assert.equal(status.evidence_graph_path, ".agent-stack/evidence-graph.json");
     assert.equal(status.review_receipts_directory, ".agent-stack/review-receipts");
@@ -328,9 +345,12 @@ test("missing review evidence remains blocked", () => {
   const fixture = createFixture();
   try {
     const status = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(status.local_review_audit_passed, false);
+    assert.equal(status.local_review_artifact_valid, false);
+    assert.equal(status.local_review_artifact_outcome, "missing");
     assert.equal(status.independent_reviewed, false);
     assert.equal(status.review_gate_ready, false);
-    assert.match(status.reasons.join(" "), /no review receipt/);
+    assert.match(status.reasons.join(" "), /no reviewer result evidence/);
     assert.equal(status.evidence_graph_path, ".agent-stack/evidence-graph.json");
     assert.equal(status.review_receipts_directory, ".agent-stack/review-receipts");
     assert.equal(status.review_unavailable_directory, ".agent-stack/review-unavailable");
@@ -346,9 +366,16 @@ test("failed review evidence remains blocked", () => {
   try {
     recordPassed(fixture, { result: "changes-requested" });
     const status = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(status.local_review_artifact_valid, true);
+    assert.equal(status.local_review_artifact_outcome, "changes-requested");
+    assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.independent_reviewed, false);
     assert.equal(status.review_gate_ready, false);
     assert.match(status.reasons.join(" "), /requested changes/);
+    const projectStatus = commandStatus(fixture.directory, fixture.runId);
+    assert.equal(projectStatus.ok, false);
+    assert.equal(projectStatus.readiness.review_gate_ready, false);
+    assert.equal(projectStatus.readiness.pr_ready, false);
   } finally {
     fixture.cleanup();
   }
@@ -360,6 +387,9 @@ test("empty review result files invalidate an otherwise valid receipt", () => {
     recordPassed(fixture);
     writeFileSync(fixture.resultFile, "");
     const status = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(status.local_review_artifact_valid, false);
+    assert.equal(status.local_review_artifact_outcome, "invalid");
+    assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.independent_reviewed, false);
     assert.match(status.invalid_receipts.join(" "), /non-empty|hash/);
   } finally {
@@ -374,8 +404,133 @@ test("stale exact-head review receipts are rejected", () => {
     writeFileSync(join(fixture.directory, "later.txt"), "later\n");
     commit(fixture.directory, "advance after review");
     const status = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(status.local_review_artifact_valid, false);
+    assert.equal(status.local_review_artifact_outcome, "invalid");
+    assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.independent_reviewed, false);
     assert.match(status.invalid_receipts.join(" "), /stale|current HEAD/);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("a checkpoint commit after a local result makes its artifact stale", () => {
+  const fixture = createFixture();
+  try {
+    const recorded = recordPassed(fixture);
+    assert.equal(commandReviewStatus(fixture.directory, fixture.runId).local_review_artifact_valid, true);
+    const checkpoint = commandCheckpoint(fixture.directory, {
+      objective: "Record the final delivery handoff",
+      summary: "The local audit was recorded before this checkpoint commit.",
+      status: "complete",
+      completed: ["Recorded the bounded local audit"],
+      decisions: ["Checkpoint evidence is tracked before final delivery"],
+      nextSteps: [],
+      blockers: [],
+      evidence: ["package.json"],
+      token: fixture.token,
+    });
+    assert.equal(checkpoint.ok, true);
+    commit(fixture.directory, "record checkpoint after review");
+    assert.notEqual(
+      runGit(fixture.directory, ["rev-parse", "HEAD"]),
+      recorded.receipt.git_commit,
+    );
+    const status = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(status.local_review_artifact_valid, false);
+    assert.equal(status.local_review_artifact_outcome, "invalid");
+    assert.equal(status.local_review_audit_passed, false);
+    assert.equal(status.independent_reviewed, false);
+    assert.match(status.invalid_receipts.join(" "), /stale|current HEAD/);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("terminal verification and a local result artifact bind the same clean final head", () => {
+  const fixture = createFixture();
+  try {
+    commandApproveChecks(
+      fixture.directory,
+      "Inspected the bounded fixture verification commands",
+    );
+    commit(fixture.directory, "approve fixture verification checks");
+    const checkpoint = commandCheckpoint(fixture.directory, {
+      objective: "Record the final delivery handoff before verification",
+      summary: "Tracked checkpoint evidence is committed before the local audit.",
+      status: "complete",
+      completed: ["Prepared the final delivery checkpoint"],
+      decisions: ["Verify the final clean head before local audit"],
+      nextSteps: [],
+      blockers: [],
+      evidence: ["package.json"],
+      token: fixture.token,
+    });
+    assert.equal(checkpoint.ok, true);
+    commit(fixture.directory, "commit final checkpoint before verification");
+    const finalHead = runGit(fixture.directory, ["rev-parse", "HEAD"]);
+
+    const verification = commandVerify(fixture.directory);
+    assert.equal(verification.ok, true);
+    const verificationEvidence = JSON.parse(
+      readFileSync(join(fixture.directory, verification.evidence), "utf8"),
+    );
+    assert.equal(verificationEvidence.git_before.head, finalHead);
+    assert.equal(verificationEvidence.git_after.head, finalHead);
+    const recorded = recordPassed(fixture);
+    assert.equal(recorded.receipt.git_commit, finalHead);
+    assert.equal(runGit(fixture.directory, ["rev-parse", "HEAD"]), finalHead);
+    assert.equal(runGit(fixture.directory, ["status", "--porcelain"]), "");
+
+    const review = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(review.local_review_artifact_valid, true);
+    assert.equal(review.local_review_audit_passed, false);
+    const status = commandStatus(fixture.directory, fixture.runId);
+    assert.equal(status.ok, false, JSON.stringify(status, null, 2));
+    assert.equal(status.verification.ok, true);
+    assert.deepEqual(status.verification.git, review.git);
+    assert.equal(
+      status.verification.reasons.some((reason) => /stale/i.test(reason)),
+      false,
+    );
+    assert.equal(status.readiness.review_gate_ready, false);
+    assert.equal(status.readiness.pr_ready, false);
+    assert.match(
+      status.readiness.reasons.join(" "),
+      /agent-recorded.*cannot prove dispatch, identity, or independence/,
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("review status fails closed when an otherwise valid receipt loses Git state", () => {
+  const fixture = createFixture();
+  try {
+    recordPassed(fixture);
+    renameSync(join(fixture.directory, ".git"), join(fixture.directory, ".git-hidden"));
+
+    const review = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(review.ok, false);
+    assert.equal(review.status, "blocked");
+    assert.equal(review.git, null);
+    assert.equal(review.local_review_artifact_valid, false);
+    assert.equal(review.local_review_artifact_outcome, "invalid");
+    assert.equal(review.local_review_audit_passed, false);
+    assert.equal(review.independent_reviewed, false);
+    assert.equal(review.review_gate_ready, false);
+    assert.match(
+      review.reasons.join(" "),
+      /Git state is unavailable or target is not a valid Git checkout/,
+    );
+
+    const status = commandStatus(fixture.directory, fixture.runId);
+    assert.equal(status.ok, false);
+    assert.equal(status.review.status, "blocked");
+    assert.equal(status.readiness.review_gate_ready, false);
+    assert.equal(status.readiness.pr_ready, false);
+    assert.equal(status.review.local_review_artifact_valid, false);
+    assert.equal(status.review.local_review_artifact_outcome, "invalid");
   } finally {
     fixture.cleanup();
   }
@@ -387,6 +542,9 @@ test("dirty trees invalidate review readiness", () => {
     recordPassed(fixture);
     writeFileSync(join(fixture.directory, "uncommitted.txt"), "dirty\n");
     const status = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(status.local_review_artifact_valid, false);
+    assert.equal(status.local_review_artifact_outcome, "invalid");
+    assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.independent_reviewed, false);
     assert.match(status.invalid_receipts.join(" "), /clean Git/);
   } finally {
@@ -403,6 +561,7 @@ test("altered receipts are rejected by canonical identity and schema checks", ()
     receipt.result = "changes-requested";
     writeFileSync(receiptFile, JSON.stringify(receipt, null, 2) + "\n");
     const status = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.independent_reviewed, false);
     assert.match(status.invalid_receipts.join(" "), /canonical content hash/);
   } finally {
@@ -421,9 +580,16 @@ test("unavailable reviewer evidence is a durable blocker", () => {
     });
     assert.equal(unavailable.receipt.status, "unavailable");
     const status = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(status.local_review_artifact_valid, true);
+    assert.equal(status.local_review_artifact_outcome, "unavailable");
+    assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.independent_reviewed, false);
     assert.equal(status.review_gate_ready, false);
     assert.match(status.reasons.join(" "), /unavailable/);
+    const projectStatus = commandStatus(fixture.directory, fixture.runId);
+    assert.equal(projectStatus.ok, false);
+    assert.equal(projectStatus.readiness.review_gate_ready, false);
+    assert.equal(projectStatus.readiness.pr_ready, false);
   } finally {
     fixture.cleanup();
   }
@@ -434,8 +600,9 @@ test("wrong-run and wrong-commit receipts never satisfy the requested run", () =
   try {
     recordPassed(wrongRun, { runId: "different-run" });
     const status = commandReviewStatus(wrongRun.directory, wrongRun.runId);
+    assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.independent_reviewed, false);
-    assert.match(status.reasons.join(" "), /no review receipt/);
+    assert.match(status.reasons.join(" "), /no reviewer result evidence/);
   } finally {
     wrongRun.cleanup();
   }
@@ -448,6 +615,7 @@ test("wrong-run and wrong-commit receipts never satisfy the requested run", () =
     receipt.git_commit = "f".repeat(40);
     writeFileSync(receiptFile, JSON.stringify(receipt, null, 2) + "\n");
     const status = commandReviewStatus(wrongCommit.directory, wrongCommit.runId);
+    assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.independent_reviewed, false);
     assert.match(status.invalid_receipts.join(" "), /canonical content hash|stale/);
   } finally {
@@ -595,6 +763,7 @@ test("non-array reviewer findings fail closed through record and status", () => 
         statusFixture.directory,
         statusFixture.runId,
       );
+      assert.equal(status.local_review_audit_passed, false);
       assert.equal(status.review_gate_ready, false);
       assert.match(status.invalid_receipts.join(" "), /findings must be an array/);
     } finally {
@@ -617,8 +786,11 @@ test("valid passed review plus unavailable or changes-requested evidence remains
       unavailableFixture.directory,
       unavailableFixture.runId,
     );
+    assert.equal(status.local_review_artifact_valid, true);
+    assert.equal(status.local_review_artifact_outcome, "conflict");
+    assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.review_gate_ready, false);
-    assert.match(status.reasons.join(" "), /unavailable/);
+    assert.match(status.reasons.join(" "), /conflicting outcomes/);
   } finally {
     unavailableFixture.cleanup();
   }
@@ -657,8 +829,11 @@ test("valid passed review plus unavailable or changes-requested evidence remains
       conflictingFixture.directory,
       conflictingFixture.runId,
     );
+    assert.equal(status.local_review_artifact_valid, true);
+    assert.equal(status.local_review_artifact_outcome, "conflict");
+    assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.review_gate_ready, false);
-    assert.match(status.reasons.join(" "), /requested changes/);
+    assert.match(status.reasons.join(" "), /conflicting outcomes/);
   } finally {
     conflictingFixture.cleanup();
   }
@@ -727,7 +902,7 @@ test("receipt validation errors remain global when a receipt run id is altered",
       resultFile: ".agent-stack/runs/reviews/other-run.json",
       coordinatorToken: fixture.token,
     });
-    assert.equal(commandReviewStatus(fixture.directory, fixture.runId).review_gate_ready, true);
+    assert.equal(commandReviewStatus(fixture.directory, fixture.runId).review_gate_ready, false);
 
     writeArtifact(
       "altered-run.json",
@@ -865,7 +1040,7 @@ test("hardened Git probes ignore ambient redirection and fsmonitor settings", ()
     assert.equal(existsSync(marker), false);
     assert.equal(
       commandReviewStatus(fixture.directory, fixture.runId).review_gate_ready,
-      true,
+      false,
     );
   } finally {
     for (const [name, value] of Object.entries(prior)) {
@@ -924,7 +1099,7 @@ process.exit(result.status ?? 1);
         .join(delimiter);
       process.env.ISSUE39_REAL_GIT = realGit;
       const status = commandReviewStatus(fixture.directory, fixture.runId);
-      assert.equal(status.review_gate_ready, true, JSON.stringify(status, null, 2));
+      assert.equal(status.review_gate_ready, false, JSON.stringify(status, null, 2));
       assert.deepEqual(status.git, {
         head,
         object_format: "sha1",
@@ -966,7 +1141,7 @@ test(
       const head = runGit(fixture.directory, ["rev-parse", "HEAD"]);
       recordPassed(fixture);
       const status = commandReviewStatus(fixture.directory, fixture.runId);
-      assert.equal(status.review_gate_ready, true, JSON.stringify(status, null, 2));
+      assert.equal(status.review_gate_ready, false, JSON.stringify(status, null, 2));
       assert.deepEqual(status.git, {
         head,
         object_format: "sha1",
@@ -989,7 +1164,7 @@ test(
     assert.equal(recorded.receipt.git_object_format, "sha256");
     assert.equal(
       commandReviewStatus(fixture.directory, fixture.runId).review_gate_ready,
-      true,
+      false,
     );
   } finally {
     fixture.cleanup();
@@ -997,7 +1172,7 @@ test(
   },
 );
 
-test("status --run requires current verification and exposes full readiness separately", () => {
+test("status --run keeps an arbitrary local result artifact mechanically blocked", () => {
   const fixture = createFixture();
   try {
     commandApproveChecks(
@@ -1005,10 +1180,13 @@ test("status --run requires current verification and exposes full readiness sepa
       "Inspected the bounded fixture verification commands",
     );
     commit(fixture.directory, "approve fixture verification checks");
-    recordPassed(fixture);
+    recordPassed(fixture, {
+      reviewerKind: "arbitrary-distinct-reviewer-kind",
+      reviewerId: "arbitrary-distinct-reviewer-id",
+    });
     const before = commandStatus(fixture.directory, fixture.runId);
     assert.equal(before.ok, false);
-    assert.equal(before.review.review_gate_ready, true);
+    assert.equal(before.review.review_gate_ready, false);
     assert.equal(before.readiness.pr_ready, false);
     assert.equal(before.verification.ok, false);
     assert.match(
@@ -1028,18 +1206,115 @@ test("status --run requires current verification and exposes full readiness sepa
     );
     commandVerify(fixture.directory);
     const after = commandStatus(fixture.directory, fixture.runId);
-    assert.equal(after.ok, true, JSON.stringify(after, null, 2));
-    assert.equal(after.readiness.review_gate_ready, true);
-    assert.equal(after.readiness.pr_ready, true);
+    assert.equal(after.ok, false, JSON.stringify(after, null, 2));
+    assert.equal(after.review.review_gate_ready, false);
+    assert.equal(after.review.local_review_artifact_valid, true);
+    assert.equal(after.review.local_review_audit_passed, false);
+    assert.equal(
+      after.review.receipts[0].reviewer_id,
+      "arbitrary-distinct-reviewer-id",
+    );
+    assert.equal(after.readiness.review_gate_ready, false);
+    assert.equal(after.readiness.local_review_artifact_valid, true);
+    assert.equal(after.readiness.local_review_audit_passed, false);
+    assert.equal(after.readiness.external_review_required, false);
+    assert.equal(after.readiness.protected_review, "not-required");
+    assert.equal(after.readiness.pr_ready, false);
+    assert.match(
+      after.readiness.reasons.join(" "),
+      /agent-recorded.*cannot prove dispatch, identity, or independence/,
+    );
     assert.deepEqual(after.review.git, after.verification.git);
     const cliAfter = spawnSync(
       process.execPath,
       [PACKAGE_CLI, "status", "--target", fixture.directory, "--run", fixture.runId],
       { encoding: "utf8" },
     );
-    assert.equal(cliAfter.status, 0, cliAfter.stderr);
+    assert.equal(cliAfter.status, 1, cliAfter.stderr);
   } finally {
     fixture.cleanup();
+  }
+});
+
+test("status --run keeps a required external-review profile blocked by local evidence", () => {
+  const fixture = createFixture();
+  try {
+    commandConfigure(fixture.directory, {
+      profile: "standard",
+      review: "github-human",
+      reviewers: ["trusted-owner"],
+      knowledge: "repository",
+      knowledgeScope: "project",
+      externalData: "local_only",
+      reason: "Fixture requires protected external review",
+    });
+    commandApproveChecks(
+      fixture.directory,
+      "Inspected the bounded fixture verification commands",
+    );
+    commit(fixture.directory, "require external review and approve checks");
+    recordPassed(fixture);
+    commandVerify(fixture.directory);
+    const status = commandStatus(fixture.directory, fixture.runId);
+    assert.equal(status.ok, false, JSON.stringify(status, null, 2));
+    assert.equal(status.review.independent_reviewed, false);
+    assert.equal(status.review.review_gate_ready, false);
+    assert.equal(status.review.local_review_artifact_valid, true);
+    assert.equal(status.review.local_review_audit_passed, false);
+    assert.equal(status.readiness.external_review_required, true);
+    assert.equal(status.readiness.protected_review, "not-evaluated-locally");
+    assert.equal(status.readiness.local_review_artifact_valid, true);
+    assert.equal(status.readiness.local_review_audit_passed, false);
+    assert.equal(status.readiness.review_gate_ready, false);
+    assert.equal(status.readiness.pr_ready, false);
+    assert.match(
+      status.readiness.reasons.join(" "),
+      /protected GitHub review is not evaluated locally/,
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("hash-approved review-provider policy mismatches fail closed", () => {
+  for (const { provider, required, allowedLogins } of [
+    { provider: "github-human", required: false, allowedLogins: ["trusted-owner"] },
+    { provider: "coderabbit", required: false, allowedLogins: [] },
+    { provider: "builtin", required: true, allowedLogins: [] },
+  ]) {
+    const fixture = createFixture();
+    try {
+      commandApproveChecks(
+        fixture.directory,
+        "Inspected the bounded fixture verification commands",
+      );
+      commit(fixture.directory, "approve fixture verification checks");
+      recordPassed(fixture);
+      commandVerify(fixture.directory);
+      const configPath = join(fixture.directory, ".agent-stack", "config.json");
+      const config = JSON.parse(readFileSync(configPath, "utf8"));
+      config.capabilities.review.provider = provider;
+      config.capabilities.review.required_for_release = required;
+      config.capabilities.review.allowed_logins = allowedLogins;
+      config.safety.approved_configuration_hash = configurationHash(config);
+      writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
+      const status = commandStatus(fixture.directory, fixture.runId);
+      assert.equal(status.configuration_approved, true, provider);
+      assert.equal(status.ok, false, provider);
+      assert.equal(status.readiness.review_gate_ready, false, provider);
+      assert.equal(status.readiness.pr_ready, false, provider);
+      assert.equal(status.readiness.external_review_required, null, provider);
+      assert.equal(status.readiness.protected_review, "invalid-policy", provider);
+      assert.match(
+        status.configuration_errors.join("\n"),
+        /required_for_release must match the selected review provider policy/,
+        provider,
+      );
+      assert.ok(status.readiness.reasons.includes("project configuration is invalid"));
+      assert.ok(status.readiness.reasons.includes("review provider policy is invalid"));
+    } finally {
+      fixture.cleanup();
+    }
   }
 });
 
@@ -1089,7 +1364,9 @@ test("verification evidence contains tamper-detection hashes and exact check res
     assert.equal(evidence.checks[0].result, "passed");
     assert.equal(evidence.checks[0].returncode, 0);
     const status = commandStatus(fixture.directory, fixture.runId);
-    assert.equal(status.ok, true, JSON.stringify(status, null, 2));
+    assert.equal(status.ok, false, JSON.stringify(status, null, 2));
+    assert.equal(status.verification.ok, true);
+    assert.equal(status.readiness.review_gate_ready, false);
     assert.deepEqual(status.review.git, status.verification.git);
   } finally {
     fixture.cleanup();
@@ -1224,7 +1501,9 @@ test("status validates configuration and preserves readiness across branch renam
     const renamed = runGit(fixture.directory, ["branch", "-m", "renamed-for-readiness"]);
     assert.equal(renamed, "");
     const status = commandStatus(fixture.directory, fixture.runId);
-    assert.equal(status.ok, true, JSON.stringify(status, null, 2));
+    assert.equal(status.ok, false, JSON.stringify(status, null, 2));
+    assert.equal(status.verification.ok, true);
+    assert.equal(status.readiness.review_gate_ready, false);
     assert.deepEqual(status.review.git, {
       head: status.verification.git.head,
       object_format: status.verification.git.object_format,

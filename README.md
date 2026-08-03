@@ -121,12 +121,12 @@ blocker, never a successful review claim.
 The distinct-physical-agent boundary remains agent-recorded and
 non-authenticated.
 
-`review status --run RUN` reports `review_gate_ready` and
-`independent_reviewed` within that agent-recorded boundary; it does not by
-itself claim the project is PR-ready. `status --run RUN` is the full project
-gate: it also requires healthy configuration and the latest successful
-stack-generated verification for the exact current clean Git head. Only then
-may its nested `readiness.pr_ready` be true.
+`review status --run RUN` preserves the local structural result but keeps
+`independent_reviewed` and `review_gate_ready` false: agent-recorded receipts
+prove exact-head artifact integrity, not authenticated dispatch or identity.
+They never unlock stack-generated PR readiness. A draft PR/evidence bundle may
+proceed under user authority; protected GitHub review is authoritative and not
+evaluated by the local CLI.
 
 The ordinary `verify` command may run configured checks on a dirty
 worktree; `status --run RUN` still requires a clean exact-head verification.
@@ -234,9 +234,10 @@ flowchart LR
     P --> L
     L --> V["Small working slices"]
     V --> T["Project tests and checks"]
-    T --> Q{"Independent review required?"}
-    Q -- "Yes" --> R["Independent review"]
-    R --> C["Inspect the cited code and evidence"]
+    T --> A["Bounded local reviewer-result artifact"]
+    A --> DRAFT["Draft PR + evidence"]
+    DRAFT --> PROTECTED["Protected GitHub review (when configured by policy)"]
+    PROTECTED --> C["Inspect the cited code and evidence"]
     C --> F{"Claim established?"}
     F -- "True and in scope" --> V
     F -- "False or duplicate" --> E["Rebut with evidence"]
@@ -244,8 +245,7 @@ flowchart LR
     E --> G{"Closure policy satisfied?"}
     H --> G
     G -- "Yes" --> D["Merge-ready result + evidence"]
-    G -- "No" --> R
-    Q -- "No" --> D
+    G -- "No" --> PROTECTED
 ```
 
 `BRIEF.md` is optional and unlocked while EXTERNAL or DISCOVER intent evolves.
@@ -393,7 +393,7 @@ The core workflow depends on capabilities, not vendor names.
 | Capability | Built-in path | Optional adapter |
 |---|---|---|
 | Coding agent | Portable project rules and serial execution | Native Codex, Claude Code, Gemini, OpenCode, Cursor, or other supported features |
-| Independent review | Repository standards and intent review | CodeRabbit or an approved GitHub human |
+| Review capability | Agent-recorded local reviewer-result artifact | Protected CodeRabbit or approved GitHub human review |
 | Project knowledge | Repository checkpoint, evidence, and Git history | Project-scoped local or separately approved remote GBrain |
 | Project telemetry | Repository and deployment evidence | Reviewed read-only product, error, service, or AI provider |
 | Work tracking | Portable repository ledger and evidence graph | Scoped Linear reading plus optional receipted issue/comment creation; other reviewed providers can implement the same contract |

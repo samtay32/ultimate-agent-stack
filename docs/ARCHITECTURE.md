@@ -41,11 +41,11 @@ flowchart TD
     N -- "Yes" --> V
     N -- "No" --> G["Full deterministic gate"]
     G -->|Fail| V
-    G -->|Pass| A["Independent standards + intent review"]
+    G -->|Pass| A["Bounded local reviewer-result artifact"]
     A -->|Finding| V
-    A -->|Clear| PR["Draft PR + evidence"]
+    A -->|Recorded| PR["Draft PR + evidence"]
     PR --> CI["Required CI + GitHub protections"]
-    PR --> CR["Configured independent review provider"]
+    PR --> CR["Protected review when policy requires"]
     CI --> D{"Actionable issue?"}
     CR --> D
     D -- "Yes" --> B["Fix/rebut/defer with evidence"]
@@ -162,9 +162,10 @@ flowchart LR
 5. **Evidence plane** — provides deterministic setup, check discovery,
    fail-closed verification, bounded logs, and artifact hashes. It deliberately
    contains no LLM decision logic.
-6. **Review plane** — independently checks engineering standards and locked
-   intent, then uses the configured independent review adapter as an additional
-   adversarial surface when required.
+6. **Review plane** — records a bounded local reviewer audit after the exact
+   commit, then uses protected GitHub review as the separate authenticated
+   adversarial surface. Local `agent-recorded` audit evidence proves exact-head
+   artifact integrity only and never unlocks PR readiness.
 7. **Authority plane** — limits interruptions without pretending authority does
    not exist. Reversible engineering is agent-owned; credentials, cost, legal
    risk, destructive production actions, and unauthorized releases remain

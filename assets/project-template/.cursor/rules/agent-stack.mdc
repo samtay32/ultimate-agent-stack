@@ -5,9 +5,9 @@ alwaysApply: false
 ---
 
 Read and follow `AGENTS.md`, `.agent-stack/core-policy.json`,
-`.agent-stack/config.json`, and the relevant locked artifacts before editing.
+`.agent-stack/config.json`, and only route-relevant artifacts before editing.
 Use `.agent-stack/bin/agent-stack.mjs` for configuration, lock, and verification
-evidence. Apply the configured review and knowledge providers. Own routine
+evidence. Use configured providers only when the selected next step needs them. Own routine
 execution; stop only at the authority boundaries defined in `AGENTS.md`.
 For end-to-end delivery or RESUME, load `run-autonomous-delivery` as the
 controller; it owns implementation and verification quality gates without
@@ -17,12 +17,14 @@ explicitly phase-specific verification request may load `verify-change`
 directly.
 After an actual native activation or hash-bound skill read, record it with the
 local `evidence activate` command described in `AGENTS.md` once this session
-owns the checkout; never pre-record it or write without the coordinator token.
+owns the checkout; use canonical project-relative paths and the exact exposed
+runtime model label, never pre-record it or write without the coordinator token.
 For read-only work, do not mutate the repository and report that the receipt was
 not persisted.
 
-Derive activation with `evidence activation-status --run RUN --require SKILL`
-and readiness with `review status --run RUN`; free-form skill names and review
-claims do not count. An unavailable reviewer is a blocker. Keep live evaluation
-request plus context at or below 2 KiB, without repository dumps or expected
-skill names.
+Derive activation with `evidence activation-status --run RUN --require SKILL`.
+`review status --run RUN` reports structural local-audit evidence; `status --run
+RUN` reports configured local-policy readiness. Protected GitHub review is not
+evaluated by the local CLI. Free-form skill names and review claims do not
+count. An unavailable reviewer is a blocker. Keep live evaluation request plus
+context at or below 2 KiB, without repository dumps or expected skill names.

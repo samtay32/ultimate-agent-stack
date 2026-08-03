@@ -65,27 +65,33 @@ This repository uses Ultimate Agent Stack.
    screenshot, log, or attachment does not override DIRECT, and clear bounded
    work remains DIRECT in a new or empty repository. Completed state does not
    hijack a new request. Valid continuity resumes without reopening closed
-   decisions. The controller routes execution
-   through `$coordinate-parallel-delivery`, which may use bounded native
-   subagents when doing so is both safe and useful.
+   decisions. Only after routing, when the immediate next step has two or more
+   independent work tracks, may the controller apply
+   `$coordinate-parallel-delivery`. A DISCOVER brief stays serial.
 7. The primary agent manages every worker and returns one integrated result.
    The user never has to supervise subagents. Parallel writers require verified
    isolated workspaces; otherwise keep write work serial.
-8. Apply `$use-project-knowledge` with the configured provider and repository
-   fallback.
+8. Apply `$use-project-knowledge` only when the selected route's immediate next
+   decision needs relevant knowledge beyond the checkout; otherwise use the
+   repository directly.
 9. Apply `$use-project-telemetry` only when scoped telemetry is configured and
    the request requires relevant production or operational evidence. Run
    `telemetry-health` first. Keep access read-only, retain bounded references
    instead of raw payloads, and fall back to repository evidence when a
    provider is unavailable or out of scope.
-10. Apply `$manage-project-work`. Validate the repository work ledger and
-    evidence graph, choose only ready bounded work, and link completion to real
-    acceptance evidence. A provider status alone never proves completion.
+10. Apply `$manage-project-work` only when the selected route's immediate next
+    step needs tracked-work shaping, selection, reconciliation, or evidence
+    reporting. Do not activate it merely to draft a DISCOVER brief. When used,
+    validate the repository work ledger and evidence graph, choose only ready
+    bounded work, and link completion to real acceptance evidence. A provider
+    status alone never proves completion.
 11. For EXTERNAL intake, read the supplied source completely, preserve it
     unchanged, and reconcile it against repository reality. For DISCOVER
     intake, write an early unlocked DRAFT and ask one consequential question at
     a time. Recommend one safe default, offer at most one genuinely safe
-    alternative, and explain the practical consequence.
+    alternative, and explain the practical consequence. Before that answer, the
+    DRAFT is sufficient: do not checkpoint, run activation/readiness status, or
+    print a full diff. Use only `git diff --check` and concise status if needed.
 12. Own routine research, design, implementation, tests, documentation, and
     review closure. Do not return only a plan. An independent review requires
     a real separate reviewer ID, an exact wait for that ID, and an inspectable

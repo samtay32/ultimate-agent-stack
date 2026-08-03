@@ -37,7 +37,7 @@ Use repeated `--reviewer LOGIN` arguments when selecting `github-human`.
 
 | Provider | Qualifying evidence | Failure behavior |
 |---|---|---|
-| `builtin` | Repository-owned standards and intent review | Available everywhere; cannot satisfy production external-review policy |
+| `builtin` | Repository-owned standards and intent review | Configuration is portable; local reviewer-result artifacts are structural metadata only and cannot unlock PR readiness |
 | `coderabbit` | Current-head CodeRabbit `COMMENTED` or `APPROVED` review and no unresolved current provider threads | Required selection fails closed; rate-limit comments never count |
 | `github-human` | Current-head `APPROVED` review from an explicitly allowed GitHub `User` login other than the pull-request author, with no unresolved current provider threads | Required selection fails closed; self, bot, stale, dismissed, unlisted, or comment-only reviews never count |
 

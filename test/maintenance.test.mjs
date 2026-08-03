@@ -158,6 +158,18 @@ const delegationContract = readFileSync(
   ),
   "utf8",
 );
+const shapingContract = readFileSync(
+  join(PACKAGE_ROOT, "skills/shape-project/references/shaping-contract.md"),
+  "utf8",
+);
+const securityReadiness = readFileSync(
+  join(PACKAGE_ROOT, "skills/secure-launch/references/security-readiness.md"),
+  "utf8",
+);
+const verificationMatrix = readFileSync(
+  join(PACKAGE_ROOT, "skills/verify-change/references/verification-matrix.md"),
+  "utf8",
+);
 const setupProjectSkill = readFileSync(
   join(PACKAGE_ROOT, "skills/setup-autonomous-project/SKILL.md"),
   "utf8",
@@ -203,6 +215,17 @@ const claudeAdapter = readFileSync(
 );
 const geminiAdapter = readFileSync(
   join(PACKAGE_ROOT, "assets/project-template/GEMINI.md"),
+  "utf8",
+);
+const cursorAdapter = readFileSync(
+  join(
+    PACKAGE_ROOT,
+    "assets/project-template/.cursor/rules/agent-stack.mdc",
+  ),
+  "utf8",
+);
+const cursorDeliverCommand = readFileSync(
+  join(PACKAGE_ROOT, "assets/project-template/.cursor/commands/deliver.md"),
   "utf8",
 );
 const readme = readFileSync(join(PACKAGE_ROOT, "README.md"), "utf8");
@@ -399,6 +422,21 @@ test("repository and installed-project CodeRabbit policies stay synchronized", (
   assert.match(repositoryCodeRabbit, /auto_incremental_review: false/);
 });
 
+test("Cursor delivery command restores the guarded local preflight", () => {
+  assert.match(
+    cursorDeliverCommand,
+    /Before material delivery[\s\S]{0,180}AGENTS\.md[\s\S]{0,100}core-policy\.json[\s\S]{0,100}config\.json[\s\S]{0,100}valid checkpoint[\s\S]{0,100}current diff/i,
+  );
+  assert.match(
+    cursorDeliverCommand,
+    /local CLI `start`[\s\S]{0,100}Project Steward lease\/token[\s\S]{0,100}`doctor`/i,
+  );
+  assert.match(
+    cursorDeliverCommand,
+    /only route-relevant artifacts[\s\S]{0,120}knowledge[\s\S]{0,100}next\s+decision/i,
+  );
+});
+
 test("installed doctor guidance is version-bound and directory metadata fits", () => {
   assert.ok(
     [...pluginData.interface.shortDescription].length <= 30,
@@ -422,6 +460,96 @@ test("installed doctor guidance is version-bound and directory metadata fits", (
       /node \.agent-stack\/bin\/agent-stack\.mjs doctor/,
     );
   }
+});
+
+test("live smoke guidance supplies an exact candidate doctor runner", () => {
+  const promptBlock = behavioralEvals.match(
+    /```text\r?\n(Live evaluation identity[\s\S]*?)\r?\n```/,
+  );
+  assert.ok(promptBlock, "live evaluation prompt block must be present");
+  assert.ok(
+    Buffer.byteLength(promptBlock[1], "utf8") < 2048,
+    "live evaluation prompt context must stay below 2 KiB",
+  );
+  assert.match(promptBlock[1], /operator-supplied/i);
+  assert.match(promptBlock[1], /CANDIDATE_CLI: exact unpacked candidate CLI path/);
+  assert.match(
+    promptBlock[1],
+    /CANDIDATE_CLI[\s\S]*only for the integrity doctor[\s\S]*project-local CLI[\s\S]*routine state and evidence/i,
+  );
+  assert.match(promptBlock[1], /exact doctor command and result in smoke evidence/i);
+  assert.doesNotMatch(
+    promptBlock[1],
+    /run-autonomous-delivery|develop-project-brief|verify-change/,
+    "live prompt context must not disclose expected skill names",
+  );
+  assert.match(
+    behavioralEvals,
+    /operator must supply the exact[\s\S]*unpacked candidate CLI path[\s\S]*registry\/latest candidate[\s\S]*autodetect a runner[\s\S]*substitute the project copy/i,
+  );
+  assert.match(behavioralEvals, /prompt-only context, not a receipt or schema field/i);
+});
+
+test("PR-ready review guidance attempts native delegation before unavailable", () => {
+  for (const source of [projectAgents, runDeliverySkill]) {
+    assert.match(source, /fresh\/no-history|demonstrably sanitized session/i);
+    assert.match(source, /bounded\s+read-only\s+reviewer/i);
+    assert.match(source, /coordinator (?:state\/)?token/i);
+    assert.match(
+      source,
+      /(?:absent|failed|unverifiable|wait without dispatch|missing result)[\s\S]*`?review\s+unavailable/i,
+    );
+    assert.match(
+      source,
+      /returned\s+(?:reviewer\s+)?ID[\s\S]*result[\s\S]*(?:bound\s+to|to)\s+(?:the\s+|that\s+)?commit/i,
+    );
+    assert.match(source, /never\s+(?:invent|fabricate)/i);
+  }
+  assert.match(
+    projectAgents,
+    /checkout locator[\s\S]*(?:exact\s+)?commit[\s\S]*intent\/acceptance(?:\s+summary)?[\s\S]*(?:read-only|review)\s+scope/i,
+  );
+  assert.match(
+    projectAgents,
+    /parent\s+transcript(?:\/command)?(?:\s+|\/)output[\s\S]*coordinator\s+state\/token[\s\S]*credentials[\s\S]*environment\s+secrets/i,
+  );
+  assert.match(
+    runDeliverySkill,
+    /AGENTS\.md[\s\S]*assignment[\s\S]*exclusion|assignment[\s\S]*exclusion[\s\S]*AGENTS\.md/i,
+  );
+  assert.match(
+    deliveryPolicy,
+    /Dispatch before any wait or poll[\s\S]*wait only on it[\s\S]*inspect its returned result/i,
+  );
+  for (const phrase of [
+    /Empty receiver IDs or states/i,
+    /wait[\s\S]{0,20}without\s+dispatch/i,
+    /missing result/i,
+    /coordinator-authored substitute/i,
+    /`review unavailable`/i,
+  ]) {
+    assert.match(deliveryPolicy, phrase);
+  }
+});
+
+test("local review guidance keeps portable audit evidence out of PR readiness", () => {
+  for (const source of [
+    projectAgents,
+    deliveryPolicy,
+    readme,
+    operatingManual,
+    trustGuide,
+  ]) {
+    assert.match(source, /exact-head artifact integrity/i);
+    assert.match(
+      source,
+      /(?:never|cannot) unlock(?: stack-generated)? PR(?:-|\s+)read(?:y|iness)|cannot make[\s\S]{0,40}PR-ready|cannot make `?(?:readiness\.)?pr_ready`? true/i,
+    );
+  }
+  assert.match(
+    behavioralEvals,
+    /no trusted native-dispatch trace[\s\S]*structurally valid local result artifact never proves real delegation/i,
+  );
 });
 
 test("review closure validates claims and has one disposition vocabulary", () => {
@@ -599,6 +727,56 @@ test("flexible intake stays ordered, proportionate, and source preserving", () =
   }
 });
 
+test("always-loaded delivery policy stays compact and routes detail to phase references", () => {
+  const words = (source) => source.trim().split(/\s+/).length;
+  assert.ok(Buffer.byteLength(projectAgents) <= 9_400);
+  assert.ok(words(projectAgents) <= 1_600);
+  assert.ok(Buffer.byteLength(runDeliverySkill) < 9_000);
+  assert.ok(words(runDeliverySkill) <= 1_150);
+
+  const routes = [
+    ["develop-project-brief/references/brief-contract.md", briefContract],
+    ["shape-project/references/shaping-contract.md", shapingContract],
+    ["secure-launch/references/security-readiness.md", securityReadiness],
+    ["coordinate-parallel-delivery/references/delegation-contract.md", delegationContract],
+    ["verify-change/references/verification-matrix.md", verificationMatrix],
+    ["close-review-loop/references/review-closure-policy.md", reviewClosurePolicy],
+  ];
+  for (const [path, reference] of routes) {
+    assert.ok(
+      `${projectAgents}\n${runDeliverySkill}`.includes(path),
+      `${path} must remain reachable from always-loaded policy`,
+    );
+    assert.ok(reference.length > 200, `${path} must retain its routed policy`);
+  }
+  assert.match(deliveryPolicy, /Human-owned unless pre-authorized/);
+  assert.match(delegationContract, /coordinator token belongs only to the primary/);
+  assert.match(verificationMatrix, /every required row passes/);
+  assert.match(reviewClosurePolicy, /Treat every reviewer claim as a hypothesis/);
+});
+
+test("security routing and plain-language authority questions survive compaction", () => {
+  assert.match(
+    runDeliverySkill,
+    /approved EXTERNAL\/DISCOVER brief[\s\S]{0,80}DIRECT T2\+ work/i,
+  );
+  assert.match(
+    runDeliverySkill,
+    /any\s+intake route[\s\S]{0,100}`\$secure-launch`[\s\S]{0,180}authentication[\s\S]{0,80}uploads[\s\S]{0,80}personal data[\s\S]{0,80}paid APIs[\s\S]{0,80}deployment/i,
+  );
+  assert.match(runDeliverySkill, /not applicable only for offline or\s+no-exposure work/i);
+  assert.match(
+    runDeliverySkill,
+    /secure-launch\/references\/security-readiness\.md/,
+  );
+  for (const source of [projectAgents, runDeliverySkill]) {
+    assert.match(
+      source,
+      /recommend one safe\s+default[\s\S]{0,80}at most\s+one genuinely safe alternative[\s\S]{0,80}practical\s+consequence[\s\S]{0,80}(?:ask\s+and end the turn|ends the turn)/i,
+    );
+  }
+});
+
 test("workflow loading stays route-aware and provider-neutral", () => {
   assert.match(claudeAdapter, /^@AGENTS\.md$/m);
   assert.match(
@@ -667,23 +845,131 @@ test("workflow loading stays route-aware and provider-neutral", () => {
   );
 });
 
-test("independent review fails closed without a real separate result", () => {
-  for (const source of [
-    projectAgents,
-    handoffTemplate,
-    runDeliverySkill,
-    verifyChangeSkill,
-    coordinateDeliverySkill,
-    delegationContract,
-  ]) {
-    assert.match(source, /separate reviewer|worker or thread ID/i);
+test("optional skills remain route-conditional and discovery stays serial", () => {
+  for (const source of [projectAgents, geminiAdapter, handoffTemplate, runDeliverySkill]) {
     assert.match(
       source,
-      /returns?\s+an inspectable\s+result|returned result|worker result/i,
+      /(?:selected route|after routing)[\s\S]{0,100}immediate next/i,
     );
-    assert.match(source, /self-review/i);
-    assert.match(source, /blocked|incomplete/i);
+    assert.match(source, /DISCOVER[\s\S]{0,100}serial/i);
   }
+  assert.doesNotMatch(projectAgents, /use-project-knowledge` at recovery/i);
+  assert.doesNotMatch(
+    geminiAdapter,
+    /Apply `\$use-project-knowledge` with the configured provider/i,
+  );
+  assert.doesNotMatch(
+    handoffTemplate,
+    /^\d+\. Apply `\$manage-project-work`\./m,
+  );
+});
+
+test("discovery fast path is self-contained and avoids verbose follow-up work", () => {
+  assert.match(
+    projectAgents,
+    /evidence activate --skill run-autonomous-delivery --skill-path \.agents\/skills\/run-autonomous-delivery\/SKILL\.md --mode file-read --harness "EXACT_HARNESS_ID" --model "EXACT_MODEL_ID" --run "RUN_ID" --event "activate-run-autonomous-delivery" --coordinator-token "TOKEN"/,
+  );
+  assert.match(
+    projectAgents,
+    /--skill develop-project-brief[\s\S]{0,120}\.agents\/skills\/develop-project-brief\/SKILL\.md/,
+  );
+  assert.match(
+    projectAgents,
+    /Choose one non-secret local `RUN_ID` of at most 200 characters[\s\S]{0,80}letters, digits, dot, underscore, and hyphen[\s\S]{0,160}Reuse it exactly[\s\S]{0,120}controller, brief[\s\S]{0,120}review receipt/,
+  );
+  assert.match(
+    projectAgents,
+    /agent-recorded correlation label, not a\s+harness-authenticated identity/,
+  );
+  for (const source of [projectAgents, runDeliverySkill, starterPrompt]) {
+    assert.match(source, /Do not inspect CLI\s+source or help/i);
+    assert.match(source, /do not checkpoint[\s\S]{0,120}activation(?:-status|\/readiness)[\s\S]{0,80}readiness|do not checkpoint[\s\S]{0,120}activation\/readiness status/i);
+    assert.match(source, /do not[\s\S]{0,100}print a full diff/i);
+    assert.match(source, /git diff --check[\s\S]{0,80}git status --short/i);
+  }
+  for (const source of [claudeAdapter, geminiAdapter]) {
+    assert.match(source, /Do not run[\s\S]{0,80}initial one-question DISCOVER draft/i);
+  }
+  assert.match(
+    claudeAdapter,
+    /actual native `Skill` invocation[\s\S]{0,100}--mode native[\s\S]{0,200}file-read/i,
+  );
+  assert.match(
+    geminiAdapter,
+    /native`? only after an actual native invocation[\s\S]{0,100}file-read/i,
+  );
+  assert.doesNotMatch(
+    projectAgents,
+    /\.agents\/skills\/run-autonomous-delivery\/SKILL\.md --mode native/,
+  );
+});
+
+test("local review receipts are audit evidence, not mechanical independence", () => {
+  const localReviewBoundarySources = [
+    {
+      name: "project AGENTS",
+      source: projectAgents,
+      boundary: /agent-recorded[\s\S]{0,180}not authenticated\s+dispatch,\s+identity,\s+or\s+independence/i,
+    },
+    {
+      name: "delivery controller",
+      source: runDeliverySkill,
+      boundary: /agent-recorded artifact metadata only[\s\S]{0,120}cannot establish a passed audit,\s*independent review,\s*or PR readiness/i,
+    },
+    {
+      name: "verification skill",
+      source: verifyChangeSkill,
+      boundary: /agent-recorded[\s\S]{0,140}cannot prove distinct delegation[\s\S]{0,80}satisfy independent review/i,
+    },
+    {
+      name: "parallel-delivery skill",
+      source: coordinateDeliverySkill,
+      boundary: /agent-recorded[\s\S]{0,140}cannot establish mechanical independence/i,
+    },
+    {
+      name: "README",
+      source: readme,
+      boundary: /agent-recorded receipts[\s\S]{0,200}not authenticated dispatch or identity[\s\S]{0,120}never unlock stack-generated PR readiness/i,
+    },
+    {
+      name: "operating manual",
+      source: operatingManual,
+      boundary: /agent-recorded[\s\S]{0,160}cannot\s+authenticate distinct physical-agent provenance/i,
+    },
+    {
+      name: "trust guide",
+      source: trustGuide,
+      boundary: /agent-recorded[\s\S]{0,280}cannot prove\s+distinct reviewer delegation/i,
+    },
+    {
+      name: "behavioral evaluations",
+      source: behavioralEvals,
+      boundary: /local artifact[\s\S]{0,180}cannot establish a passed audit or\s+mechanical independence[\s\S]{0,180}agent-recorded/i,
+    },
+  ];
+  for (const { name, source, boundary } of localReviewBoundarySources) {
+    assert.match(source, /agent-recorded/i, `${name} must identify local receipts`);
+    assert.match(source, boundary, `${name} must state the local-evidence boundary`);
+    assert.match(source, /protected\s+GitHub\s+review/i);
+  }
+  for (const adapter of [cursorAdapter, claudeAdapter, geminiAdapter]) {
+    assert.match(adapter, /review status --run RUN[\s\S]{0,80}structural local-audit/i);
+    assert.match(adapter, /status --run RUN[\s\S]{0,80}configured local-policy readiness/i);
+    assert.match(adapter, /protected GitHub\s+review[\s\S]{0,120}not\s+evaluated by the local CLI/i);
+  }
+  assert.match(
+    adaptersGuide,
+    /Configuration is portable[\s\S]{0,180}structural metadata[\s\S]{0,120}cannot unlock PR readiness/i,
+  );
+  assert.match(
+    delegationContract,
+    /local reviewer-result[\s\S]*cannot establish[\s\S]*local PR readiness/i,
+  );
+  assert.match(
+    delegationContract,
+    /protected\s+GitHub\s+review owns approval and is not\s+evaluated by the local CLI/i,
+  );
+  assert.doesNotMatch(closeReviewDescription, /local pre-PR independent review/i);
   for (const source of [
     projectAgents,
     handoffTemplate,
@@ -694,6 +980,52 @@ test("independent review fails closed without a real separate result", () => {
   ]) {
     assert.doesNotMatch(source, /Ed25519|evaluation-authority|outer collector/i);
   }
+});
+
+test("delivery policy finalizes tracked work before the local review audit", () => {
+  const finalCommandBlock = deliveryPolicy.match(
+    /Record the returned result against that exact final clean head:\n\n```bash\n([\s\S]*?)\n```/,
+  );
+  assert.ok(finalCommandBlock, "delivery policy must include the final audit command block");
+  const finalCommands = finalCommandBlock[1];
+  assert.match(
+    deliveryPolicy,
+    /write every authorized tracked product,[\s\S]{0,180}checkpoint\/handoff[\s\S]{0,180}Commit them to the intended final clean HEAD[\s\S]{0,180}Run full configured verification against that exact clean HEAD/i,
+  );
+  assert.match(
+    deliveryPolicy,
+    /If verification or repair changes tracked state or HEAD, commit and rerun\s+verification on the new exact clean HEAD/i,
+  );
+  assert.match(
+    deliveryPolicy,
+    /reviewer ID is the exact returned\s+worker\/thread\/session ID/i,
+  );
+  assert.match(
+    deliveryPolicy,
+    /must not invent a result or replace a missing\s+reviewer with self, primary, coordinator, or generic labels/i,
+  );
+  assert.match(
+    finalCommands,
+    /review record[\s\S]{0,180}--run RUN --reviewer-kind KIND --reviewer-id ID[\s\S]{0,180}--result passed[\s\S]{0,180}--result-file \.agent-stack\/runs\/reviews\/final-review\.json[\s\S]{0,180}review status --run RUN[\s\S]{0,180}status --run RUN/i,
+  );
+  assert.match(
+    deliveryPolicy,
+    /Use `--result changes-requested` and a different safe literal filename/i,
+  );
+  assert.doesNotMatch(finalCommands, /passed\|changes-requested|<safe-id>/);
+  assert.match(deliveryPolicy, /shipped\s+reviewer-result contract/i);
+  assert.match(
+    deliveryPolicy,
+    /After `review record`, make no tracked write or\s+commit[\s\S]{0,160}audit stale/i,
+  );
+  assert.match(finalCommands, /review status --run RUN[\s\S]{0,180}status --run RUN/i);
+  assert.match(deliveryPolicy, /Never claim a passed local audit/i);
+  assert.match(deliveryPolicy, /local_review_artifact_valid:true/i);
+  assert.match(
+    deliveryPolicy,
+    /report any false, stale, or blocked condition\s+truthfully/i,
+  );
+  assert.match(deliveryPolicy, /rather\s+than inspecting CLI source or help/i);
 });
 
 test("working brief and lock guidance preserve honest promotion boundaries", () => {

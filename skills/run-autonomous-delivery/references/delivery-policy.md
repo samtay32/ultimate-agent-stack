@@ -72,6 +72,64 @@ Use repository artifacts rather than chat memory:
 - `.agent-stack/state.json`: hashes and machine state;
 - `.agent-stack/runs/`: bounded check evidence.
 
+## Final Local Audit Sequence
+
+For DIRECT and end-to-end delivery:
+
+1. Write every authorized tracked product, test, draft-evidence,
+   checkpoint/handoff, and stack artifact.
+2. Commit them to the intended final clean HEAD.
+3. Run full configured verification against that exact clean HEAD.
+4. If verification or repair changes tracked state or HEAD, commit and rerun
+   verification on the new exact clean HEAD.
+5. Only then attempt one native bounded read-only reviewer when the harness
+   supports it, serialize its returned result, and record the audit against
+   that same unchanged HEAD.
+
+The reviewer ID is the exact returned worker/thread/session ID, and reviewer
+kind describes that actual capability.
+
+Dispatch before any wait or poll. Capture that returned ID, wait only on it,
+and inspect its returned result. Empty receiver IDs or states, a wait without
+dispatch, a missing result, or a coordinator-authored substitute requires
+`review unavailable`.
+
+Give the reviewer only the sanitized assignment allowed by `AGENTS.md`. The
+coordinator may serialize its returned inspectable result into the shipped
+reviewer-result contract, but must not invent a result or replace a missing
+reviewer with self, primary, coordinator, or generic labels. If dispatch,
+collection, isolation, ID, or result is absent, failed, or unverifiable, record
+`review unavailable` and leave readiness blocked. Local evidence remains
+agent-recorded: it proves exact-head artifact integrity, not authenticated
+dispatch or identity, and cannot unlock PR-ready status. A user-authorized
+draft PR/evidence bundle may proceed; protected GitHub review is the
+authenticated gate.
+
+Record the returned result against that exact final clean head:
+
+```bash
+node .agent-stack/bin/agent-stack.mjs review record \
+  --run RUN --reviewer-kind KIND --reviewer-id ID \
+  --result passed \
+  --result-file .agent-stack/runs/reviews/final-review.json \
+  --coordinator-token TOKEN
+node .agent-stack/bin/agent-stack.mjs review status --run RUN
+node .agent-stack/bin/agent-stack.mjs status --run RUN
+```
+
+Use `--result changes-requested` and a different safe literal filename only
+when that is the returned result.
+
+After `review record`, make no tracked write or commit. Any changed HEAD or
+tracked tree makes the audit stale; repeat the audit against the new final
+head. Immediately before the final answer, run both `review status --run RUN`
+and `status --run RUN`. Never claim a passed local audit. Report a recorded
+local reviewer-result artifact only when `local_review_artifact_valid:true`, and
+report any false, stale, or blocked condition truthfully. Receipt validation,
+candidate doctor, or prose is not a substitute.
+Use the commands above rather than inspecting CLI source or help to guess
+alternatives.
+
 ## Recovery
 
 On a resumed session:

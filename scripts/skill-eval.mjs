@@ -93,6 +93,15 @@ const REVIEW_RECEIPT_ID = /^[a-f0-9]{64}$/;
 const REVIEW_UNAVAILABLE_STATUS = "unavailable";
 const REVIEW_RESULTS = new Set(["passed", "changes-requested"]);
 const REVIEW_EXPECTATIONS = new Set(["not-required", "passed", "blocked"]);
+const REVIEW_EVIDENCE_OUTCOMES = new Set([
+  "local-result-artifact",
+  "unavailable",
+  "changes-requested",
+  "missing",
+  "invalid",
+  "conflict",
+  "not-required",
+]);
 const REVIEW_RUN_ID_MAX_CHARS = 200;
 const REVIEW_COORDINATOR_ID_MAX_CHARS = 120;
 const REVIEW_KIND_MAX_CHARS = 120;
@@ -260,6 +269,46 @@ function isCompletedField(value) {
     isNonEmptyString(value) &&
     !/^replace(?:-with-| with )/i.test(value.trim()) &&
     !/^unknown$/i.test(value.trim())
+  );
+}
+
+const LIVE_IDENTITY_SENTINELS = new Set([
+  "unknown",
+  "unspecified",
+  "default",
+  "latest",
+  "current",
+  "auto",
+  "automatic",
+  "n/a",
+  "n-a",
+  "na",
+  "none",
+  "null",
+  "tbd",
+  "todo",
+  "placeholder",
+  "harness",
+  "model",
+  "version",
+]);
+
+function isExactLiveIdentity(field, value) {
+  if (!isCompletedField(value)) {
+    return false;
+  }
+  const normalized = value.trim().toLowerCase();
+  return (
+    !LIVE_IDENTITY_SENTINELS.has(normalized) &&
+    !/^replace(?:-with(?:-|$)| with(?: |$))/i.test(normalized) &&
+    !/^(?:exact[\s_-]+)?(?:harness|model|version)(?:[\s_-]+(?:id|name|version|alias))?(?:\s+or\s+alias)?$/i.test(
+      normalized,
+    ) &&
+    !/^\[[^\[\]\r\n]*\]$/.test(value.trim()) &&
+    !/^<[^<>\r\n]*>$/.test(value.trim()) &&
+    !/^\{[^{}\r\n]*\}$/.test(value.trim()) &&
+    !/^\$\{[^{}\r\n]*\}$/.test(value.trim()) &&
+    !["harness", "model", "version", field].includes(normalized)
   );
 }
 
@@ -463,7 +512,14 @@ function validateReviewResultArtifacts(value, findings) {
   return { entries, byPath, invalidCount, overflow: false };
 }
 
-function validateActivationReceipts(receipts, observedRunId, skills, findings) {
+function validateActivationReceipts(
+  receipts,
+  observedRunId,
+  observedHarness,
+  observedModel,
+  skills,
+  findings,
+) {
   if (!Array.isArray(receipts)) {
     findings.push("activation_receipts must be an array");
     return [];
@@ -539,6 +595,12 @@ function validateActivationReceipts(receipts, observedRunId, skills, findings) {
     if (receipt.run_id !== observedRunId) {
       issue(`${location}.run_id must equal observed.run_id`);
     }
+    if (receipt.harness !== observedHarness) {
+      issue(`${location}.harness must equal observed.harness.name`);
+    }
+    if (receipt.model !== observedModel) {
+      issue(`${location}.model must equal observed.harness.model`);
+    }
     if (
       !skills.has(receipt.skill) ||
       !new Set([
@@ -580,6 +642,7 @@ function validateReviewEvidence(
   observed,
   item,
   expectedReview,
+  expectedEvidenceOutcome,
   findings,
 ) {
   const receipts = observed.review_receipts;
@@ -611,12 +674,21 @@ function validateReviewEvidence(
       independent_reviewed: false,
       review_gate_ready: false,
       status: "blocked",
+      evidence_outcome: "invalid",
     };
     const status = observed.review_status;
     if (expectedReview === "not-required") {
       findings.push("review outcome was blocked for a not-required scenario");
     } else if (expectedReview === "passed") {
       findings.push("review outcome was blocked");
+    }
+    if (
+      expectedEvidenceOutcome !== undefined &&
+      expectedEvidenceOutcome !== derived.evidence_outcome
+    ) {
+      findings.push(
+        `expected review evidence outcome ${expectedEvidenceOutcome} was not observed (observed ${derived.evidence_outcome})`,
+      );
     }
     if (
       status &&
@@ -911,21 +983,51 @@ function validateReviewEvidence(
   const hasBlockingOutcome =
     validChangesRequested.length > 0 || validUnavailable.length > 0;
   const hasInvalidOutcome = invalidReviewCount > 0 || invalidUnavailableCount > 0;
+  const hasAgentRecordedResultArtifact = validReviews.length > 0;
+  const claimsUnavailableHandoff =
+    (Array.isArray(observed.performed_actions) &&
+      observed.performed_actions.includes("record_review_unavailable")) ||
+    (Array.isArray(observed.observable_outputs) &&
+      observed.observable_outputs.includes("review_unavailable_handoff"));
+  if (claimsUnavailableHandoff && validUnavailable.length === 0) {
+    findings.push(
+      "claimed review unavailable handoff requires a valid same-run unavailable receipt",
+    );
+  }
   if (validReviews.length > 0 && hasBlockingOutcome) {
     findings.push("review evidence contains conflicting outcomes");
   }
-  const reviewStatus = hasBlockingOutcome || hasInvalidOutcome
+  const evidenceOutcome = hasInvalidOutcome
+    ? "invalid"
+    : validReviews.length > 0 && hasBlockingOutcome
+      ? "conflict"
+      : validReviews.length > 0
+        ? "local-result-artifact"
+        : validChangesRequested.length > 0
+          ? "changes-requested"
+          : validUnavailable.length > 0
+            ? "unavailable"
+            : expected === "not-required"
+              ? "not-required"
+              : "missing";
+  const reviewStatus =
+    evidenceOutcome !== "not-required"
     ? "blocked"
-    : validReviews.length > 0
-      ? "passed"
-      : expected === "not-required"
-        ? "not-required"
-        : "blocked";
+    : "not-required";
   const derived = {
-    independent_reviewed: reviewStatus === "passed",
-    review_gate_ready: reviewStatus === "passed",
+    independent_reviewed: false,
+    review_gate_ready: false,
     status: reviewStatus,
+    evidence_outcome: evidenceOutcome,
   };
+  if (
+    expectedEvidenceOutcome !== undefined &&
+    evidenceOutcome !== expectedEvidenceOutcome
+  ) {
+    findings.push(
+      `expected review evidence outcome ${expectedEvidenceOutcome} was not observed (observed ${evidenceOutcome})`,
+    );
+  }
   if (expected === "not-required" && reviewStatus === "blocked") {
     findings.push("review outcome was blocked for a not-required scenario");
   } else if (expected === "passed" && reviewStatus !== "passed") {
@@ -934,7 +1036,11 @@ function validateReviewEvidence(
     } else {
       findings.push("required passed review outcome was not observed");
     }
-  } else if (expected === "blocked" && !hasBlockingOutcome) {
+  } else if (
+    expected === "blocked" &&
+    !hasBlockingOutcome &&
+    !hasAgentRecordedResultArtifact
+  ) {
     findings.push("expected blocked review outcome was not observed");
   }
   if (
@@ -1170,6 +1276,14 @@ function validateScenarioCatalog(catalog = readJson(SCENARIOS_FILE)) {
         `${location}.expected.review must be exactly not-required, passed, or blocked`,
       );
     }
+    if (
+      expected.review_evidence !== undefined &&
+      !REVIEW_EVIDENCE_OUTCOMES.has(expected.review_evidence)
+    ) {
+      errors.push(
+        `${location}.expected.review_evidence must be a supported review evidence outcome`,
+      );
+    }
     const mustActivateNames = asArray(expected.must_activate);
     const mustNotActivateNames = asArray(expected.must_not_activate);
     for (const name of [...mustActivateNames, ...mustNotActivateNames]) {
@@ -1350,7 +1464,7 @@ function validateRunRecord(
     );
   }
   for (const field of ["name", "version", "model"]) {
-    if (!isCompletedField(record?.harness?.[field])) {
+    if (!isExactLiveIdentity(field, record?.harness?.[field])) {
       errors.push(
         `run record harness.${field} must identify the actual run`,
       );
@@ -1482,6 +1596,21 @@ function validateRunRecord(
         findings.push(
           "final_project_tree_sha256 must be the exact post-run project-tree receipt",
         );
+      }
+      if (asArray(scenario?.expected?.required_write_paths).length > 0) {
+        if (item.final_git_head === item.materialized_git_head) {
+          findings.push(
+            "required-write scenario final_git_head must differ from materialized_git_head",
+          );
+        }
+        if (
+          item.final_project_tree_sha256 ===
+          item.materialized_project_tree_sha256
+        ) {
+          findings.push(
+            "required-write scenario final_project_tree_sha256 must differ from materialized_project_tree_sha256",
+          );
+        }
       }
       if (
         GIT_COMMIT_ID.test(item.final_git_head ?? "") &&
@@ -1661,6 +1790,8 @@ function validateRunRecord(
         const derivedActivated = validateActivationReceipts(
           observed.activation_receipts,
           observed.run_id,
+          record.harness?.name,
+          record.harness?.model,
           skills,
           findings,
         );
@@ -1707,6 +1838,7 @@ function validateRunRecord(
           observed,
           item,
           scenario?.expected?.review,
+          scenario?.expected?.review_evidence,
           findings,
         ).derived;
         for (const name of reportedActivated) {
@@ -2019,6 +2151,7 @@ function summarizeRoutingRates(
       /^review outcome was blocked$/,
       /^review outcome was blocked for a not-required scenario$/,
       /^expected blocked review outcome was not observed$/,
+      /^expected review evidence outcome .* was not observed \(observed .*\)$/,
       /^review evidence contains conflicting outcomes$/,
     ].some((pattern) => pattern.test(finding));
   const usedSessions = new Set();
@@ -2026,17 +2159,21 @@ function summarizeRoutingRates(
   const errors = [];
   for (const [recordIndex, record] of asArray(records).entries()) {
     const recordLabel = `run record ${recordIndex + 1}`;
+    const invalidHarnessField = ["name", "version", "model"].find(
+      (field) => !isExactLiveIdentity(field, record?.harness?.[field]),
+    );
+    if (invalidHarnessField) {
+      errors.push(
+        `run record harness.${invalidHarnessField} must identify the actual run`,
+      );
+      continue;
+    }
     if (
       record?.schema_version !== CURRENT_RUN_RECORD_SCHEMA_VERSION ||
       record?.surface_hash !== behaviorSurfaceHash() ||
       !record?.harness ||
       typeof record.harness !== "object" ||
       Array.isArray(record.harness) ||
-      ![
-        record.harness.name,
-        record.harness.version,
-        record.harness.model,
-      ].every(isCompletedField) ||
       !isCompletedField(record.recorded_at) ||
       Number.isNaN(Date.parse(record.recorded_at)) ||
       !Array.isArray(record.cases) ||
@@ -2130,8 +2267,7 @@ function summarizeRoutingRates(
       activationOutcome.attempts += 1;
       group.activationReceiptOutcomes.set(activationOutcomeKey, activationOutcome);
       const reviewOutcome =
-        evaluatedCases.get(item?.scenario_id)?.review?.status ??
-        item.observed.review_status?.status ??
+        evaluatedCases.get(item?.scenario_id)?.review?.evidence_outcome ??
         "missing";
       const reviewOutcomeKey = `${scenario.id}\0${reviewOutcome}`;
       const reviewOutcomeCount = group.reviewOutcomes.get(reviewOutcomeKey) ?? {

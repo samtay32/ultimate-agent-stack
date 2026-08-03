@@ -456,6 +456,20 @@ const REVIEW_PROVIDERS = new Set([
   "coderabbit",
   "github-human",
 ]);
+
+function configuredReviewReleasePolicy(config) {
+  const review = config?.capabilities?.review;
+  const provider = review?.provider;
+  const valid =
+    REVIEW_PROVIDERS.has(provider) &&
+    typeof review?.required_for_release === "boolean" &&
+    review.required_for_release === (provider !== "builtin");
+  return {
+    valid,
+    external_review_required: valid ? provider !== "builtin" : null,
+  };
+}
+
 const KNOWLEDGE_PROVIDERS = new Set(["repository", "gbrain"]);
 const KNOWLEDGE_SCOPES = new Set(["project", "organization"]);
 const TELEMETRY_PROVIDER_ROLES = Object.freeze({
@@ -2082,6 +2096,13 @@ function validateConfig(config, target = undefined) {
     if (typeof review.required_for_release !== "boolean") {
       errors.push(
         "capabilities.review.required_for_release must be a boolean",
+      );
+    } else if (
+      REVIEW_PROVIDERS.has(review.provider) &&
+      review.required_for_release !== (review.provider !== "builtin")
+    ) {
+      errors.push(
+        "capabilities.review.required_for_release must match the selected review provider policy",
       );
     }
     if (review.current_revision_required !== true) {
@@ -4839,7 +4860,7 @@ function commandReviewRecord(target, options) {
     path,
     receipt: receiptWithId,
     boundary:
-      "This is an agent-recorded local pre-PR receipt. It is separate from protected GitHub review receipts and is not external-provider authentication.",
+      "This records an agent-reported local reviewer result artifact. It is not a passed audit or external-provider authentication and is separate from protected GitHub review receipts.",
   };
 }
 
@@ -4913,7 +4934,18 @@ function commandReviewStatus(target, runId, capturedGit = undefined) {
     MAX_REVIEW_UNAVAILABLE_RECEIPTS,
     validateReviewUnavailableReceipt,
   );
-  const git = capturedGit === undefined ? gitSnapshot(target) : capturedGit;
+  const capturedGitSnapshot =
+    capturedGit === undefined ? gitSnapshot(target) : capturedGit;
+  const gitUnavailable =
+    !capturedGitSnapshot || typeof capturedGitSnapshot !== "object";
+  const git = gitUnavailable
+    ? {
+        head: null,
+        object_format: null,
+        clean: false,
+        identity_error: "Git state is unavailable or target is not a valid Git checkout",
+      }
+    : capturedGitSnapshot;
   const selectedEntries = reviewDirectory.entries.filter(
     (entry) => entry.receipt.run_id === normalizedRunId,
   );
@@ -4951,23 +4983,53 @@ function commandReviewStatus(target, runId, capturedGit = undefined) {
   const changesRequested = validReceipts.filter(
     (receipt) => receipt.result === "changes-requested",
   );
-  const blockedReasons = [];
-  if (unavailable.length > 0) {
-    blockedReasons.push("independent review was recorded as unavailable");
-  }
-  if (selectedEntries.length === 0) {
-    blockedReasons.push("no review receipt exists for this run");
-  }
-  if (passed.length === 0) {
-    blockedReasons.push("no passed exact-head independent review exists");
-  }
-  if (changesRequested.length > 0) {
-    blockedReasons.push("a reviewer requested changes");
+  const validEvidenceCount = validReceipts.length + unavailable.length;
+  const localArtifactReasons = [];
+  if (validEvidenceCount === 0) {
+    localArtifactReasons.push("no reviewer result evidence exists for this run");
   }
   if (invalidReceipts.length > 0) {
-    blockedReasons.push("review evidence is invalid, stale, altered, or dirty");
+    localArtifactReasons.push(
+      "local reviewer result artifact evidence is invalid, stale, altered, or dirty",
+    );
   }
-  const independentReviewed = blockedReasons.length === 0;
+  if (gitUnavailable) {
+    localArtifactReasons.push(
+      "Git state is unavailable or target is not a valid Git checkout",
+    );
+  } else if (git.clean !== true) {
+    localArtifactReasons.push("current Git checkout is dirty");
+  }
+  const localReviewArtifactValid =
+    validEvidenceCount > 0 && localArtifactReasons.length === 0;
+  const localReviewArtifactOutcome =
+    invalidReceipts.length > 0 || git.clean !== true
+      ? "invalid"
+      : validReceipts.length > 0 && unavailable.length > 0
+        ? "conflict"
+        : passed.length > 0 && changesRequested.length > 0
+          ? "conflict"
+          : passed.length > 0
+            ? "passed"
+            : changesRequested.length > 0
+              ? "changes-requested"
+              : unavailable.length > 0
+                ? "unavailable"
+                : "missing";
+  const blockedReasons = [...localArtifactReasons];
+  if (localReviewArtifactOutcome === "changes-requested") {
+    blockedReasons.push("a reported local reviewer result requested changes");
+  } else if (localReviewArtifactOutcome === "unavailable") {
+    blockedReasons.push("local reviewer result was recorded as unavailable");
+  } else if (localReviewArtifactOutcome === "conflict") {
+    blockedReasons.push("local reviewer result evidence contains conflicting outcomes");
+  }
+  if (validReceipts.length > 0) {
+    blockedReasons.push(
+      "agent-recorded local reviewer result cannot prove dispatch, identity, or independence",
+    );
+  }
+  const independentReviewed = false;
   return {
     ok: independentReviewed,
     command: "review status",
@@ -4979,17 +5041,22 @@ function commandReviewStatus(target, runId, capturedGit = undefined) {
       evaluatedResultPaths,
     }),
     run_id: normalizedRunId,
-    git: publicGitIdentity(git),
+    git: publicGitIdentity(capturedGitSnapshot),
     receipts: validReceipts,
     unavailable: unavailable.map((entry) => entry.receipt),
     invalid_receipts: invalidReceipts,
+    local_review_artifact_valid: localReviewArtifactValid,
+    local_review_artifact_reasons: localArtifactReasons,
+    local_review_artifact_outcome: localReviewArtifactOutcome,
+    local_review_audit_passed: false,
+    local_review_audit_reasons: localArtifactReasons,
     independent_reviewed: independentReviewed,
     review_gate_ready: independentReviewed,
     status: independentReviewed ? "passed" : "blocked",
     reasons: [...new Set(blockedReasons)],
     current_errors: [...new Set(currentErrors)],
     boundary:
-      "Local pre-PR review status is derived from durable receipt files and exact current Git state. Protected GitHub review receipts are a separate gate.",
+      "Local reviewer result artifacts are inspectable agent-reported metadata only. They cannot establish a passed audit, mechanical dispatch, identity, or reviewer independence; local_review_audit_passed is retained for compatibility and always false. Protected GitHub review receipts are the separate authenticated gate.",
   };
 }
 
@@ -10866,12 +10933,28 @@ function commandStatus(target, runId) {
     runId === undefined
       ? null
       : verificationReadiness(target, config, git);
+  const reviewPolicy = configuredReviewReleasePolicy(config);
   if (runId !== undefined) {
-    const reviewGateReady = review?.review_gate_ready === true;
-    const prReady = projectHealthy && verification?.ok === true && reviewGateReady;
+    const externalReviewRequired = reviewPolicy.external_review_required === true;
+    const localReviewArtifactValid = review?.local_review_artifact_valid === true;
+    const reviewGateReady =
+      reviewPolicy.valid && review?.review_gate_ready === true;
+    const protectedReview = !reviewPolicy.valid
+      ? "invalid-policy"
+      : externalReviewRequired
+        ? "not-evaluated-locally"
+        : "not-required";
+    const prReady =
+      projectHealthy && verification?.ok === true && reviewGateReady;
     const readinessReasons = [
       ...projectHealthReasons,
-      ...(review?.reasons ?? []),
+      ...(!reviewPolicy.valid ? ["review provider policy is invalid"] : []),
+      ...(!reviewGateReady
+        ? (review?.reasons ?? review?.local_review_audit_reasons ?? [])
+        : []),
+      ...(externalReviewRequired
+        ? ["protected GitHub review is not evaluated locally"]
+        : []),
       ...(verification?.reasons ?? []),
     ];
     const boundedReadinessReasons = [
@@ -10883,6 +10966,10 @@ function commandStatus(target, runId) {
     readiness = {
       ...readiness,
       review_gate_ready: reviewGateReady,
+      local_review_artifact_valid: localReviewArtifactValid,
+      local_review_audit_passed: false,
+      external_review_required: reviewPolicy.external_review_required,
+      protected_review: protectedReview,
       pr_ready: prReady,
       status: prReady ? "passed" : "blocked",
       reasons: boundedReadinessReasons,
@@ -10894,6 +10981,7 @@ function commandStatus(target, runId) {
         ? projectHealthy
         : projectHealthy &&
           verification?.ok === true &&
+          reviewPolicy.valid &&
           review?.review_gate_ready === true,
     package_available: { name: PACKAGE_NAME, version: PACKAGE_VERSION },
     installed: installation?.package ?? null,
@@ -10933,9 +11021,9 @@ function deliveryStartPrompt({
   telemetryGuidance,
 }) {
   return [
-    `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/HANDOFF.md, .agent-stack/config.json, .agent-stack/work-items.json, .agent-stack/evidence-graph.json, any valid .agent-stack/CHECKPOINT.md, and the installed skills. For end-to-end delivery or RESUME, use $run-autonomous-delivery for this request: ${request} For a request explicitly limited to brief refinement, source audit, or reconciliation, use $develop-project-brief directly and stop before delivery. For explanation-only work, use neither.`,
+    `Read AGENTS.md, .agent-stack/core-policy.json, .agent-stack/config.json, any valid .agent-stack/CHECKPOINT.md, and the current diff. Route before loading more context: read only the applicable installed skill and its required reference, then only files needed for the next decision. Do not dump every skill, artifact, reference, CLI source, help screen, or command result. For end-to-end delivery or RESUME, use $run-autonomous-delivery for this request: ${request} For a request explicitly limited to brief refinement, source audit, or reconciliation, use $develop-project-brief directly and stop before delivery. For explanation-only work, use neither.`,
     continuity,
-    `Inspect the project first. Apply $manage-project-work when shaping or selecting real work, checking provider-write readiness, reporting or diagramming work evidence, or handling a bounded campaign. Validate the configured ${workProvider} repository ledger and graph, select only bounded ready work, and keep completion tied to real evidence. The start command already tested the configured work provider. If it is unavailable or unhealthy, continue from the repository ledger and record synchronization as pending; never block safe local delivery or infer remote state. Apply $use-project-knowledge using the configured ${knowledgeProvider} provider at ${knowledgeScope} scope, with repository evidence as the source of truth and fallback. The start command already tested configured memory; if its result is unhealthy or the checkpoint mirror is stale, continue from the repository and repair the optional adapter without blocking delivery. The start command also tested configured telemetry identity and scope; if it is unavailable or unhealthy, use repository evidence and do not broaden provider scope. ${telemetryGuidance} Use $coordinate-parallel-delivery to manage independent subagent work when it is safe and useful; keep it serial otherwise. You are the one Project Steward and integration owner. Do not give the coordinator token to subagents, and do not make the user manage workers.`,
+    `Use optional skills only when their named purpose is actually needed: $manage-project-work for tracked-work shaping or reporting; $use-project-knowledge for knowledge beyond the checkout; telemetry only for a production-behavior question; and $coordinate-parallel-delivery only when independent work makes parallelism useful. Otherwise stay serial and local. The start command already tested the configured ${workProvider} work provider, ${knowledgeProvider} knowledge provider at ${knowledgeScope} scope, and telemetry scope; their absence never blocks safe local delivery. ${telemetryGuidance} Use the installed local CLI under .agent-stack, not npx, and summarize command results concisely. You are the one Project Steward and integration owner. Do not give the coordinator token to subagents, and do not make the user manage workers.`,
     `Route intake in this order: RESUME for a valid non-complete checkpoint or active lock with an unmet done/evidence condition; EXTERNAL when substantial supplied material defines product intent or an existing plan; DISCOVER for vague, contradictory, exploratory, or greenfield product/system intent that needs development; DIRECT for a clear bounded testable request. Completed state does not hijack a new request. A supporting screenshot, log, or attachment does not turn bounded work into EXTERNAL, and clear bounded work remains DIRECT in a new or empty repository. Apply $develop-project-brief only for EXTERNAL or DISCOVER, or directly when the user explicitly limits the request to brief refinement, source audit, or reconciliation. DIRECT keeps the proportionate micro-brief path, and RESUME continues from the first unmet condition without reopening closed decisions. The controller owns routine implementation and verification without requiring nested native phase activations. A request explicitly limited to implementation may use $build-vertical-slice directly; a request explicitly limited to verification may use $verify-change directly. Apply $close-review-loop only for an existing pull request or an external provider or human review thread. Research routine answers. Ask only consequential questions, one at a time. Each question must use plain language, recommend one safe choice, provide at most one genuinely useful safe alternative, explain the consequence, and allow "use the recommendation." A question that asks for acceptance ends the turn; do not continue as though the recommendation approved itself. Own all routine implementation and verification. Artifact status is only DRAFT or APPROVED, and lock state exists only in protected CLI state. A failed guard never authorizes changing prerequisites. Do not claim added, read-complete, reviewed, locked, or ready state without path and command/result evidence. Write a deterministic checkpoint after verified milestones and release the coordinator lease only at final handoff.`,
   ].join("\n\n");
 }

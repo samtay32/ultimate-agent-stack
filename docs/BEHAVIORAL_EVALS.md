@@ -40,7 +40,7 @@ reviewer-unavailable case:
 | `flexible-external-complete-prd` | A complete consistent source stops DRAFT ready for later product-owner approval with zero questions, including no approval prompt |
 | `flexible-external-contradictory` | A material contradiction is surfaced before lock or implementation |
 | `flexible-external-existing-reconciliation` | Outside intent is compared with existing code, schemas, migrations, tests, architecture, and policy before changes |
-| `flexible-direct-bypass` | A clear bounded change stays DIRECT, writes and tests the requested slice, and prepares local PR-ready evidence even in a new project with completed state and a supporting attachment |
+| `flexible-direct-bypass` | A clear bounded change stays DIRECT, writes and tests the requested slice, and prepares draft evidence plus a recorded local reviewer-result artifact in a new project with completed state and a supporting attachment; it does not claim a passed audit, authenticated independence, or universal PR readiness |
 | `flexible-resume-valid` | A valid checkpoint resumes at the first unmet condition without reopening closed decisions |
 | `flexible-draft-lock` | A placeholder-free artifact marked DRAFT is still rejected by the lock |
 | `flexible-approved-promotion` | An approved conflict-free brief promotes into the canonical delivery contract while preserving closed decisions |
@@ -75,10 +75,26 @@ snapshot contains exactly the project-relative `path` and exact UTF-8
 `content` copied from that case's reviewer-result file, including any final
 newline. There is exactly one snapshot for every review receipt result file;
 paths are unique and contents are bounded at 4 MiB. Direct delivery and the
-flexible direct bypass require a passed receipt whose commit equals the exact
-final head. The reviewer-unavailable edge case must remain blocked. These
-records claim only `agent-recorded` and do not authenticate a harness tool call
-or external review provider.
+flexible direct bypass retain implementation, tests, an exact final head, and
+draft evidence plus a recorded local reviewer-result artifact. A local artifact
+is structurally inspectable metadata only; it cannot establish a passed audit or
+mechanical independence. The reviewer-unavailable edge case requires its
+durable unavailable receipt. These records claim only `agent-recorded`; only
+the protected GitHub review receipt provides the separate authenticated review
+gate.
+
+Review evidence is reported separately from mechanical readiness as
+`local-result-artifact`, `unavailable`, `changes-requested`, `missing`, `invalid`,
+`conflict`, or `not-required`. Routing rates count those observed evidence
+outcomes per scenario; they do not relabel missing evidence as blocked or make
+it a successful outcome. The 28-scenario route-accuracy denominator remains a
+separate routing measure.
+
+For CLI compatibility, `local_review_audit_passed` remains present but is always
+false. `local_review_artifact_valid` reports only exact-head artifact integrity;
+`local_review_artifact_outcome` separately reports the bounded local result
+classification. Neither field is a review-success, dispatch, identity, or
+readiness signal.
 
 The CLI `evidence activation-status` and `review status` results include stable
 project-relative `evidence_graph_path`, review receipt and unavailable
@@ -93,7 +109,8 @@ observable outputs, and source-claim dispositions from inspectable traces and
 fixture snapshots. The evaluator validates those records; it does not observe
 the broader project filesystem or authenticate the collector on its own. It
 mechanically checks the exact self-contained reviewer-result snapshots recorded
-inside each case.
+inside each case. Portable run records contain no trusted native-dispatch trace,
+so a structurally valid local result artifact never proves real delegation.
 
 The negative case makes false activation a first-class failure. Adding more
 positive examples cannot compensate for an agent starting work when it should
@@ -396,6 +413,36 @@ separate run whose request already says to use the recommendation must record
 the preset without asking the same question again.
 
 ## Release Readiness
+
+Paste this complete operator-supplied block into the live evaluation prompt
+after replacing every template value with the exact observed value:
+
+```text
+Live evaluation identity (operator-supplied; replace template values before pasting):
+HARNESS_ID: exact harness name
+HARNESS_VERSION: exact harness version
+MODEL_ID: exact model name or alias
+Receipt mapping: copy HARNESS_ID and MODEL_ID verbatim into activation receipt
+fields harness and model.
+Evidence mapping: retain HARNESS_VERSION in smoke/run evidence.
+Claim rule: missing, placeholder, or sentinel values forbid a named
+harness/model claim.
+Candidate runner (operator-supplied):
+CANDIDATE_CLI: exact unpacked candidate CLI path
+Doctor mapping: use CANDIDATE_CLI only for the integrity doctor; use the
+project-local CLI for routine state and evidence commands.
+Evidence mapping: retain the exact doctor command and result in smoke evidence.
+```
+
+Never infer, normalize, autodetect, or replace missing/placeholding values with
+generic labels. This mapping is live-evaluation-only; ordinary `npm init`,
+onboarding, and no-code use are unchanged. The operator must supply the exact
+unpacked candidate CLI path; do not resolve a registry/latest candidate,
+autodetect a runner, or substitute the project copy. `CANDIDATE_CLI` is
+prompt-only context, not a receipt or schema field. The identity remains
+agent-recorded, not authentication of a harness, provider, or model. Keep the
+request plus context at or below 2 KiB (target about 512 tokens), without
+repository dumps or expected skill names.
 
 When a pull request changes the behavior-surface hash:
 

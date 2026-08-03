@@ -32,21 +32,14 @@ Evidence, not confidence, decides readiness.
 5. Perform independent reviews:
    - **standards:** correctness, data loss, security, privacy, concurrency, performance, reliability, observability, maintainability;
    - **intent:** every requirement, non-goal, compatibility promise, migration, UX state, and operational outcome.
-   A local independent review counts only when a real separate reviewer
-   returns an inspectable result for the exact reviewed commit. Failed spawn,
-   empty wait, missing result, self-review, or handwritten approval prose is a
-   blocker, not review evidence.
-   For the portable local gate, use `review status --run RUN` and require a
-   passed receipt for the exact current clean Git head. The receipt must name a
-   contained structured JSON result artifact with its hash, coordinator
-   identity, nonempty reviewer kind, and nonempty reviewer identity distinct
-   from the coordinator. Reviewer kind and reviewer identity may be the same
-   string/label. Missing, failed, unavailable, altered,
-   stale, dirty, empty, wrong-run, wrong-commit, or evidence with the same
-   recorded reviewer and coordinator identity keeps
-   `independent_reviewed` and `review_gate_ready` false. Keep these local
-   receipts separate from protected GitHub review receipts. Distinct
-   physical-agent provenance remains agent-recorded and non-authenticated.
+   A local reviewer result may be retained as structured `agent-recorded` audit
+   evidence for the exact commit, but it cannot prove distinct delegation or
+   satisfy independent review. Failed spawn, empty wait, missing result,
+   self-review, or handwritten approval prose is a blocker; so is every local
+   passed receipt for the mechanical independence gate. `review status --run
+   RUN` therefore remains blocked for local receipts. Only the protected GitHub
+   review receipt establishes mechanical independence; keep that path separate.
+   Distinct physical-agent provenance remains unauthenticated.
 6. For visual changes, inspect rendered output at meaningful sizes and include screenshots or recordings.
 7. For integrations, test timeouts, malformed input, retries, idempotency, partial failure, and authentication boundaries where applicable.
 8. Classify every failure:

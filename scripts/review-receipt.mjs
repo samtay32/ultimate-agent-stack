@@ -18,6 +18,11 @@ const QODO_CLEAN_COMPLETION_PATTERNS = [
   /(?:<h[1-6]\b[^>]*>|^\s*#{1,6}\s+)\s*(?:great[\s,:!.\u2013\u2014-]*)?no\s+(?:material\s+)?issues?\s+(?:were\s+)?found\b/im,
   /\b(?:found\s+no|no)\s+material\s+issues?(?:\s+(?:that\s+)?(?:require|requiring)\s+review)?\b/i,
 ];
+const QODO_ZERO_SUMMARY_COUNT_PATTERNS = [
+  /\bBugs\s*\(\s*(\d+)\s*\)/gi,
+  /\bRule\s+violations\s*\(\s*(\d+)\s*\)/gi,
+  /\bSkill\s+insights\s*\(\s*(\d+)\s*\)/gi,
+];
 
 function normalizeLogin(login) {
   return String(login ?? "")
@@ -45,6 +50,13 @@ function qodoExactHeadMatches(body, headOid) {
   ).test(body);
 }
 
+function qodoZeroSummaryCounts(body) {
+  return QODO_ZERO_SUMMARY_COUNT_PATTERNS.every((pattern) => {
+    const matches = [...body.matchAll(pattern)];
+    return matches.length === 1 && matches[0][1] === "0";
+  });
+}
+
 function qodoCompletionMatches(comment, headOid, unifiedReviewUrl = undefined) {
   if (!isQodo(comment.author?.login) || comment.author?.__typename !== "Bot") {
     return false;
@@ -61,7 +73,8 @@ function qodoCompletionMatches(comment, headOid, unifiedReviewUrl = undefined) {
     QODO_REVIEW_TITLE_PATTERN.test(body) &&
     !QODO_PROCESSING_PATTERN.test(body) &&
     !QODO_PROVISIONAL_CLEAN_PATTERN.test(body) &&
-    QODO_CLEAN_COMPLETION_PATTERNS.some((pattern) => pattern.test(body)) &&
+    (QODO_CLEAN_COMPLETION_PATTERNS.some((pattern) => pattern.test(body)) ||
+      qodoZeroSummaryCounts(body)) &&
     qodoExactHeadMatches(body, headOid);
   return legacyCompletion || currentCleanCompletion;
 }

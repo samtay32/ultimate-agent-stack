@@ -2253,6 +2253,50 @@ test("github-human validation returns errors for non-array allowlists", () => {
   assert.match(errors.join("\n"), /requires at least one allowed/);
 });
 
+test("review release requirements must match the selected provider", () => {
+  const builtin = safeConfig();
+  assert.deepEqual(validateConfig(builtin), []);
+
+  const coderabbit = safeConfig();
+  coderabbit.capabilities.review.provider = "coderabbit";
+  coderabbit.capabilities.review.required_for_release = true;
+  assert.equal(
+    validateConfig(coderabbit).some((error) =>
+      error.includes("required_for_release must match"),
+    ),
+    false,
+  );
+
+  const githubHuman = safeConfig();
+  githubHuman.capabilities.review.provider = "github-human";
+  githubHuman.capabilities.review.required_for_release = true;
+  githubHuman.capabilities.review.allowed_logins = ["trusted-owner"];
+  assert.equal(
+    validateConfig(githubHuman).some((error) =>
+      error.includes("required_for_release must match"),
+    ),
+    false,
+  );
+
+  for (const [provider, required] of [
+    ["github-human", false],
+    ["coderabbit", false],
+    ["builtin", true],
+  ]) {
+    const invalid = safeConfig();
+    invalid.capabilities.review.provider = provider;
+    invalid.capabilities.review.required_for_release = required;
+    if (provider === "github-human") {
+      invalid.capabilities.review.allowed_logins = ["trusted-owner"];
+    }
+    assert.match(
+      validateConfig(invalid).join("\n"),
+      /required_for_release must match the selected review provider policy/,
+      provider,
+    );
+  }
+});
+
 test("telemetry defaults to no provider and rejects unreviewed or weakened adapters", () => {
   const config = safeConfig();
   assert.deepEqual(config.capabilities.telemetry, {

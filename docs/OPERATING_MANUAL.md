@@ -324,18 +324,17 @@ node .agent-stack/bin/agent-stack.mjs status --run RUN
 ```
 
 Use `review unavailable --run RUN --reason REASON --details TEXT
---coordinator-token TOKEN` when the independent reviewer cannot act.
-Unavailable, missing, failed,
-changes-requested, empty, altered, stale, dirty-tree, wrong-run,
-wrong-commit, or evidence with the same recorded reviewer and coordinator
-identity remains blocked and cannot become
-PR-ready. `reviewer_id` must be nonempty and distinct from the coordinator
-identity; `reviewer_kind` must be nonempty and may be the same string/label as
-`reviewer_id`. A local receipt claims only `agent-recorded`; it authenticates
-neither distinct physical-agent provenance nor an external provider, and it
-does not authorize a push, merge, or release. `review status`
-exposes `review_gate_ready`, while full `status --run` also requires current
-successful verification before its nested `readiness.pr_ready` is true.
+--coordinator-token TOKEN` when delegation cannot act. Unavailable, missing,
+failed, changes-requested, empty, altered, stale, dirty-tree, wrong-run,
+wrong-commit, or same-recorded-identity evidence remains blocked. A local
+receipt claims only `agent-recorded`: even a structurally passed result cannot
+authenticate distinct physical-agent provenance or external review, so it never
+sets `independent_reviewed` or local `review_gate_ready` true. Only the
+protected GitHub review receipt establishes that separate mechanical gate. Local
+receipts prove exact-head artifact integrity, not authenticated dispatch or
+identity, and cannot make `readiness.pr_ready` true. A user-authorized draft
+PR/evidence bundle may proceed; local receipts do not authorize push, merge,
+or release.
 `verify` may still execute configured checks on a dirty worktree, but
 its evidence cannot satisfy readiness until a clean exact-head verification is
 recorded. The evidence target real path prevents cross-checkout replay; it does
