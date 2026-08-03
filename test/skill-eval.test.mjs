@@ -950,7 +950,7 @@ test("starter prompt stays within the compact progressive-disclosure budget", ()
   assert.match(starter, /Route before loading more/);
   assert.match(starter, /Do not dump directories/);
   const startCommand = starter.indexOf(
-    'node .agent-stack/bin/agent-stack.mjs start --idea "[REQUEST]"',
+    "node .agent-stack/bin/agent-stack.mjs start",
   );
   const doctorCommand = starter.indexOf(
     "node .agent-stack/bin/agent-stack.mjs doctor",
@@ -960,13 +960,21 @@ test("starter prompt stays within the compact progressive-disclosure budget", ()
     doctorCommand > startCommand,
     "starter prompt must acquire the coordinator lease before doctor",
   );
-  assert.match(starter, /retain its\s+coordinator token only in the primary session/);
+  assert.match(
+    starter,
+    /retain its\s+coordinator token\s+only in the primary session/,
+  );
   assert.equal(
     starter.match(/\[REQUEST\]/g)?.length,
-    3,
-    "starter instructions and both request positions must use one placeholder",
+    2,
+    "starter instructions and request text must use one placeholder",
   );
   assert.doesNotMatch(starter, /\[DESCRIBE_/);
+  assert.doesNotMatch(
+    starter,
+    /`[^`]*(?:start|doctor)[^`]*\[REQUEST\][^`]*`/,
+    "free-form request text must not appear inside an executable command",
+  );
 });
 
 test("review evidence derives blocked and conflicting outcomes without treating them as passes", () => {
