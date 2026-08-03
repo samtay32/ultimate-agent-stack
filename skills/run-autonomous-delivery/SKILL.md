@@ -29,20 +29,22 @@ Do not say "done" until all applicable conditions hold:
    conversation. Read project instructions, `.agent-stack/config.json`, any
    valid `.agent-stack/CHECKPOINT.md`, locked artifacts, current diff, branch,
    task/issue, and latest evidence. Apply
-   `$use-project-knowledge` with the configured provider. Continue valid work;
-   do not restart finished phases.
+   `$use-project-knowledge` with the configured provider only when the next
+   decision needs knowledge beyond the local checkout. Continue valid work; do
+   not restart finished phases.
    If scoped project telemetry is configured and the request concerns
    production behavior, apply `$use-project-telemetry`. Keep access read-only
    and retain only a bounded observation receipt. Telemetry is advisory and
    cannot authorize a change or weaken repository verification.
-   Apply `$manage-project-work` using the configured work provider. Validate the
-   portable repository ledger and evidence graph, select only ready, bounded
-   work, and tie completion to actual acceptance evidence rather than a
-   provider status.
+   Apply `$manage-project-work` only when shaping/selecting tracked work or
+   reporting work evidence. Validate the portable repository ledger and
+   evidence graph when that work is needed, and tie completion to actual
+   acceptance evidence rather than a provider status.
    Use campaign mode only when the user approved a multi-item delivery
    objective. Respect its iteration bound, process one selected item at a time,
    and never let campaign advancement trigger provider writes.
-   Run `node .agent-stack/bin/agent-stack.mjs doctor` before material work. If
+   Run `node .agent-stack/bin/agent-stack.mjs doctor` before material work. Use
+   this installed local command, not `npx`. If
    protected files drifted, proposals remain unresolved, or quality commands
    changed without review, repair setup before proceeding.
 2. **Route intake before scale.** Use
@@ -70,6 +72,14 @@ Do not say "done" until all applicable conditions hold:
    reconciliation invokes `$develop-project-brief` directly instead of this
    controller and stops before delivery. Explanation-only work invokes neither
    skill.
+   For a vague, greenfield DISCOVER request, take the compact discovery path:
+   read this controller and `develop-project-brief` with its
+   `brief-contract.md` reference, then create the DRAFT brief, validate only
+   that changed artifact, checkpoint once, and ask one consequential question.
+   Do not read every artifact, skill, reference, CLI source, or help screen;
+   do not activate optional provider, telemetry, work-management, or parallel
+   skills unless the next step requires them. Summarize command results instead
+   of pasting large command output into the conversation.
 3. **Shape, secure, and lock.** For an approved working brief, invoke
    `$shape-project` to promote it into the canonical delivery, architecture,
    security, verification, and decision contracts. Invoke `$shape-project`

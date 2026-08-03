@@ -463,7 +463,14 @@ function validateReviewResultArtifacts(value, findings) {
   return { entries, byPath, invalidCount, overflow: false };
 }
 
-function validateActivationReceipts(receipts, observedRunId, skills, findings) {
+function validateActivationReceipts(
+  receipts,
+  observedRunId,
+  observedHarness,
+  observedModel,
+  skills,
+  findings,
+) {
   if (!Array.isArray(receipts)) {
     findings.push("activation_receipts must be an array");
     return [];
@@ -538,6 +545,12 @@ function validateActivationReceipts(receipts, observedRunId, skills, findings) {
     }
     if (receipt.run_id !== observedRunId) {
       issue(`${location}.run_id must equal observed.run_id`);
+    }
+    if (receipt.harness !== observedHarness) {
+      issue(`${location}.harness must equal observed.harness.name`);
+    }
+    if (receipt.model !== observedModel) {
+      issue(`${location}.model must equal observed.harness.model`);
     }
     if (
       !skills.has(receipt.skill) ||
@@ -1661,6 +1674,8 @@ function validateRunRecord(
         const derivedActivated = validateActivationReceipts(
           observed.activation_receipts,
           observed.run_id,
+          record.harness?.name,
+          record.harness?.model,
           skills,
           findings,
         );

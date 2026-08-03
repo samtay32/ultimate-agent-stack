@@ -17,10 +17,12 @@ activation.
 After each actual native activation, record it with the local `evidence
 activate` command described in `AGENTS.md` as soon as this session owns the
 checkout through `start`. Use one stable run ID for this Claude Code session.
-The receipt is agent-recorded evidence and must never be created before the
-native `Skill` call or without the coordinator token and repository-write
-authority. For read-only work, do not mutate the repository; report that the
-receipt was not persisted.
+Use the canonical project-relative installed skill path, plus the exact runtime
+model identifier Claude exposes (not a guessed model family). The receipt is
+agent-recorded evidence and must never be created before the native `Skill` call
+or without the coordinator token and repository-write authority; it does not
+authenticate the claimed identity. For read-only work, do not mutate the
+repository; report that the receipt was not persisted.
 
 Use `evidence activation-status --run RUN --require SKILL` for receipt-derived
 activation and `review status --run RUN` for local pre-PR readiness. Never

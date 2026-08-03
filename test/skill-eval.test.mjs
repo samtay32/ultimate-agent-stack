@@ -910,6 +910,20 @@ test("activation receipt mutations report their specific binding findings", () =
       },
       finding: /receipt_sha256 must match its canonical content hash/,
     },
+    {
+      name: "receipt harness must bind to the enclosing run",
+      mutate: (receipt) => {
+        receipt.harness = "other-harness";
+      },
+      finding: /harness must equal observed\.harness\.name/,
+    },
+    {
+      name: "receipt model must bind to the enclosing run",
+      mutate: (receipt) => {
+        receipt.model = "other-model";
+      },
+      finding: /model must equal observed\.harness\.model/,
+    },
   ];
   for (const { name, mutate, finding } of cases) {
     const record = passingRecord();
@@ -925,6 +939,16 @@ test("activation receipt mutations report their specific binding findings", () =
       name,
     );
   }
+});
+
+test("starter prompt stays within the compact progressive-disclosure budget", () => {
+  const starter = readFileSync(join(PACKAGE_ROOT, "STARTER_PROMPT.md"), "utf8");
+  assert.ok(
+    Buffer.byteLength(starter, "utf8") <= 4_096,
+    `expected compact starter prompt, got ${Buffer.byteLength(starter, "utf8")} bytes`,
+  );
+  assert.match(starter, /Route before loading more/);
+  assert.match(starter, /Do not dump directories/);
 });
 
 test("review evidence derives blocked and conflicting outcomes without treating them as passes", () => {

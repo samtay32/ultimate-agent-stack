@@ -6,11 +6,12 @@ Deliver correct, maintainable changes from intent through verified review closur
 
 ## Source of Truth
 
-Before editing, read this file, nested instruction files,
-`.agent-stack/core-policy.json`, `.agent-stack/config.json`, any valid
-`.agent-stack/CHECKPOINT.md`, locked artifacts under
-`.agent-stack/artifacts/`, any active unlocked working brief, the current diff,
-and relevant tests and documentation.
+Before editing, read this file, `.agent-stack/core-policy.json`,
+`.agent-stack/config.json`, any valid `.agent-stack/CHECKPOINT.md`, and the
+current diff. Then load only the nested instructions, artifacts, source files,
+tests, and documentation needed by the selected route and next decision. Do not
+dump directories, all artifacts, all skills, CLI source, or command help into
+context when a bounded file or concise command result answers the question.
 
 Project-specific instructions outrank generic stack guidance. Preserve established architecture, terminology, package managers, formatting, and deployment policy.
 
@@ -71,8 +72,10 @@ Use one route-aware workflow contract across capable coding harnesses:
   `$manage-project-work`.
 
 When the harness supports native skills, activate the applicable skill before
-acting. When it does not, read the same installed `SKILL.md` and retain its path
-and content hash as equivalent evidence. If the harness can do neither safely,
+acting. When it does not, read the same installed `SKILL.md` only when it is
+applicable and retain its path and content hash as equivalent evidence. Do not pre-load the
+skill catalog or optional skills before the intake route requires them. If the
+harness can do neither safely,
 report that capability limitation and stop the affected route; do not force a
 vendor-specific substitute or pretend activation occurred. Never report a
 skill as loaded merely because its name appeared in a prompt.
@@ -84,13 +87,17 @@ activation.
 
 After an applicable skill is actually activated or hash-bound read, record the
 event with `node .agent-stack/bin/agent-stack.mjs evidence activate` as soon as
-the current session owns the checkout through `start`. Use the skill name,
-the exact installed `SKILL.md` path that was activated or read, `native` or
-`file-read` mode, current harness and model, one stable run ID, and the
+the current session owns the checkout through `start`. Use the skill name, the
+canonical project-relative installed path (for example
+`.agents/skills/NAME/SKILL.md`, never an absolute filesystem path), `native` or
+`file-read` mode, the exact harness and model identifier the current runtime
+exposes (not a guessed family name), one stable run ID, and the
 coordinator token. Use one stable event ID for the specific activation so a
 retry is idempotent while a later activation remains a separate event. Never
-write this receipt before activation, guess the skill path, or write without
-checkout ownership and repository-write authority. For a read-only request,
+write this receipt before activation, guess a path or identity, or write without
+checkout ownership and repository-write authority. If the runtime does not
+expose an exact identity, record that limitation honestly rather than implying
+the receipt authenticates it. For a read-only request,
 retain the exposed trace outside project state and report that the receipt was
 not persisted. This is agent-recorded trace evidence, not independent proof
 that a harness tool call occurred.
@@ -126,6 +133,15 @@ dumps or expected skill names in a live prompt. The prompt is an intake request,
 not a substitute for structured stack-generated status, evidence, evaluator, or
 readiness artifacts. Do not run paid live-model tests as part of deterministic
 package validation.
+
+For a vague new-project DISCOVER request, use the compact path: start with the
+controller and its brief reference only; use the local
+`node .agent-stack/bin/agent-stack.mjs` commands (not `npx`); write the DRAFT
+brief; validate only the artifact changed; checkpoint once; then ask exactly one
+consequential question. Do not activate optional knowledge, work, telemetry, or
+parallel-delivery skills unless the selected next step actually needs them.
+Capture command results as concise facts rather than pasting large JSON or file
+contents into the conversation.
 
 A question that asks the user to accept a recommendation ends the turn. Do not
 continue as though the recommendation approved itself. A prior explicit
