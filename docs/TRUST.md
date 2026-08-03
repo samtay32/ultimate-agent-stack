@@ -106,8 +106,9 @@ authenticate a provider, agent, or editor. Only the protected GitHub review
 receipt establishes the separate mechanical independence gate; `status --run
 RUN` cannot become PR-ready from local review evidence when the selected policy
 requires external review. The default builtin policy may satisfy full project
-readiness after verification while `independent_reviewed` remains false; that
-is not an authenticated independence claim.
+readiness only after a valid passed exact-head local audit and verification
+while `independent_reviewed` remains false; that is not an authenticated
+independence claim.
 
 Linear uses separate protected helpers for bounded reads and the two optional
 write operations. Writes are disabled by default. An approved write requires

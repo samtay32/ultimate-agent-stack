@@ -41,10 +41,10 @@
     {
       "id": "direct-delivery",
       "category": "direct",
-      "request": "Take this checkout's reported login bug through a tested local change and a draft evidence package. Preserve the independent-review blocker until protected authenticated review is available. Do not contact GitHub or merge it.",
+      "request": "Take this checkout's reported login bug through a tested local change, a recorded local review audit, and a draft evidence package. Do not claim authenticated independence, contact GitHub, or merge it.",
       "context": {
         "repository": "configured project with a reproducible bug report",
-        "authority": "code changes, tests, a local branch and commit, draft evidence, and an independent-review blocker are authorized; external provider writes, push, merge, and release are not"
+        "authority": "code changes, tests, a local branch and commit, draft evidence, and a local review audit are authorized; external provider writes, push, merge, and release are not"
       },
       "expected": {
         "must_activate": [
@@ -851,10 +851,10 @@
     {
       "id": "flexible-direct-bypass",
       "category": "direct",
-      "request": "In this newly initialized empty project, create src/status.mjs with one status() function that returns \"ok\", add the exact Node test at test/status.test.mjs, and prepare local draft evidence while preserving the independent-review blocker. The attached one-line acceptance note is supporting evidence only. Do not contact GitHub or merge it.",
+      "request": "In this newly initialized empty project, create src/status.mjs with one status() function that returns \"ok\", add the exact Node test at test/status.test.mjs, and prepare a recorded local review audit plus draft evidence without claiming authenticated independence. The attached one-line acceptance note is supporting evidence only. Do not contact GitHub or merge it.",
       "context": {
         "repository": "configured greenfield repository with no product source yet, a project-native Node test command, a completed setup checkpoint, and an active setup lock whose done and evidence conditions are fully satisfied",
-        "authority": "code, test, local branch and commit, draft evidence, and an independent-review blocker are authorized; external provider writes, push, merge, and release are not"
+        "authority": "code, test, local branch and commit, draft evidence, and a local review audit are authorized; external provider writes, push, merge, and release are not"
       },
       "expected": {
         "must_activate": [

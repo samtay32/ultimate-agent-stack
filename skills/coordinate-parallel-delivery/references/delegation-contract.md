@@ -24,8 +24,9 @@ failure evidence, never independent-review success.
 
 On any of those conditions, record the assignment as failed, cancelled, or
 serially recovered. Continue safe serial work when useful. The local audit
-cannot establish authenticated independence; an external-review policy keeps
-its PR-ready gate incomplete until protected review succeeds.
+cannot establish authenticated independence. Builtin readiness still needs a
+valid passed exact-head local audit; an external-review policy keeps its
+PR-ready gate incomplete until protected review succeeds.
 
 ## Assignment Envelope
 

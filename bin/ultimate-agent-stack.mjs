@@ -2083,6 +2083,13 @@ function validateConfig(config, target = undefined) {
       errors.push(
         "capabilities.review.required_for_release must be a boolean",
       );
+    } else if (
+      REVIEW_PROVIDERS.has(review.provider) &&
+      review.required_for_release !== (review.provider !== "builtin")
+    ) {
+      errors.push(
+        "capabilities.review.required_for_release must match the selected review provider policy",
+      );
     }
     if (review.current_revision_required !== true) {
       errors.push(
@@ -4951,26 +4958,30 @@ function commandReviewStatus(target, runId, capturedGit = undefined) {
   const changesRequested = validReceipts.filter(
     (receipt) => receipt.result === "changes-requested",
   );
-  const blockedReasons = [];
+  const localAuditReasons = [];
   if (unavailable.length > 0) {
-    blockedReasons.push("independent review was recorded as unavailable");
+    localAuditReasons.push("local review audit was recorded as unavailable");
   }
   if (selectedEntries.length === 0) {
-    blockedReasons.push("no review receipt exists for this run");
+    localAuditReasons.push("no review receipt exists for this run");
   }
   if (passed.length === 0) {
-    blockedReasons.push("no passed exact-head independent review exists");
+    localAuditReasons.push("no passed exact-head local review audit exists");
   }
+  if (changesRequested.length > 0) {
+    localAuditReasons.push("a local reviewer requested changes");
+  }
+  if (invalidReceipts.length > 0) {
+    localAuditReasons.push(
+      "local review audit evidence is invalid, stale, altered, or dirty",
+    );
+  }
+  const localReviewAuditPassed = git.clean === true && localAuditReasons.length === 0;
+  const blockedReasons = [...localAuditReasons];
   if (validReceipts.length > 0) {
     blockedReasons.push(
       "local review receipt is agent-recorded and cannot prove distinct reviewer delegation",
     );
-  }
-  if (changesRequested.length > 0) {
-    blockedReasons.push("a reviewer requested changes");
-  }
-  if (invalidReceipts.length > 0) {
-    blockedReasons.push("review evidence is invalid, stale, altered, or dirty");
   }
   const independentReviewed = false;
   return {
@@ -4988,6 +4999,8 @@ function commandReviewStatus(target, runId, capturedGit = undefined) {
     receipts: validReceipts,
     unavailable: unavailable.map((entry) => entry.receipt),
     invalid_receipts: invalidReceipts,
+    local_review_audit_passed: localReviewAuditPassed,
+    local_review_audit_reasons: localAuditReasons,
     independent_reviewed: independentReviewed,
     review_gate_ready: independentReviewed,
     status: independentReviewed ? "passed" : "blocked",
@@ -10874,13 +10887,21 @@ function commandStatus(target, runId) {
   if (runId !== undefined) {
     const externalReviewRequired =
       config?.capabilities?.review?.required_for_release === true;
-    const reviewGateReady = review?.review_gate_ready === true;
-    const externalReviewSatisfied = !externalReviewRequired || reviewGateReady;
+    const localReviewAuditPassed = review?.local_review_audit_passed === true;
+    const reviewGateReady = !externalReviewRequired && localReviewAuditPassed;
+    const protectedReview = externalReviewRequired
+      ? "not-evaluated-locally"
+      : "not-required";
     const prReady =
-      projectHealthy && verification?.ok === true && externalReviewSatisfied;
+      projectHealthy && verification?.ok === true && reviewGateReady;
     const readinessReasons = [
       ...projectHealthReasons,
-      ...(externalReviewRequired ? (review?.reasons ?? []) : []),
+      ...(!localReviewAuditPassed
+        ? (review?.local_review_audit_reasons ?? review?.reasons ?? [])
+        : []),
+      ...(externalReviewRequired
+        ? ["protected GitHub review is not evaluated locally"]
+        : []),
       ...(verification?.reasons ?? []),
     ];
     const boundedReadinessReasons = [
@@ -10891,11 +10912,10 @@ function commandStatus(target, runId) {
     }
     readiness = {
       ...readiness,
-      // This is the configured project-policy gate. The nested review result
-      // above remains the mechanical status of local agent-recorded evidence.
-      review_gate_ready: externalReviewSatisfied,
+      review_gate_ready: reviewGateReady,
+      local_review_audit_passed: localReviewAuditPassed,
       external_review_required: externalReviewRequired,
-      external_review_satisfied: externalReviewSatisfied,
+      protected_review: protectedReview,
       pr_ready: prReady,
       status: prReady ? "passed" : "blocked",
       reasons: boundedReadinessReasons,
@@ -10907,8 +10927,8 @@ function commandStatus(target, runId) {
         ? projectHealthy
         : projectHealthy &&
           verification?.ok === true &&
-          (!config?.capabilities?.review?.required_for_release ||
-            review?.review_gate_ready === true),
+          !config?.capabilities?.review?.required_for_release &&
+          review?.local_review_audit_passed === true,
     package_available: { name: PACKAGE_NAME, version: PACKAGE_VERSION },
     installed: installation?.package ?? null,
     upgrade_available:

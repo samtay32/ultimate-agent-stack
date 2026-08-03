@@ -41,11 +41,11 @@ flowchart TD
     N -- "Yes" --> V
     N -- "No" --> G["Full deterministic gate"]
     G -->|Fail| V
-    G -->|Pass| A["Independent standards + intent review"]
+    G -->|Pass| A["Bounded local audit"]
     A -->|Finding| V
-    A -->|Clear| PR["Draft PR + evidence"]
+    A -->|Recorded| PR["Draft PR + evidence"]
     PR --> CI["Required CI + GitHub protections"]
-    PR --> CR["Configured independent review provider"]
+    PR --> CR["Protected review when policy requires"]
     CI --> D{"Actionable issue?"}
     CR --> D
     D -- "Yes" --> B["Fix/rebut/defer with evidence"]

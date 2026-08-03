@@ -670,7 +670,7 @@ test("flexible intake stays ordered, proportionate, and source preserving", () =
 
 test("always-loaded delivery policy stays compact and routes detail to phase references", () => {
   const words = (source) => source.trim().split(/\s+/).length;
-  assert.ok(Buffer.byteLength(projectAgents) < 9_800);
+  assert.ok(Buffer.byteLength(projectAgents) <= 9_700);
   assert.ok(words(projectAgents) <= 1_600);
   assert.ok(Buffer.byteLength(runDeliverySkill) < 9_000);
   assert.ok(words(runDeliverySkill) <= 1_150);

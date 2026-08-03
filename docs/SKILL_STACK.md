@@ -104,8 +104,8 @@ Delivery proceeds through deterministic work and tests, an exact clean commit,
 a bounded local reviewer attempt with an inspectable audit result (or durable
 unavailable receipt), then a draft PR. Protected GitHub review follows when the
 configured policy requires it. The default builtin policy may proceed without
-that external requirement, but local audit evidence never authenticates reviewer
-independence.
+that external requirement only after a valid passed exact-head local audit and
+its other gates; local audit evidence never authenticates reviewer independence.
 
 ## Installation Locations
 

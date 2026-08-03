@@ -333,8 +333,9 @@ sets `independent_reviewed` or local `review_gate_ready` true. Only the
 protected GitHub review receipt establishes that separate mechanical gate. When
 the selected policy requires external review, local evidence cannot make
 `readiness.pr_ready` true; the default builtin policy may proceed after its
-other gates pass without claiming authenticated independence. Local receipts do
-not authorize push, merge, or release.
+health, current verification, and passed exact-head local audit gates without
+claiming authenticated independence. Local receipts do not authorize push,
+merge, or release.
 `verify` may still execute configured checks on a dirty worktree, but
 its evidence cannot satisfy readiness until a clean exact-head verification is
 recorded. The evidence target real path prevents cross-checkout replay; it does

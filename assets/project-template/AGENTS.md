@@ -86,26 +86,24 @@ state. A failed or rejected guard never authorizes editing its prerequisites.
 Claims that a source was read, artifact locked, test passed, skill activated,
 or review completed require the corresponding path and command/result evidence.
 
-Activation readiness comes from `evidence activation-status --run RUN
---require SKILL`, not prose. `review record` preserves a same-run, exact-clean
-head, structured local result under `.agent-stack/runs/reviews/` for audit;
-`review unavailable` records a durable blocker. Local receipts are
-`agent-recorded`: they cannot prove distinct reviewer delegation or make
-`independent_reviewed` or local `review_gate_ready` true. Only protected GitHub
-review receipts establish mechanical independence. A profile requiring external
-review stays PR-blocked on local evidence; builtin policy may pass other gates
-without an authenticated-independence claim. Missing,
+Activation comes from `evidence activation-status --run RUN --require SKILL`,
+not prose. `review record` retains a same-run, exact-clean local audit under
+`.agent-stack/runs/reviews/`; `review unavailable` is durable. Local
+`agent-recorded` receipts never prove delegation or set `independent_reviewed`
+or local `review_gate_ready`. External-review profiles need protected GitHub
+review and stay PR-blocked; builtin may pass health, current verification, and
+a passed exact-head local audit without authenticating independence. Missing,
 failed, empty, stale, altered, wrong-run, wrong-commit, dirty-tree,
-unavailable, or same-recorded-identity evidence remains blocked.
+unavailable, or same-recorded-identity evidence blocks the audit.
 
 After tests and a clean exact commit, locally authorized PR-ready work attempts
 one native bounded read-only reviewer in a fresh/no-history or demonstrably
 sanitized session. Give only checkout locator, commit, intent/acceptance, and
 review scope—never parent transcript/output, coordinator state/token,
-credentials, or environment secrets. Bind returned ID/result to commit. Absent,
-failed, or unverifiable capability, dispatch/collection, or isolation requires
-`review unavailable`; external-review-required readiness blocks. Never invent
-receipts; prose cannot prove isolation.
+credentials, or environment secrets. Bind returned ID/result to the commit.
+Absent/failed/unverifiable capability, dispatch/collection, or isolation
+requires `review unavailable`; external-review-required readiness blocks. Never
+invent receipts; prose cannot prove isolation.
 
 Keep live evaluation prompts and serialized context at or below 2 KiB. Paid
 live-model tests are not part of deterministic package validation.

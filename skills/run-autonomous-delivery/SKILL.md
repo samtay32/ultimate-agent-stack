@@ -101,7 +101,8 @@ a canonical disposition; residual risks and human-only actions are stated.
    unverifiable, record `review unavailable`; never fabricate. A local result
    is agent-recorded audit evidence only: record the returned reviewer ID/result
    bound to the commit, but it cannot establish independent review or PR
-   readiness. Only protected GitHub review establishes that mechanical gate.
+   readiness for an external-review profile. Only protected GitHub review
+   establishes that mechanical gate.
    Check `review status --run RUN`; `status --run RUN` remains blocked when the
    selected policy requires external review.
 

@@ -40,7 +40,7 @@ reviewer-unavailable case:
 | `flexible-external-complete-prd` | A complete consistent source stops DRAFT ready for later product-owner approval with zero questions, including no approval prompt |
 | `flexible-external-contradictory` | A material contradiction is surfaced before lock or implementation |
 | `flexible-external-existing-reconciliation` | Outside intent is compared with existing code, schemas, migrations, tests, architecture, and policy before changes |
-| `flexible-direct-bypass` | A clear bounded change stays DIRECT, writes and tests the requested slice, and prepares local PR-ready evidence even in a new project with completed state and a supporting attachment |
+| `flexible-direct-bypass` | A clear bounded change stays DIRECT, writes and tests the requested slice, and prepares draft evidence plus a recorded local audit in a new project with completed state and a supporting attachment; it does not claim authenticated independence or universal PR readiness |
 | `flexible-resume-valid` | A valid checkpoint resumes at the first unmet condition without reopening closed decisions |
 | `flexible-draft-lock` | A placeholder-free artifact marked DRAFT is still rejected by the lock |
 | `flexible-approved-promotion` | An approved conflict-free brief promotes into the canonical delivery contract while preserving closed decisions |

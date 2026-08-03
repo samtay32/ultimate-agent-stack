@@ -25,6 +25,7 @@ import {
   commandStart,
   commandStatus,
   commandVerify,
+  configurationHash,
   installOrUpgrade,
 } from "../bin/ultimate-agent-stack.mjs";
 import { fileURLToPath } from "node:url";
@@ -314,6 +315,8 @@ test("a structurally valid local passed receipt remains audit evidence, not inde
     assert.equal(result.receipt.git_object_format, "sha1");
     assert.ok(existsSync(join(fixture.directory, result.path)));
     const status = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(status.local_review_audit_passed, true);
+    assert.deepEqual(status.local_review_audit_reasons, []);
     assert.equal(status.independent_reviewed, false);
     assert.equal(status.review_gate_ready, false);
     assert.equal(status.status, "blocked");
@@ -336,6 +339,7 @@ test("missing review evidence remains blocked", () => {
   const fixture = createFixture();
   try {
     const status = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.independent_reviewed, false);
     assert.equal(status.review_gate_ready, false);
     assert.match(status.reasons.join(" "), /no review receipt/);
@@ -354,6 +358,7 @@ test("failed review evidence remains blocked", () => {
   try {
     recordPassed(fixture, { result: "changes-requested" });
     const status = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.independent_reviewed, false);
     assert.equal(status.review_gate_ready, false);
     assert.match(status.reasons.join(" "), /requested changes/);
@@ -368,6 +373,7 @@ test("empty review result files invalidate an otherwise valid receipt", () => {
     recordPassed(fixture);
     writeFileSync(fixture.resultFile, "");
     const status = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.independent_reviewed, false);
     assert.match(status.invalid_receipts.join(" "), /non-empty|hash/);
   } finally {
@@ -382,6 +388,7 @@ test("stale exact-head review receipts are rejected", () => {
     writeFileSync(join(fixture.directory, "later.txt"), "later\n");
     commit(fixture.directory, "advance after review");
     const status = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.independent_reviewed, false);
     assert.match(status.invalid_receipts.join(" "), /stale|current HEAD/);
   } finally {
@@ -395,6 +402,7 @@ test("dirty trees invalidate review readiness", () => {
     recordPassed(fixture);
     writeFileSync(join(fixture.directory, "uncommitted.txt"), "dirty\n");
     const status = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.independent_reviewed, false);
     assert.match(status.invalid_receipts.join(" "), /clean Git/);
   } finally {
@@ -411,6 +419,7 @@ test("altered receipts are rejected by canonical identity and schema checks", ()
     receipt.result = "changes-requested";
     writeFileSync(receiptFile, JSON.stringify(receipt, null, 2) + "\n");
     const status = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.independent_reviewed, false);
     assert.match(status.invalid_receipts.join(" "), /canonical content hash/);
   } finally {
@@ -429,6 +438,7 @@ test("unavailable reviewer evidence is a durable blocker", () => {
     });
     assert.equal(unavailable.receipt.status, "unavailable");
     const status = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.independent_reviewed, false);
     assert.equal(status.review_gate_ready, false);
     assert.match(status.reasons.join(" "), /unavailable/);
@@ -442,6 +452,7 @@ test("wrong-run and wrong-commit receipts never satisfy the requested run", () =
   try {
     recordPassed(wrongRun, { runId: "different-run" });
     const status = commandReviewStatus(wrongRun.directory, wrongRun.runId);
+    assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.independent_reviewed, false);
     assert.match(status.reasons.join(" "), /no review receipt/);
   } finally {
@@ -456,6 +467,7 @@ test("wrong-run and wrong-commit receipts never satisfy the requested run", () =
     receipt.git_commit = "f".repeat(40);
     writeFileSync(receiptFile, JSON.stringify(receipt, null, 2) + "\n");
     const status = commandReviewStatus(wrongCommit.directory, wrongCommit.runId);
+    assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.independent_reviewed, false);
     assert.match(status.invalid_receipts.join(" "), /canonical content hash|stale/);
   } finally {
@@ -603,6 +615,7 @@ test("non-array reviewer findings fail closed through record and status", () => 
         statusFixture.directory,
         statusFixture.runId,
       );
+      assert.equal(status.local_review_audit_passed, false);
       assert.equal(status.review_gate_ready, false);
       assert.match(status.invalid_receipts.join(" "), /findings must be an array/);
     } finally {
@@ -625,6 +638,7 @@ test("valid passed review plus unavailable or changes-requested evidence remains
       unavailableFixture.directory,
       unavailableFixture.runId,
     );
+    assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.review_gate_ready, false);
     assert.match(status.reasons.join(" "), /unavailable/);
   } finally {
@@ -665,6 +679,7 @@ test("valid passed review plus unavailable or changes-requested evidence remains
       conflictingFixture.directory,
       conflictingFixture.runId,
     );
+    assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.review_gate_ready, false);
     assert.match(status.reasons.join(" "), /requested changes/);
   } finally {
@@ -1038,9 +1053,11 @@ test("status --run applies the configured external-review policy to full readine
     const after = commandStatus(fixture.directory, fixture.runId);
     assert.equal(after.ok, true, JSON.stringify(after, null, 2));
     assert.equal(after.review.review_gate_ready, false);
+    assert.equal(after.review.local_review_audit_passed, true);
     assert.equal(after.readiness.review_gate_ready, true);
+    assert.equal(after.readiness.local_review_audit_passed, true);
     assert.equal(after.readiness.external_review_required, false);
-    assert.equal(after.readiness.external_review_satisfied, true);
+    assert.equal(after.readiness.protected_review, "not-required");
     assert.equal(after.readiness.pr_ready, true);
     assert.equal(after.readiness.reasons.length, 0);
     assert.deepEqual(after.review.git, after.verification.git);
@@ -1078,14 +1095,45 @@ test("status --run keeps a required external-review profile blocked by local evi
     assert.equal(status.ok, false, JSON.stringify(status, null, 2));
     assert.equal(status.review.independent_reviewed, false);
     assert.equal(status.review.review_gate_ready, false);
+    assert.equal(status.review.local_review_audit_passed, true);
     assert.equal(status.readiness.external_review_required, true);
-    assert.equal(status.readiness.external_review_satisfied, false);
+    assert.equal(status.readiness.protected_review, "not-evaluated-locally");
+    assert.equal(status.readiness.local_review_audit_passed, true);
     assert.equal(status.readiness.review_gate_ready, false);
     assert.equal(status.readiness.pr_ready, false);
     assert.match(
       status.readiness.reasons.join(" "),
-      /local review receipt is agent-recorded and cannot prove distinct reviewer delegation/,
+      /protected GitHub review is not evaluated locally/,
     );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("a hash-approved review-policy mismatch never becomes ready", () => {
+  const fixture = createFixture();
+  try {
+    commandApproveChecks(
+      fixture.directory,
+      "Inspected the bounded fixture verification commands",
+    );
+    commit(fixture.directory, "approve fixture verification checks");
+    recordPassed(fixture);
+    commandVerify(fixture.directory);
+    const configPath = join(fixture.directory, ".agent-stack", "config.json");
+    const config = JSON.parse(readFileSync(configPath, "utf8"));
+    config.capabilities.review.required_for_release = true;
+    config.safety.approved_configuration_hash = configurationHash(config);
+    writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
+    const status = commandStatus(fixture.directory, fixture.runId);
+    assert.equal(status.configuration_approved, true);
+    assert.equal(status.ok, false);
+    assert.equal(status.readiness.pr_ready, false);
+    assert.match(
+      status.configuration_errors.join("\n"),
+      /required_for_release must match the selected review provider policy/,
+    );
+    assert.ok(status.readiness.reasons.includes("project configuration is invalid"));
   } finally {
     fixture.cleanup();
   }
