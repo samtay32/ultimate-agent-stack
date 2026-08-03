@@ -896,6 +896,39 @@ test("local review receipts are audit evidence, not mechanical independence", ()
   }
 });
 
+test("delivery policy finalizes tracked work before the local review audit", () => {
+  assert.match(
+    deliveryPolicy,
+    /write every authorized tracked product,[\s\S]{0,180}checkpoint\/handoff,[\s\S]{0,180}before the final\s+exact clean commit/i,
+  );
+  assert.match(
+    deliveryPolicy,
+    /reviewer ID is the exact returned\s+worker\/thread\/session ID/i,
+  );
+  assert.match(
+    deliveryPolicy,
+    /must not invent a result or replace a missing\s+reviewer with self, primary, coordinator, or generic labels/i,
+  );
+  assert.match(
+    deliveryPolicy,
+    /review record[\s\S]{0,180}--run RUN --reviewer-kind KIND --reviewer-id ID[\s\S]{0,180}--result-file \.agent-stack\/runs\/reviews\/<safe-id>\.json/i,
+  );
+  assert.match(deliveryPolicy, /shipped\s+reviewer-result contract/i);
+  assert.match(
+    deliveryPolicy,
+    /After `review record`, make no tracked write or\s+commit[\s\S]{0,160}audit stale/i,
+  );
+  assert.match(
+    deliveryPolicy,
+    /review status --run RUN[\s\S]{0,180}local_review_audit_passed:true/i,
+  );
+  assert.match(
+    deliveryPolicy,
+    /If it is false or stale, report blocked truthfully/i,
+  );
+  assert.match(deliveryPolicy, /rather\s+than inspecting CLI source or help/i);
+});
+
 test("working brief and lock guidance preserve honest promotion boundaries", () => {
   for (const marker of [
     "Status: DRAFT",

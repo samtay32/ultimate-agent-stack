@@ -1748,6 +1748,36 @@ test("agent-recorded local passed results cannot satisfy direct-review independe
   }
 });
 
+test("a post-audit checkpoint commit cannot be labelled local-passed-audit", () => {
+  const record = passingRecord();
+  const item = record.cases.find(
+    (caseItem) => caseItem.scenario_id === "flexible-direct-bypass",
+  );
+  const receiptHead = item.observed.review_receipts[0].git_commit;
+  item.final_git_head = sha256("checkpoint-after-local-audit").slice(0, 40);
+  item.final_git_object_format = "sha1";
+  item.final_project_tree_sha256 = `sha256:${sha256("checkpoint-tree-after-local-audit")}`;
+  item.final_project_state_sha256 = projectStateSha256({
+    materializationSpecSha256: item.materialization_spec_sha256,
+    gitHead: item.final_git_head,
+    projectTreeSha256: item.final_project_tree_sha256,
+  });
+
+  const result = evaluateRecord(record, catalog);
+  const evaluated = result.cases.find(
+    (caseItem) => caseItem.scenario_id === "flexible-direct-bypass",
+  );
+  assert.notEqual(item.final_git_head, receiptHead);
+  assert.equal(result.ok, false);
+  assert.equal(evaluated.review.status, "blocked");
+  assert.equal(evaluated.review.evidence_outcome, "invalid");
+  assert.notEqual(evaluated.review.evidence_outcome, "local-passed-audit");
+  assert.match(
+    evaluated.findings.join("\n"),
+    /review_receipts\[0\]\.git_commit must equal final_git_head/,
+  );
+});
+
 test("required-write scenarios bind distinct post-run Git and tree identities", () => {
   for (const scenarioId of [
     "direct-delivery",

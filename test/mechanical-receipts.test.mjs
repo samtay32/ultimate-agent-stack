@@ -17,6 +17,7 @@ import test from "node:test";
 import {
   commandConfigure,
   commandApproveChecks,
+  commandCheckpoint,
   commandEvidenceActivate,
   commandEvidenceActivationStatus,
   commandReviewRecord,
@@ -387,6 +388,37 @@ test("stale exact-head review receipts are rejected", () => {
     recordPassed(fixture);
     writeFileSync(join(fixture.directory, "later.txt"), "later\n");
     commit(fixture.directory, "advance after review");
+    const status = commandReviewStatus(fixture.directory, fixture.runId);
+    assert.equal(status.local_review_audit_passed, false);
+    assert.equal(status.independent_reviewed, false);
+    assert.match(status.invalid_receipts.join(" "), /stale|current HEAD/);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("a checkpoint commit after review makes the final local audit stale", () => {
+  const fixture = createFixture();
+  try {
+    const recorded = recordPassed(fixture);
+    assert.equal(commandReviewStatus(fixture.directory, fixture.runId).local_review_audit_passed, true);
+    const checkpoint = commandCheckpoint(fixture.directory, {
+      objective: "Record the final delivery handoff",
+      summary: "The local audit was recorded before this checkpoint commit.",
+      status: "complete",
+      completed: ["Recorded the bounded local audit"],
+      decisions: ["Checkpoint evidence is tracked before final delivery"],
+      nextSteps: [],
+      blockers: [],
+      evidence: ["package.json"],
+      token: fixture.token,
+    });
+    assert.equal(checkpoint.ok, true);
+    commit(fixture.directory, "record checkpoint after review");
+    assert.notEqual(
+      runGit(fixture.directory, ["rev-parse", "HEAD"]),
+      recorded.receipt.git_commit,
+    );
     const status = commandReviewStatus(fixture.directory, fixture.runId);
     assert.equal(status.local_review_audit_passed, false);
     assert.equal(status.independent_reviewed, false);
