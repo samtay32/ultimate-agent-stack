@@ -686,6 +686,38 @@ test("optional skills remain route-conditional and discovery stays serial", () =
   );
 });
 
+test("discovery fast path is self-contained and avoids verbose follow-up work", () => {
+  assert.match(
+    projectAgents,
+    /evidence activate --skill run-autonomous-delivery --skill-path \.agents\/skills\/run-autonomous-delivery\/SKILL\.md --mode file-read --harness "EXACT_HARNESS_ID" --model "EXACT_MODEL_ID" --run "RUN_ID" --event "activate-run-autonomous-delivery" --coordinator-token "TOKEN"/,
+  );
+  assert.match(
+    projectAgents,
+    /--skill develop-project-brief[\s\S]{0,120}\.agents\/skills\/develop-project-brief\/SKILL\.md/,
+  );
+  for (const source of [projectAgents, runDeliverySkill, starterPrompt]) {
+    assert.match(source, /Do not inspect CLI\s+source or help/i);
+    assert.match(source, /do not checkpoint[\s\S]{0,120}activation(?:-status|\/readiness)[\s\S]{0,80}readiness|do not checkpoint[\s\S]{0,120}activation\/readiness status/i);
+    assert.match(source, /do not[\s\S]{0,100}print a full diff/i);
+    assert.match(source, /git diff --check[\s\S]{0,80}git status --short/i);
+  }
+  for (const source of [claudeAdapter, geminiAdapter]) {
+    assert.match(source, /Do not run[\s\S]{0,80}initial one-question DISCOVER draft/i);
+  }
+  assert.match(
+    claudeAdapter,
+    /actual native `Skill` invocation[\s\S]{0,100}--mode native[\s\S]{0,200}file-read/i,
+  );
+  assert.match(
+    geminiAdapter,
+    /native`? only after an actual native invocation[\s\S]{0,100}file-read/i,
+  );
+  assert.doesNotMatch(
+    projectAgents,
+    /\.agents\/skills\/run-autonomous-delivery\/SKILL\.md --mode native/,
+  );
+});
+
 test("independent review fails closed without a real separate result", () => {
   for (const source of [
     projectAgents,

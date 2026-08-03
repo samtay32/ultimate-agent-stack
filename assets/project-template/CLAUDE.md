@@ -23,9 +23,14 @@ agent-recorded evidence and must never be created before the native `Skill` call
 or without the coordinator token and repository-write authority; it does not
 authenticate the claimed identity. For read-only work, do not mutate the
 repository; report that the receipt was not persisted.
+Because this adapter requires an actual native `Skill` invocation, record
+`--mode native` with the actual installed `.claude` or `.agents` path used; do
+not copy the common `.agents` file-read mode unless the skill was only hash-read.
 
-Use `evidence activation-status --run RUN --require SKILL` for receipt-derived
-activation and `review status --run RUN` for local pre-PR readiness. Never
+When the selected route reaches verification or readiness, use `evidence
+activation-status --run RUN --require SKILL` for receipt-derived activation and
+`review status --run RUN` for local pre-PR readiness. Do not run either during
+the initial one-question DISCOVER draft. Never
 replace those artifacts with skill names or approval prose; unavailable review
 evidence remains blocked. Keep live evaluation request plus context at or below
 2 KiB, without repository dumps or expected skill names.

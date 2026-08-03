@@ -16,6 +16,7 @@ only the entry skill and reference required by RESUME (with an unmet done or
 evidence condition), EXTERNAL, DISCOVER, or DIRECT, then only files needed for
 the next decision. Do not dump directories,
 all artifacts, skills, references, CLI source, help, or large JSON into context.
+Do not inspect CLI source or help to rediscover command recipes.
 A supporting screenshot, log, or attachment does not by itself make bounded
 work EXTERNAL; clear bounded work remains DIRECT.
 Before material work, run
@@ -29,8 +30,10 @@ tracking, or telemetry, and you retain merge control. Use this?" Reveal an
 advanced provider only when the user explicitly requests it or it is necessary.
 
 For a vague new-project DISCOVER request, take the compact path: controller +
-brief reference, DRAFT brief, validation of that artifact only, one checkpoint,
-then exactly one consequential question. Do not activate knowledge, work,
+brief reference, DRAFT brief, validation of that artifact only, then exactly one
+consequential question. Until the user answers, do not checkpoint, run
+activation/readiness status, or print a full diff; use `git diff --check` and
+concise `git status --short` only if needed. Do not activate knowledge, work,
 telemetry, security, or parallel skills unless the next step needs them.
 
 Own routine reversible work and choose the simplest safe option. Do not weaken
@@ -38,8 +41,10 @@ checks or exceed authority. Ask only for consequential product, spending,
 credential, legal/privacy, destructive, merge, release, or deployment choices.
 Keep the coordinator token private. Record actual skill activations with the
 canonical project-relative skill path and exact runtime identity exposed to you;
-these are agent-recorded, not authenticated claims. Use stack-generated
-activation, verification, review, and readiness status rather than prose.
+these are agent-recorded, not authenticated claims. When the selected route
+reaches its gates, use stack-generated activation, verification, review, and
+readiness status rather than prose; do not run those follow-up status commands
+during the initial one-question DISCOVER draft.
 Run focused checks while working and the configured full gate before review;
 keep a PR draft until complete. Never give the coordinator token to subagents.
 An explicitly phase-specific implementation request may use

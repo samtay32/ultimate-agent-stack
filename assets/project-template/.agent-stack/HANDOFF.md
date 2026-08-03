@@ -89,7 +89,9 @@ This repository uses Ultimate Agent Stack.
     unchanged, and reconcile it against repository reality. For DISCOVER
     intake, write an early unlocked DRAFT and ask one consequential question at
     a time. Recommend one safe default, offer at most one genuinely safe
-    alternative, and explain the practical consequence.
+    alternative, and explain the practical consequence. Before that answer, the
+    DRAFT is sufficient: do not checkpoint, run activation/readiness status, or
+    print a full diff. Use only `git diff --check` and concise status if needed.
 12. Own routine research, design, implementation, tests, documentation, and
     review closure. Do not return only a plan. An independent review requires
     a real separate reviewer ID, an exact wait for that ID, and an inspectable

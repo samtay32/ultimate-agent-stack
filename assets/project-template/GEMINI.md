@@ -22,10 +22,13 @@ installed skill path (never an absolute path). Never record an activation before
 it occurs or without the coordinator token and repository-write authority. The
 receipt is agent-recorded and does not authenticate that identity. For read-only
 work, do not mutate the repository; report that the receipt was not persisted.
+Use `native` only after an actual native invocation; use `file-read` for the
+common hash-bound `.agents` recipe. Always record the actual installed path used.
 
-Use `evidence activation-status --run RUN --require SKILL` for exact-run
-receipt-derived activation and `review status --run RUN` for local pre-PR
-readiness. Never replace these artifacts with skill names or approval prose;
+When the selected route reaches verification or readiness, use `evidence
+activation-status --run RUN --require SKILL` for exact-run receipt-derived
+activation and `review status --run RUN` for local pre-PR readiness. Do not run
+either during the initial one-question DISCOVER draft. Never replace these artifacts with skill names or approval prose;
 unavailable review evidence remains blocked. Keep live evaluation request plus
 context at or below 2 KiB, without repository dumps or expected skill names.
 

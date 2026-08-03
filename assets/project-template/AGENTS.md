@@ -102,7 +102,23 @@ retain the exposed trace outside project state and report that the receipt was
 not persisted. This is agent-recorded trace evidence, not independent proof
 that a harness tool call occurred.
 
-For a bounded run, inspect the derived activation result with
+Use this exact compact recipe after a hash-bound read of the portable `.agents`
+controller following `start`; replace only the quoted identity/token
+placeholders with values exposed to the current session. Do not inspect CLI
+source or help to rediscover it:
+
+```bash
+node .agent-stack/bin/agent-stack.mjs evidence activate --skill run-autonomous-delivery --skill-path .agents/skills/run-autonomous-delivery/SKILL.md --mode file-read --harness "EXACT_HARNESS_ID" --model "EXACT_MODEL_ID" --run "RUN_ID" --event "activate-run-autonomous-delivery" --coordinator-token "TOKEN"
+```
+
+For a DISCOVER brief, record the second required activation with the same
+recipe values except `--skill develop-project-brief`, `--skill-path
+.agents/skills/develop-project-brief/SKILL.md`, and `--event
+"activate-develop-project-brief"`. Record only skills actually activated.
+If a native harness invocation actually occurred, record `--mode native` with
+the actual installed path that invocation used instead of this file-read recipe.
+
+When the selected route reaches verification or readiness, inspect the derived activation result with
 `node .agent-stack/bin/agent-stack.mjs evidence activation-status --run RUN
 --require SKILL`. The command derives its answer only from exact-run activation
 receipts; a skill name in a prompt or free-form output is not activation
@@ -137,8 +153,11 @@ package validation.
 For a vague new-project DISCOVER request, use the compact path: start with the
 controller and its brief reference only; use the local
 `node .agent-stack/bin/agent-stack.mjs` commands (not `npx`); write the DRAFT
-brief; validate only the artifact changed; checkpoint once; then ask exactly one
-consequential question. Do not activate optional knowledge, work, telemetry, or
+brief; validate only that artifact; then ask exactly one consequential question.
+The durable DRAFT is sufficient until the user answers: do not checkpoint,
+run activation-status or readiness commands, print a full diff, or re-read
+receipt output. Use only `git diff --check` and concise `git status --short` if
+needed. Do not activate optional knowledge, work, telemetry, or
 parallel-delivery skills unless the selected next step actually needs them.
 Capture command results as concise facts rather than pasting large JSON or file
 contents into the conversation.

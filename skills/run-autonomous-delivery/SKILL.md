@@ -76,8 +76,13 @@ Do not say "done" until all applicable conditions hold:
    For a vague, greenfield DISCOVER request, take the compact discovery path:
    read this controller and `develop-project-brief` with its
    `brief-contract.md` reference, then create the DRAFT brief, validate only
-   that changed artifact, checkpoint once, and ask one consequential question.
-   Do not read every artifact, skill, reference, CLI source, or help screen;
+   that changed artifact, and ask one consequential question. The durable DRAFT
+   is sufficient until the user answers: do not checkpoint, run
+   activation-status or readiness commands, print a full diff, or re-read
+   receipt output. Use only `git diff --check` and concise `git status --short`
+   if needed. Record only the required controller and brief activations using
+   the exact compact recipe in `AGENTS.md`. Do not inspect CLI source or help to
+   rediscover that recipe; do not read every artifact, skill, or reference;
    do not activate optional provider, telemetry, work-management, or parallel
    skills unless the next step requires them. Summarize command results instead
    of pasting large command output into the conversation.
