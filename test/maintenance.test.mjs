@@ -667,6 +667,25 @@ test("workflow loading stays route-aware and provider-neutral", () => {
   );
 });
 
+test("optional skills remain route-conditional and discovery stays serial", () => {
+  for (const source of [projectAgents, geminiAdapter, handoffTemplate, runDeliverySkill]) {
+    assert.match(
+      source,
+      /(?:selected route|after routing)[\s\S]{0,100}immediate next/i,
+    );
+    assert.match(source, /DISCOVER[\s\S]{0,100}serial/i);
+  }
+  assert.doesNotMatch(projectAgents, /use-project-knowledge` at recovery/i);
+  assert.doesNotMatch(
+    geminiAdapter,
+    /Apply `\$use-project-knowledge` with the configured provider/i,
+  );
+  assert.doesNotMatch(
+    handoffTemplate,
+    /^\d+\. Apply `\$manage-project-work`\./m,
+  );
+});
+
 test("independent review fails closed without a real separate result", () => {
   for (const source of [
     projectAgents,

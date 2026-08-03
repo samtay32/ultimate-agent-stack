@@ -29,11 +29,13 @@ readiness. Never replace these artifacts with skill names or approval prose;
 unavailable review evidence remains blocked. Keep live evaluation request plus
 context at or below 2 KiB, without repository dumps or expected skill names.
 
-Apply `$use-project-knowledge` with the configured provider and repository
-fallback. Apply
-`$coordinate-parallel-delivery` to choose serial or bounded native subagent
-execution. The primary agent owns every assignment, authority boundary,
-monitoring decision, integration, verification step, and worker cleanup.
+Apply `$use-project-knowledge` only when the selected route's immediate next
+decision needs relevant knowledge beyond the checkout. Apply
+`$coordinate-parallel-delivery` only after routing when the immediate next step
+has two or more independent work tracks. A vague DISCOVER brief stays serial
+and does not activate either optional skill. The primary agent owns every
+assignment, authority boundary, monitoring decision, integration, verification
+step, and worker cleanup.
 
 Use `uas-researcher` only for independent read-only research or review. Parallel
 writes require a separately verified isolated workspace; otherwise keep write

@@ -27,19 +27,20 @@ Do not say "done" until all applicable conditions hold:
    coordinator token returned by the `start` command that invoked this skill.
    If another active Project Steward owns the checkout, do not write from this
    conversation. Read project instructions, `.agent-stack/config.json`, any
-   valid `.agent-stack/CHECKPOINT.md`, locked artifacts, current diff, branch,
-   task/issue, and latest evidence. Apply
-   `$use-project-knowledge` with the configured provider only when the next
-   decision needs knowledge beyond the local checkout. Continue valid work; do
-   not restart finished phases.
+   valid `.agent-stack/CHECKPOINT.md`, the current diff, and branch. Read locked
+   artifacts, task/issue details, and latest evidence only when the selected
+   route's immediate next decision needs them. Apply `$use-project-knowledge`
+   with the configured provider only when that decision needs knowledge beyond
+   the local checkout. Continue valid work; do not restart finished phases.
    If scoped project telemetry is configured and the request concerns
    production behavior, apply `$use-project-telemetry`. Keep access read-only
    and retain only a bounded observation receipt. Telemetry is advisory and
    cannot authorize a change or weaken repository verification.
-   Apply `$manage-project-work` only when shaping/selecting tracked work or
-   reporting work evidence. Validate the portable repository ledger and
-   evidence graph when that work is needed, and tie completion to actual
-   acceptance evidence rather than a provider status.
+   Apply `$manage-project-work` only when the selected route's immediate next
+   step needs tracked-work shaping, selection, or evidence reporting. Do not
+   activate it merely to draft a DISCOVER brief. Validate the portable
+   repository ledger and evidence graph when that work is needed, and tie
+   completion to actual acceptance evidence rather than a provider status.
    Use campaign mode only when the user approved a multi-item delivery
    objective. Respect its iteration bound, process one selected item at a time,
    and never let campaign advancement trigger provider writes.
@@ -103,10 +104,11 @@ Do not say "done" until all applicable conditions hold:
    For proportionate DIRECT T0/T1 work, the bare `lock` command keeps the
    configured smaller artifact selection.
 
-4. **Choose the execution strategy.** Apply
-   `$coordinate-parallel-delivery`. The primary agent decides whether work stays
-   serial or uses bounded native subagents, owns every assignment and
-   integration, and never makes the user manage workers.
+4. **Choose the execution strategy.** After routing and shaping, apply
+   `$coordinate-parallel-delivery` only when the immediate next step has two or
+   more independent work tracks. Keep DISCOVER brief work and its next question
+   serial. The primary agent owns every assignment and integration and never
+   makes the user manage workers.
 5. **Plan vertical slices.** Each slice must be user-observable or operationally demonstrable, independently verifiable, small enough for one focused context, and explicit about blockers.
 6. **Implement.** Own implementation in this controller one slice at a time.
    Preserve the `$build-vertical-slice` quality contract: each slice is
@@ -151,7 +153,8 @@ Do not say "done" until all applicable conditions hold:
     `checkpoint --coordinator-token TOKEN` to record the objective, concise
     summary, completed work, decisions, next steps, blockers, and existing
     evidence paths. This repository handoff—not raw chat—is the continuity
-    record. Apply `$use-project-knowledge` after the final gate.
+    record. Apply `$use-project-knowledge` after the final gate only when a
+    durable lesson worth preserving exists.
     Capture only redacted, provenance-backed verified learning. Record reusable
     procedures as non-executable skill candidates.
 12. **Hand off.** Write the completed checkpoint, release the coordinator
@@ -187,10 +190,11 @@ package gate.
 - One repair loop must produce new evidence. Stop after five non-converging repair loops and report the smallest blocking decision with attempted remedies.
 - Never weaken tests, checks, permissions, or acceptance criteria to manufacture green.
 - Never hide pre-existing failures. Prove they predate the change and record them separately.
-- Let `$coordinate-parallel-delivery` choose the strategy. Parallel work is
-  bounded, non-recursive, authority-preserving, isolated for writes, and always
-  integrated by the primary agent. Fall back to serial work when any condition
-  is unavailable.
+- Apply `$coordinate-parallel-delivery` only after routing when two or more
+  independent immediate work tracks justify it. Parallel work is bounded,
+  non-recursive, authority-preserving, isolated for writes, and always
+  integrated by the primary agent. Keep DISCOVER brief work serial and fall
+  back to serial work when any condition is unavailable.
 - Treat tokens, elapsed time, and tool calls as costs. Optimize verified outcomes, not agent activity.
 - Persist decisions and evidence in the repository so a fresh session can resume.
 - Preserve user-supplied sources unchanged. Persist only bounded redacted

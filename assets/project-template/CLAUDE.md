@@ -3,8 +3,8 @@
 @AGENTS.md
 
 For an end-to-end build, change, resume, or delivery request, use the native
-`Skill` tool to invoke `run-autonomous-delivery` before any other tool. When
-that controller owns implementation and verification quality gates; it does
+`Skill` tool to invoke `run-autonomous-delivery` before any other tool. That
+controller owns implementation and verification quality gates; it does
 not require nested native activation of `build-vertical-slice` or
 `verify-change`. A request explicitly limited to implementation may invoke
 `build-vertical-slice` directly, and a request explicitly limited to

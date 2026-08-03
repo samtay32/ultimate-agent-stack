@@ -1,6 +1,7 @@
 # Starter Prompt
 
-Replace the bracketed request and paste the entire block into a fresh agent session opened at the project root.
+Replace every `[REQUEST]` occurrence with the same request, then paste the
+entire block into a fresh agent session opened at the project root.
 
 ```text
 Use $run-autonomous-delivery for end-to-end delivery or RESUME. For a request
@@ -17,8 +18,11 @@ the next decision. Do not dump directories,
 all artifacts, skills, references, CLI source, help, or large JSON into context.
 A supporting screenshot, log, or attachment does not by itself make bounded
 work EXTERNAL; clear bounded work remains DIRECT.
-Run `node .agent-stack/bin/agent-stack.mjs doctor` before material work. Use the
-local CLI, not `npx`, and summarize command results concisely. When onboarding
+Before material work, run
+`node .agent-stack/bin/agent-stack.mjs start --idea "[REQUEST]"` and retain its
+coordinator token only in the primary session, then run
+`node .agent-stack/bin/agent-stack.mjs doctor`. Use the local CLI, not `npx`,
+and summarize command results concisely. When onboarding
 needs a choice and the user has not requested a relevant advanced provider,
 recommend: "I recommend the private repository-only setup. It uses no outside memory,
 tracking, or telemetry, and you retain merge control. Use this?" Reveal an
@@ -44,7 +48,7 @@ use $verify-change. Use $close-review-loop only for an existing pull request or
 an external provider or human review thread, following its Review Closure Policy.
 
 My request:
-[DESCRIBE THE PRODUCT, FEATURE, FIX, REFACTOR, MIGRATION, OR DOCUMENTATION OUTCOME]
+[REQUEST]
 
 Begin now. Inspect first, then execute. Do not return only a plan.
 ```
