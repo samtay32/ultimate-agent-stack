@@ -232,8 +232,13 @@ function passingRecord() {
     const baseline = expectedFixtureBaseline(scenario.id);
     const initialGitHead = baseline.git_head;
     const initialProjectTreeSha256 = baseline.project_tree_sha256;
-    const finalGitHead = baseline.git_head;
-    const finalProjectTreeSha256 = baseline.project_tree_sha256;
+    const mutatesProject = (scenario.expected.required_write_paths ?? []).length > 0;
+    const finalGitHead = mutatesProject
+      ? sha256(`final:${scenario.id}`).slice(0, 40)
+      : initialGitHead;
+    const finalProjectTreeSha256 = mutatesProject
+      ? `sha256:${sha256(`final-tree:${scenario.id}`)}`
+      : initialProjectTreeSha256;
     const review = ["direct-delivery", "flexible-direct-bypass"].includes(
       scenario.id,
     )
@@ -324,7 +329,7 @@ function passingRecord() {
         ).map((id) => ({ id, disposition: "kept" })),
         review_receipts: review ? [review.receipt] : [],
         review_unavailable_receipts:
-          scenario.expected.review === "blocked" && !review
+          scenario.expected.review_evidence === "unavailable" && !review
             ? [unavailableReviewReceipt(scenario)]
             : [],
         review_result_artifacts: review ? [review.artifact] : [],
@@ -1234,7 +1239,7 @@ test("review evidence derives blocked and conflicting outcomes without treating 
   assert.match(JSON.stringify(result), /review_unavailable_receipts.*claim/);
 });
 
-test("blocked expectations require valid durable blocking evidence", () => {
+test("review expectations require their declared durable evidence outcome", () => {
   const blockedScenario = catalog.scenarios.find(
     (item) => item.id === "edge-reviewer-unavailable",
   );
@@ -1255,7 +1260,7 @@ test("blocked expectations require valid durable blocking evidence", () => {
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
-    /expected blocked review outcome was not observed/,
+    /expected review evidence outcome unavailable was not observed \(observed missing\)/,
   );
 
   const unavailable = passingRecord();
@@ -1288,7 +1293,11 @@ test("blocked expectations require valid durable blocking evidence", () => {
     status: "blocked",
   };
   result = evaluateRecord(changes, catalog);
-  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.ok, false);
+  assert.match(
+    JSON.stringify(result),
+    /expected review evidence outcome local-passed-audit was not observed \(observed changes-requested\)/,
+  );
 
   const malformed = passingRecord();
   const malformedCase = malformed.cases.find(
@@ -1300,7 +1309,7 @@ test("blocked expectations require valid durable blocking evidence", () => {
   assert.equal(result.ok, false);
   assert.match(
     JSON.stringify(result),
-    /review_unavailable_receipts.*claim.*expected blocked review outcome was not observed/s,
+    /review_unavailable_receipts.*claim.*expected review evidence outcome unavailable was not observed \(observed invalid\)/s,
   );
 });
 
@@ -1595,7 +1604,9 @@ test("not-required review expectations cannot hide blocking evidence", () => {
   assert.equal(rates.ok, true, JSON.stringify(rates));
   assert.ok(
     rates.groups[0].review_outcomes.some(
-      (item) => item.scenario_id === scenario.id && item.outcome === "blocked",
+      (item) =>
+        item.scenario_id === scenario.id &&
+        item.outcome === "changes-requested",
     ),
   );
 });
@@ -1677,7 +1688,7 @@ test("review outcomes are derived before scenario expectations", () => {
   );
   assert.match(
     JSON.stringify(absentRequiredResult),
-    /expected blocked review outcome was not observed/,
+    /expected review evidence outcome local-passed-audit was not observed \(observed missing\)/,
   );
 
   const blocked = passingRecord();
@@ -1712,7 +1723,7 @@ test("review outcomes are derived before scenario expectations", () => {
   );
   assert.match(
     JSON.stringify(blockedResult),
-    /claimed review unavailable handoff requires a valid same-run unavailable receipt/,
+    /claimed review unavailable handoff requires a valid same-run unavailable receipt.*expected review evidence outcome unavailable was not observed \(observed local-passed-audit\)/s,
   );
   assert.equal(absentCase.observed.review_result_artifacts.length, 0);
 });
@@ -1732,7 +1743,59 @@ test("agent-recorded local passed results cannot satisfy direct-review independe
       independent_reviewed: false,
       review_gate_ready: false,
       status: "blocked",
+      evidence_outcome: "local-passed-audit",
     });
+  }
+});
+
+test("required-write scenarios bind distinct post-run Git and tree identities", () => {
+  for (const scenarioId of [
+    "direct-delivery",
+    "flexible-direct-bypass",
+    "edge-reviewer-unavailable",
+  ]) {
+    const headRecord = passingRecord();
+    const headCase = headRecord.cases.find(
+      (item) => item.scenario_id === scenarioId,
+    );
+    headCase.final_git_head = headCase.materialized_git_head;
+    headCase.final_git_object_format = headCase.materialized_git_object_format;
+    headCase.final_project_state_sha256 = projectStateSha256({
+      materializationSpecSha256: headCase.materialization_spec_sha256,
+      gitHead: headCase.final_git_head,
+      projectTreeSha256: headCase.final_project_tree_sha256,
+    });
+    let result = evaluateRecord(headRecord, catalog);
+    assert.equal(result.ok, false, scenarioId);
+    assert.ok(
+      result.cases
+        .find((item) => item.scenario_id === scenarioId)
+        .findings.includes(
+          "required-write scenario final_git_head must differ from materialized_git_head",
+        ),
+      scenarioId,
+    );
+
+    const treeRecord = passingRecord();
+    const treeCase = treeRecord.cases.find(
+      (item) => item.scenario_id === scenarioId,
+    );
+    treeCase.final_project_tree_sha256 = treeCase.materialized_project_tree_sha256;
+    treeCase.final_project_state_sha256 = projectStateSha256({
+      materializationSpecSha256: treeCase.materialization_spec_sha256,
+      gitHead: treeCase.final_git_head,
+      projectTreeSha256: treeCase.final_project_tree_sha256,
+    });
+    result = evaluateRecord(treeRecord, catalog);
+    assert.equal(result.ok, false, scenarioId);
+    assert.ok(
+      result.cases
+        .find((item) => item.scenario_id === scenarioId)
+        .findings.includes(
+          "required-write scenario final_project_tree_sha256 must differ from materialized_project_tree_sha256",
+        ),
+      scenarioId,
+    );
   }
 });
 
@@ -1876,16 +1939,27 @@ test("routing reliability is reported as k/N per harness and model", () => {
   assert.equal(result.groups[0].run_records, 2);
   assert.equal(result.groups[0].reliability_ready, true);
   assert.equal(result.groups[0].evaluated_runs_passed, 1);
-  const directReviewOutcome = result.groups[0].review_outcomes.find(
+  const directPassedAudit = result.groups[0].review_outcomes.find(
     (item) =>
-      item.scenario_id === "direct-delivery" && item.outcome === "blocked",
+      item.scenario_id === "direct-delivery" &&
+      item.outcome === "local-passed-audit",
   );
-  assert.deepEqual(directReviewOutcome, {
+  assert.deepEqual(directPassedAudit, {
     scenario_id: "direct-delivery",
-    outcome: "blocked",
-    observed: 2,
+    outcome: "local-passed-audit",
+    observed: 1,
     attempts: 2,
-    rate: "2/2",
+    rate: "1/2",
+  });
+  const directMissingAudit = result.groups[0].review_outcomes.find(
+    (item) => item.scenario_id === "direct-delivery" && item.outcome === "missing",
+  );
+  assert.deepEqual(directMissingAudit, {
+    scenario_id: "direct-delivery",
+    outcome: "missing",
+    observed: 1,
+    attempts: 2,
+    rate: "1/2",
   });
   const directRoute = result.groups[0].routes.find(
     (item) =>
@@ -2497,7 +2571,7 @@ test("phase activation matches real workflow boundaries", () => {
 
   assert.ok(
     direct.expected.required_outcomes.includes(
-      "independent_review_blocked",
+      "local_review_audit_recorded",
     ),
   );
   for (const scenarioId of ["direct-delivery", "flexible-direct-bypass"]) {

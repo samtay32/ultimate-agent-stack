@@ -471,7 +471,7 @@ test("PR-ready review guidance attempts native delegation before unavailable", (
     assert.match(source, /coordinator (?:state\/)?token/i);
     assert.match(
       source,
-      /(?:isolation[\s\S]*(?:absent|failed|cannot be prevented|prevented\/verified|unverifiable)[\s\S]*review[\s`]+unavailable|(?:absent, failed, or unverifiable|absent\/failed\/unverifiable)[\s\S]*isolation[\s\S]*review[\s`]+unavailable)/i,
+      /(?:(?:capability|dispatch|isolation)[\s\S]*(?:absent|failed|cannot be prevented|prevented\/verified|unverifiable)[\s\S]*`?review\s+unavailable|(?:absent, failed, or unverifiable|absent\/failed\/unverifiable)[\s\S]*isolation[\s\S]*`?review\s+unavailable)/i,
     );
     assert.match(
       source,

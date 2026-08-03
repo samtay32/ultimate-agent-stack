@@ -65,7 +65,8 @@
         "required_actions": [
           "write_product_code",
           "run_project_tests",
-          "prepare_draft_pr_evidence"
+          "prepare_draft_pr_evidence",
+          "attempt_local_review_audit"
         ],
         "required_write_paths": [
           "src/session.mjs"
@@ -74,13 +75,15 @@
           "delivery_plan",
           "passing_project_tests",
           "draft_pr_evidence_prepared",
-          "independent_review_blocked"
+          "local_review_audit_recorded"
         ],
         "required_outputs": [
           "passing_project_tests",
-          "draft_pr_evidence_prepared"
+          "draft_pr_evidence_prepared",
+          "local_review_audit_recorded"
         ],
-        "review": "blocked"
+        "review": "blocked",
+        "review_evidence": "local-passed-audit"
       }
     },
     {
@@ -873,7 +876,8 @@
           "write_product_code",
           "write_test",
           "run_project_tests",
-          "prepare_draft_pr_evidence"
+          "prepare_draft_pr_evidence",
+          "attempt_local_review_audit"
         ],
         "required_write_paths": [
           "src/status.mjs",
@@ -885,14 +889,16 @@
           "completed_state_not_resumed",
           "supporting_attachment_not_external",
           "greenfield_bounded_direct",
-          "independent_review_blocked"
+          "local_review_audit_recorded"
         ],
         "required_outputs": [
           "bounded_delivery_plan",
           "passing_project_tests",
-          "draft_pr_evidence_prepared"
+          "draft_pr_evidence_prepared",
+          "local_review_audit_recorded"
         ],
-        "review": "blocked"
+        "review": "blocked",
+        "review_evidence": "local-passed-audit"
       }
     },
     {
@@ -1178,7 +1184,8 @@
         "required_outputs": [
           "review_unavailable_handoff"
         ],
-        "review": "blocked"
+        "review": "blocked",
+        "review_evidence": "unavailable"
       }
     },
     {

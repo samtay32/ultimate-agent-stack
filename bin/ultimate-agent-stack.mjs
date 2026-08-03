@@ -10872,11 +10872,15 @@ function commandStatus(target, runId) {
       ? null
       : verificationReadiness(target, config, git);
   if (runId !== undefined) {
+    const externalReviewRequired =
+      config?.capabilities?.review?.required_for_release === true;
     const reviewGateReady = review?.review_gate_ready === true;
-    const prReady = projectHealthy && verification?.ok === true && reviewGateReady;
+    const externalReviewSatisfied = !externalReviewRequired || reviewGateReady;
+    const prReady =
+      projectHealthy && verification?.ok === true && externalReviewSatisfied;
     const readinessReasons = [
       ...projectHealthReasons,
-      ...(review?.reasons ?? []),
+      ...(externalReviewRequired ? (review?.reasons ?? []) : []),
       ...(verification?.reasons ?? []),
     ];
     const boundedReadinessReasons = [
@@ -10887,7 +10891,11 @@ function commandStatus(target, runId) {
     }
     readiness = {
       ...readiness,
-      review_gate_ready: reviewGateReady,
+      // This is the configured project-policy gate. The nested review result
+      // above remains the mechanical status of local agent-recorded evidence.
+      review_gate_ready: externalReviewSatisfied,
+      external_review_required: externalReviewRequired,
+      external_review_satisfied: externalReviewSatisfied,
       pr_ready: prReady,
       status: prReady ? "passed" : "blocked",
       reasons: boundedReadinessReasons,
@@ -10899,7 +10907,8 @@ function commandStatus(target, runId) {
         ? projectHealthy
         : projectHealthy &&
           verification?.ok === true &&
-          review?.review_gate_ready === true,
+          (!config?.capabilities?.review?.required_for_release ||
+            review?.review_gate_ready === true),
     package_available: { name: PACKAGE_NAME, version: PACKAGE_VERSION },
     installed: installation?.package ?? null,
     upgrade_available:

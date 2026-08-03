@@ -162,9 +162,10 @@ flowchart LR
 5. **Evidence plane** — provides deterministic setup, check discovery,
    fail-closed verification, bounded logs, and artifact hashes. It deliberately
    contains no LLM decision logic.
-6. **Review plane** — independently checks engineering standards and locked
-   intent, then uses the configured independent review adapter as an additional
-   adversarial surface when required.
+6. **Review plane** — records a bounded local reviewer audit after the exact
+   commit, then uses protected GitHub review as the separate authenticated
+   adversarial surface when the configured policy requires it. Local
+   `agent-recorded` audit evidence never proves reviewer independence.
 7. **Authority plane** — limits interruptions without pretending authority does
    not exist. Reversible engineering is agent-owned; credentials, cost, legal
    risk, destructive production actions, and unauthorized releases remain

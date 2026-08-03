@@ -1005,7 +1005,7 @@ test(
   },
 );
 
-test("status --run requires current verification and exposes full readiness separately", () => {
+test("status --run applies the configured external-review policy to full readiness", () => {
   const fixture = createFixture();
   try {
     commandApproveChecks(
@@ -1036,20 +1036,56 @@ test("status --run requires current verification and exposes full readiness sepa
     );
     commandVerify(fixture.directory);
     const after = commandStatus(fixture.directory, fixture.runId);
-    assert.equal(after.ok, false, JSON.stringify(after, null, 2));
-    assert.equal(after.readiness.review_gate_ready, false);
-    assert.equal(after.readiness.pr_ready, false);
-    assert.match(
-      after.readiness.reasons.join(" "),
-      /local review receipt is agent-recorded and cannot prove distinct reviewer delegation/,
-    );
+    assert.equal(after.ok, true, JSON.stringify(after, null, 2));
+    assert.equal(after.review.review_gate_ready, false);
+    assert.equal(after.readiness.review_gate_ready, true);
+    assert.equal(after.readiness.external_review_required, false);
+    assert.equal(after.readiness.external_review_satisfied, true);
+    assert.equal(after.readiness.pr_ready, true);
+    assert.equal(after.readiness.reasons.length, 0);
     assert.deepEqual(after.review.git, after.verification.git);
     const cliAfter = spawnSync(
       process.execPath,
       [PACKAGE_CLI, "status", "--target", fixture.directory, "--run", fixture.runId],
       { encoding: "utf8" },
     );
-    assert.equal(cliAfter.status, 1, cliAfter.stderr);
+    assert.equal(cliAfter.status, 0, cliAfter.stderr);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("status --run keeps a required external-review profile blocked by local evidence", () => {
+  const fixture = createFixture();
+  try {
+    commandConfigure(fixture.directory, {
+      profile: "standard",
+      review: "github-human",
+      reviewers: ["trusted-owner"],
+      knowledge: "repository",
+      knowledgeScope: "project",
+      externalData: "local_only",
+      reason: "Fixture requires protected external review",
+    });
+    commandApproveChecks(
+      fixture.directory,
+      "Inspected the bounded fixture verification commands",
+    );
+    commit(fixture.directory, "require external review and approve checks");
+    recordPassed(fixture);
+    commandVerify(fixture.directory);
+    const status = commandStatus(fixture.directory, fixture.runId);
+    assert.equal(status.ok, false, JSON.stringify(status, null, 2));
+    assert.equal(status.review.independent_reviewed, false);
+    assert.equal(status.review.review_gate_ready, false);
+    assert.equal(status.readiness.external_review_required, true);
+    assert.equal(status.readiness.external_review_satisfied, false);
+    assert.equal(status.readiness.review_gate_ready, false);
+    assert.equal(status.readiness.pr_ready, false);
+    assert.match(
+      status.readiness.reasons.join(" "),
+      /local review receipt is agent-recorded and cannot prove distinct reviewer delegation/,
+    );
   } finally {
     fixture.cleanup();
   }
@@ -1101,7 +1137,7 @@ test("verification evidence contains tamper-detection hashes and exact check res
     assert.equal(evidence.checks[0].result, "passed");
     assert.equal(evidence.checks[0].returncode, 0);
     const status = commandStatus(fixture.directory, fixture.runId);
-    assert.equal(status.ok, false, JSON.stringify(status, null, 2));
+    assert.equal(status.ok, true, JSON.stringify(status, null, 2));
     assert.equal(status.verification.ok, true);
     assert.deepEqual(status.review.git, status.verification.git);
   } finally {
@@ -1237,7 +1273,7 @@ test("status validates configuration and preserves readiness across branch renam
     const renamed = runGit(fixture.directory, ["branch", "-m", "renamed-for-readiness"]);
     assert.equal(renamed, "");
     const status = commandStatus(fixture.directory, fixture.runId);
-    assert.equal(status.ok, false, JSON.stringify(status, null, 2));
+    assert.equal(status.ok, true, JSON.stringify(status, null, 2));
     assert.equal(status.verification.ok, true);
     assert.deepEqual(status.review.git, {
       head: status.verification.git.head,

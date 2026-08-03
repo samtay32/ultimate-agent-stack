@@ -76,11 +76,19 @@ snapshot contains exactly the project-relative `path` and exact UTF-8
 newline. There is exactly one snapshot for every review receipt result file;
 paths are unique and contents are bounded at 4 MiB. Direct delivery and the
 flexible direct bypass retain implementation, tests, an exact final head, and
-draft evidence while independent review remains blocked. A local passed receipt
-is structurally inspectable audit evidence only; it cannot establish mechanical
-independence. The reviewer-unavailable edge case also remains blocked. These
-records claim only `agent-recorded`; only the protected GitHub review receipt
-provides the separate authenticated review gate.
+draft evidence plus a valid passed local audit receipt/result. A local passed
+receipt is structurally inspectable audit evidence only; it cannot establish
+mechanical independence. The reviewer-unavailable edge case requires its
+durable unavailable receipt. These records claim only `agent-recorded`; only
+the protected GitHub review receipt provides the separate authenticated review
+gate.
+
+Review evidence is reported separately from mechanical readiness as
+`local-passed-audit`, `unavailable`, `changes-requested`, `missing`, `invalid`,
+`conflict`, or `not-required`. Routing rates count those observed evidence
+outcomes per scenario; they do not relabel missing evidence as blocked or make
+it a successful outcome. The 28-scenario route-accuracy denominator remains a
+separate routing measure.
 
 The CLI `evidence activation-status` and `review status` results include stable
 project-relative `evidence_graph_path`, review receipt and unavailable

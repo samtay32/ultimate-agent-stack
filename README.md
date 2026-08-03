@@ -123,10 +123,12 @@ non-authenticated.
 
 `review status --run RUN` preserves the local structural result but keeps
 `independent_reviewed` and `review_gate_ready` false: agent-recorded receipts
-cannot prove distinct reviewer delegation. `status --run RUN` consequently
-keeps local-only review blocked even after current successful verification.
-The protected GitHub review receipt is the separate authenticated independence
-gate.
+cannot prove distinct reviewer delegation. In a profile that requires external
+review, `status --run RUN` remains blocked until the protected GitHub receipt
+satisfies that separate authenticated gate. The default builtin policy does not
+require an external review, so successful project and verification gates may be
+ready while `independent_reviewed` remains false; this is policy satisfaction,
+not authenticated independence.
 
 The ordinary `verify` command may run configured checks on a dirty
 worktree; `status --run RUN` still requires a clean exact-head verification.

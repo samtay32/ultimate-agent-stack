@@ -93,6 +93,15 @@ const REVIEW_RECEIPT_ID = /^[a-f0-9]{64}$/;
 const REVIEW_UNAVAILABLE_STATUS = "unavailable";
 const REVIEW_RESULTS = new Set(["passed", "changes-requested"]);
 const REVIEW_EXPECTATIONS = new Set(["not-required", "passed", "blocked"]);
+const REVIEW_EVIDENCE_OUTCOMES = new Set([
+  "local-passed-audit",
+  "unavailable",
+  "changes-requested",
+  "missing",
+  "invalid",
+  "conflict",
+  "not-required",
+]);
 const REVIEW_RUN_ID_MAX_CHARS = 200;
 const REVIEW_COORDINATOR_ID_MAX_CHARS = 120;
 const REVIEW_KIND_MAX_CHARS = 120;
@@ -633,6 +642,7 @@ function validateReviewEvidence(
   observed,
   item,
   expectedReview,
+  expectedEvidenceOutcome,
   findings,
 ) {
   const receipts = observed.review_receipts;
@@ -664,12 +674,21 @@ function validateReviewEvidence(
       independent_reviewed: false,
       review_gate_ready: false,
       status: "blocked",
+      evidence_outcome: "invalid",
     };
     const status = observed.review_status;
     if (expectedReview === "not-required") {
       findings.push("review outcome was blocked for a not-required scenario");
     } else if (expectedReview === "passed") {
       findings.push("review outcome was blocked");
+    }
+    if (
+      expectedEvidenceOutcome !== undefined &&
+      expectedEvidenceOutcome !== derived.evidence_outcome
+    ) {
+      findings.push(
+        `expected review evidence outcome ${expectedEvidenceOutcome} was not observed (observed ${derived.evidence_outcome})`,
+      );
     }
     if (
       status &&
@@ -978,17 +997,37 @@ function validateReviewEvidence(
   if (validReviews.length > 0 && hasBlockingOutcome) {
     findings.push("review evidence contains conflicting outcomes");
   }
+  const evidenceOutcome = hasInvalidOutcome
+    ? "invalid"
+    : validReviews.length > 0 && hasBlockingOutcome
+      ? "conflict"
+      : validReviews.length > 0
+        ? "local-passed-audit"
+        : validChangesRequested.length > 0
+          ? "changes-requested"
+          : validUnavailable.length > 0
+            ? "unavailable"
+            : expected === "not-required"
+              ? "not-required"
+              : "missing";
   const reviewStatus =
-    hasBlockingOutcome || hasInvalidOutcome || hasAgentRecordedPassedReview
+    evidenceOutcome !== "not-required"
     ? "blocked"
-    : expected === "not-required"
-      ? "not-required"
-      : "blocked";
+    : "not-required";
   const derived = {
     independent_reviewed: false,
     review_gate_ready: false,
     status: reviewStatus,
+    evidence_outcome: evidenceOutcome,
   };
+  if (
+    expectedEvidenceOutcome !== undefined &&
+    evidenceOutcome !== expectedEvidenceOutcome
+  ) {
+    findings.push(
+      `expected review evidence outcome ${expectedEvidenceOutcome} was not observed (observed ${evidenceOutcome})`,
+    );
+  }
   if (expected === "not-required" && reviewStatus === "blocked") {
     findings.push("review outcome was blocked for a not-required scenario");
   } else if (expected === "passed" && reviewStatus !== "passed") {
@@ -1235,6 +1274,14 @@ function validateScenarioCatalog(catalog = readJson(SCENARIOS_FILE)) {
     if (!REVIEW_EXPECTATIONS.has(expected.review)) {
       errors.push(
         `${location}.expected.review must be exactly not-required, passed, or blocked`,
+      );
+    }
+    if (
+      expected.review_evidence !== undefined &&
+      !REVIEW_EVIDENCE_OUTCOMES.has(expected.review_evidence)
+    ) {
+      errors.push(
+        `${location}.expected.review_evidence must be a supported review evidence outcome`,
       );
     }
     const mustActivateNames = asArray(expected.must_activate);
@@ -1550,6 +1597,21 @@ function validateRunRecord(
           "final_project_tree_sha256 must be the exact post-run project-tree receipt",
         );
       }
+      if (asArray(scenario?.expected?.required_write_paths).length > 0) {
+        if (item.final_git_head === item.materialized_git_head) {
+          findings.push(
+            "required-write scenario final_git_head must differ from materialized_git_head",
+          );
+        }
+        if (
+          item.final_project_tree_sha256 ===
+          item.materialized_project_tree_sha256
+        ) {
+          findings.push(
+            "required-write scenario final_project_tree_sha256 must differ from materialized_project_tree_sha256",
+          );
+        }
+      }
       if (
         GIT_COMMIT_ID.test(item.final_git_head ?? "") &&
         SHA256_RECEIPT.test(item.final_project_tree_sha256 ?? "") &&
@@ -1776,6 +1838,7 @@ function validateRunRecord(
           observed,
           item,
           scenario?.expected?.review,
+          scenario?.expected?.review_evidence,
           findings,
         ).derived;
         for (const name of reportedActivated) {
@@ -2088,6 +2151,7 @@ function summarizeRoutingRates(
       /^review outcome was blocked$/,
       /^review outcome was blocked for a not-required scenario$/,
       /^expected blocked review outcome was not observed$/,
+      /^expected review evidence outcome .* was not observed \(observed .*\)$/,
       /^review evidence contains conflicting outcomes$/,
     ].some((pattern) => pattern.test(finding));
   const usedSessions = new Set();
@@ -2203,8 +2267,7 @@ function summarizeRoutingRates(
       activationOutcome.attempts += 1;
       group.activationReceiptOutcomes.set(activationOutcomeKey, activationOutcome);
       const reviewOutcome =
-        evaluatedCases.get(item?.scenario_id)?.review?.status ??
-        item.observed.review_status?.status ??
+        evaluatedCases.get(item?.scenario_id)?.review?.evidence_outcome ??
         "missing";
       const reviewOutcomeKey = `${scenario.id}\0${reviewOutcome}`;
       const reviewOutcomeCount = group.reviewOutcomes.get(reviewOutcomeKey) ?? {

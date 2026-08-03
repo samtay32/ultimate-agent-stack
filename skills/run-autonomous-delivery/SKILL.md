@@ -102,8 +102,8 @@ a canonical disposition; residual risks and human-only actions are stated.
    is agent-recorded audit evidence only: record the returned reviewer ID/result
    bound to the commit, but it cannot establish independent review or PR
    readiness. Only protected GitHub review establishes that mechanical gate.
-   Check `review status --run RUN` and stack `status --run RUN` for the
-   resulting blocked local state.
+   Check `review status --run RUN`; `status --run RUN` remains blocked when the
+   selected policy requires external review.
 
 7. **PR and feedback.** Keep a draft while material work remains. Include
    intent, decisions, evidence, migration/rollback notes, visual proof when

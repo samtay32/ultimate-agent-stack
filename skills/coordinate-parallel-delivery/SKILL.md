@@ -66,8 +66,8 @@ reviewer result is available, local receipt evidence remains agent-recorded
 audit evidence and cannot establish mechanical independence. Record
 `review unavailable --run RUN
    --reason REASON --details TEXT --coordinator-token TOKEN` for unavailable
-   delegation and keep readiness blocked; only protected GitHub review can
-   satisfy that separate gate.
+   delegation. Only protected GitHub review can satisfy that separate gate when
+   the selected policy requires external review.
 
 ## Fast Decision Rule
 

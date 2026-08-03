@@ -50,9 +50,10 @@ flowchart LR
     COORD --> EXEC["Controller-owned implementation + verification gates"]
     EXEC -. "explicit phase-specific implementation" .-> BUILD["build-vertical-slice"]
     EXEC -. "explicit phase-specific verification" .-> VERIFY["verify-change"]
-    EXEC --> REVIEW["independent pre-PR review"]
-    REVIEW --> PR["open or update pull request"]
-    PR --> CLOSE["close-review-loop"]
+    EXEC --> REVIEW["bounded local review audit"]
+    REVIEW --> PR["draft pull request"]
+    PR --> GATE["protected GitHub review when policy requires it"]
+    GATE --> CLOSE["close-review-loop"]
     CLOSE -->|repair| EXEC
     CLOSE -->|green| DONE["merge or merge-ready"]
     DONE --> KNOW
@@ -98,6 +99,13 @@ writes from the current harness capability. The primary agent remains
 responsible for every worker and the final result. That primary agent is the
 Project Steward: it alone retains the checkout coordinator token and writes the
 repository checkpoint.
+
+Delivery proceeds through deterministic work and tests, an exact clean commit,
+a bounded local reviewer attempt with an inspectable audit result (or durable
+unavailable receipt), then a draft PR. Protected GitHub review follows when the
+configured policy requires it. The default builtin policy may proceed without
+that external requirement, but local audit evidence never authenticates reviewer
+independence.
 
 ## Installation Locations
 

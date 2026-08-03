@@ -91,18 +91,20 @@ Activation readiness comes from `evidence activation-status --run RUN
 head, structured local result under `.agent-stack/runs/reviews/` for audit;
 `review unavailable` records a durable blocker. Local receipts are
 `agent-recorded`: they cannot prove distinct reviewer delegation or make
-`independent_reviewed`, `review_gate_ready`, or PR readiness true. Only
-protected GitHub review receipts establish mechanical independence. Missing,
+`independent_reviewed` or local `review_gate_ready` true. Only protected GitHub
+review receipts establish mechanical independence. A profile requiring external
+review stays PR-blocked on local evidence; builtin policy may pass other gates
+without an authenticated-independence claim. Missing,
 failed, empty, stale, altered, wrong-run, wrong-commit, dirty-tree,
 unavailable, or same-recorded-identity evidence remains blocked.
 
-After tests and a clean exact commit, locally authorized delivery may attempt
+After tests and a clean exact commit, locally authorized PR-ready work attempts
 one native bounded read-only reviewer in a fresh/no-history or demonstrably
 sanitized session. Give only checkout locator, commit, intent/acceptance, and
-read-only scope; never parent transcript/output, coordinator state/token,
-credentials, or environment secrets. Bind returned ID/result to the commit for
-audit only. Absent, failed, or unverifiable capability, dispatch/collection, or
-isolation requires `review unavailable`; readiness stays blocked. Never invent
+review scope—never parent transcript/output, coordinator state/token,
+credentials, or environment secrets. Bind returned ID/result to commit. Absent,
+failed, or unverifiable capability, dispatch/collection, or isolation requires
+`review unavailable`; external-review-required readiness blocks. Never invent
 receipts; prose cannot prove isolation.
 
 Keep live evaluation prompts and serialized context at or below 2 KiB. Paid

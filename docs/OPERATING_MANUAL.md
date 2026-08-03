@@ -329,9 +329,12 @@ failed, changes-requested, empty, altered, stale, dirty-tree, wrong-run,
 wrong-commit, or same-recorded-identity evidence remains blocked. A local
 receipt claims only `agent-recorded`: even a structurally passed result cannot
 authenticate distinct physical-agent provenance or external review, so it never
-sets `independent_reviewed`, `review_gate_ready`, or `readiness.pr_ready` true.
-Only the protected GitHub review receipt establishes that separate mechanical
-gate. Local receipts do not authorize push, merge, or release.
+sets `independent_reviewed` or local `review_gate_ready` true. Only the
+protected GitHub review receipt establishes that separate mechanical gate. When
+the selected policy requires external review, local evidence cannot make
+`readiness.pr_ready` true; the default builtin policy may proceed after its
+other gates pass without claiming authenticated independence. Local receipts do
+not authorize push, merge, or release.
 `verify` may still execute configured checks on a dirty worktree, but
 its evidence cannot satisfy readiness until a clean exact-head verification is
 recorded. The evidence target real path prevents cross-checkout replay; it does
