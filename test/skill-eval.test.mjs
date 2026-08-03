@@ -941,6 +941,67 @@ test("activation receipt mutations report their specific binding findings", () =
   }
 });
 
+test("generic receipt identity cannot claim a named enclosing harness and model", () => {
+  const record = passingRecord();
+  record.harness = {
+    name: "codex-cli",
+    version: "1.0.0",
+    model: "gpt-5.6-terra",
+  };
+  const direct = record.cases.find(
+    (item) => item.scenario_id === "direct-delivery",
+  );
+  const receipt = direct.observed.activation_receipts[0];
+  receipt.harness = "Codex";
+  receipt.model = "GPT-5";
+  receipt.id = `skill-activation-${sha256({
+    harness: receipt.harness,
+    model: receipt.model,
+    run_id: receipt.run_id,
+    event_id: receipt.event_id,
+  }).slice(0, 20)}`;
+  receipt.receipt_sha256 = sha256(
+    Object.fromEntries(
+      Object.entries(receipt).filter(([key]) => key !== "receipt_sha256"),
+    ),
+  );
+
+  const result = evaluateRecord(record, catalog);
+  assert.equal(result.ok, false);
+  const findings = result.cases.find(
+    (item) => item.scenario_id === "direct-delivery",
+  ).findings;
+  assert.ok(
+    findings.includes(
+      "activation_receipts[0].harness must equal observed.harness.name",
+    ),
+  );
+  assert.ok(
+    findings.includes(
+      "activation_receipts[0].model must equal observed.harness.model",
+    ),
+  );
+  assert.ok(
+    !findings.some((finding) =>
+      finding.includes("receipt_sha256 must match its canonical content hash"),
+    ),
+  );
+});
+
+test("missing or placeholder harness versions cannot support a named live claim", () => {
+  for (const version of [undefined, "", "unknown", "replace-with-harness-version"]) {
+    const record = passingRecord();
+    record.harness.version = version;
+    const result = evaluateRecord(record, catalog);
+    assert.equal(result.ok, false, String(version));
+    assert.match(
+      result.errors.join("\n"),
+      /run record harness\.version must identify the actual run/,
+      String(version),
+    );
+  }
+});
+
 test("starter prompt stays within the compact progressive-disclosure budget", () => {
   const starter = readFileSync(join(PACKAGE_ROOT, "STARTER_PROMPT.md"), "utf8");
   assert.ok(

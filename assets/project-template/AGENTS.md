@@ -100,6 +100,24 @@ protected GitHub reviews and do not authenticate physical identity.
 Keep live evaluation prompts and serialized context at or below 2 KiB. Paid
 live-model tests are not part of deterministic package validation.
 
+For live evaluation, the operator must supply this context block:
+
+```text
+Live evaluation identity:
+HARNESS_ID: exact harness name
+HARNESS_VERSION: exact harness version
+MODEL_ID: exact model name or alias
+```
+
+Copy `HARNESS_ID` and `MODEL_ID` verbatim into activation receipt fields and
+retain `HARNESS_VERSION` in smoke/run evidence. Never infer, normalize,
+autodetect, or replace missing/placeholding values with generic labels; an
+incomplete identity cannot support a named harness/model claim. This is live-
+evaluation-only; ordinary `npm init`, onboarding, and no-code use remain
+unchanged. Evidence is agent-recorded, not authenticated provider or harness
+identity. Keep the request plus context at or below 2 KiB (target ~512 tokens),
+with no repository dumps or expected skill names.
+
 ## Delivery and authority
 
 Before a meaningful change, provide a proportionate design note: understanding,

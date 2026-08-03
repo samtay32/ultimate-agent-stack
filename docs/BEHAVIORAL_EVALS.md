@@ -397,6 +397,25 @@ the preset without asking the same question again.
 
 ## Release Readiness
 
+For every live smoke run, the operator supplies this exact context block:
+
+```text
+Live evaluation identity:
+HARNESS_ID: exact harness name
+HARNESS_VERSION: exact harness version
+MODEL_ID: exact model name or alias
+```
+
+During the live evaluation, copy `HARNESS_ID` and `MODEL_ID` verbatim into the
+activation receipt `harness` and `model` fields, and retain `HARNESS_VERSION` in
+the smoke/run evidence. Never infer, normalize, autodetect, or replace missing
+or placeholder values with generic labels. Missing or incomplete identity cannot
+support a named harness/model compatibility claim. This mapping is evaluation-
+only; ordinary `npm init`, onboarding, and no-code use are unchanged. The
+identity remains agent-recorded evidence, not authentication of a harness,
+provider, or model. Keep the live request plus context at or below 2 KiB (target
+about 512 tokens), without repository dumps or expected skill names.
+
 When a pull request changes the behavior-surface hash:
 
 1. run the deterministic contract gate;
